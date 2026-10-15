@@ -1,0 +1,173 @@
+" admin_drafter_capacity OnInit
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+" Data Structures
+TYPES: BEGIN OF ty_drafter,
+         zecm_user_id   TYPE zecm_user-zecm_user_id,
+         zecm_full_name TYPE zecm_user-zecm_full_name,
+       END OF ty_drafter.
+
+TYPES: BEGIN OF ty_ecr,
+         ecr_no   TYPE zecm_req-ecr_no,
+         title    TYPE zecm_req-title,
+         matnr_fg TYPE zecm_req-matnr_fg,
+         priority TYPE zecm_req-priority,
+         status   TYPE zecm_req-status,
+         drafter  TYPE zecm_req-drafter,
+       END OF ty_ecr.
+
+DATA: lt_drafter TYPE STANDARD TABLE OF ty_drafter,
+      ls_drafter TYPE ty_drafter.
+
+DATA: lt_ecr TYPE STANDARD TABLE OF ty_ecr,
+      ls_ecr TYPE ty_ecr.
+
+" 1. Ambil daftar Drafter yang aktif
+SELECT zecm_user_id zecm_full_name
+  INTO TABLE lt_drafter
+  FROM zecm_user
+  WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'
+  ORDER BY zecm_full_name ASCENDING.
+
+" 2. Ambil ECR Aktif yang sedang ditangani (Bukan CRTD, CLSD, REJC)
+SELECT ecr_no title matnr_fg priority status drafter
+  INTO TABLE lt_ecr
+  FROM zecm_req
+  WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
+    AND drafter <> ''.
+
+" 3. Bangun HTML untuk Grid Kapasitas
+CLEAR GV_CAPACITY_HTML.
+DATA: lv_html TYPE string.
+
+DATA: lv_inwk TYPE i,
+      lv_bmpr TYPE i,
+      lv_bmap TYPE i,
+      lv_insp TYPE i,
+      lv_total TYPE i.
+DATA: lv_list_html TYPE string.
+
+LOOP AT lt_drafter INTO ls_drafter.
+  CLEAR: lv_inwk, lv_bmpr, lv_bmap, lv_insp, lv_total, lv_list_html.
+
+  " Hitung ECM untuk Drafter ini
+  LOOP AT lt_ecr INTO ls_ecr WHERE drafter = ls_drafter-zecm_user_id.
+    lv_total = lv_total + 1.
+
+    DATA: lv_s_label TYPE string,
+          lv_s_color TYPE string.
+
+    CASE ls_ecr-status.
+      WHEN 'INWK'.
+        lv_inwk = lv_inwk + 1.
+        lv_s_label = 'INWK'. lv_s_color = 'bg-orange-100 text-orange-700'.
+      WHEN 'BMPR'.
+        lv_bmpr = lv_bmpr + 1.
+        lv_s_label = 'BMPR'. lv_s_color = 'bg-amber-100 text-amber-700'.
+      WHEN 'BMAP'.
+        lv_bmap = lv_bmap + 1.
+        lv_s_label = 'BMAP'. lv_s_color = 'bg-emerald-100 text-emerald-700'.
+      WHEN 'INSP'.
+        lv_insp = lv_insp + 1.
+        lv_s_label = 'INSP'. lv_s_color = 'bg-yellow-100 text-yellow-700'.
+    ENDCASE.
+
+    " Format ECR No
+    DATA: lv_ecr_fmt TYPE string.
+    lv_ecr_fmt = ls_ecr-ecr_no.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT' EXPORTING input = lv_ecr_fmt IMPORTING output = lv_ecr_fmt.
+    
+    " Format Matnr
+    DATA: lv_matnr_fmt TYPE string.
+    lv_matnr_fmt = ls_ecr-matnr_fg.
+    SHIFT lv_matnr_fmt LEFT DELETING LEADING '0'.
+
+    " Escape title
+    DATA: lv_esc_title TYPE string.
+    lv_esc_title = ls_ecr-title.
+    REPLACE ALL OCCURRENCES OF '"' IN lv_esc_title WITH '&quot;'.
+
+    " Bangun baris ECR
+    CONCATENATE lv_list_html
+      '<div class="p-2 border border-slate-200 rounded-lg bg-slate-50 flex flex-col gap-1 '
+      'mb-2 hover:bg-slate-100 transition-colors">'
+      '<div class="flex justify-between items-start">'
+      '<span class="text-[0.65rem] font-bold text-blue-600">ECR ' lv_ecr_fmt '</span>'
+      '<span class="px-1.5 py-0.5 rounded text-[0.55rem] font-bold ' lv_s_color '">' lv_s_label '</span>'
+      '</div>'
+      '<div class="text-[0.7rem] font-bold text-slate-700 truncate" title="' 
+      lv_esc_title '">' lv_esc_title '</div>'
+      '<div class="text-[0.6rem] text-slate-500 font-mono">' lv_matnr_fmt '</div>'
+      '</div>'
+      INTO lv_list_html.
+  ENDLOOP.
+
+  IF lv_list_html IS INITIAL.
+    lv_list_html = '<div class="text-xs text-center text-slate-400 py-3 italic">Tidak ada ECR aktif.</div>'.
+  ENDIF.
+
+  DATA: lv_str_inwk TYPE string, lv_str_bmpr TYPE string, lv_str_bmap TYPE string, 
+        lv_str_insp TYPE string, lv_str_tot TYPE string.
+  lv_str_inwk = lv_inwk. SHIFT lv_str_inwk LEFT DELETING LEADING ' '.
+  lv_str_bmpr = lv_bmpr. SHIFT lv_str_bmpr LEFT DELETING LEADING ' '.
+  lv_str_bmap = lv_bmap. SHIFT lv_str_bmap LEFT DELETING LEADING ' '.
+  lv_str_insp = lv_insp. SHIFT lv_str_insp LEFT DELETING LEADING ' '.
+  lv_str_tot  = lv_total. SHIFT lv_str_tot LEFT DELETING LEADING ' '.
+
+  " Bangun Kartu Drafter
+  CONCATENATE GV_CAPACITY_HTML
+    '<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden '
+    'hover:shadow-md transition-shadow flex flex-col">'
+      '<div class="p-5 border-b border-slate-100 flex items-center justify-between">'
+        '<div>'
+          '<h3 class="text-sm font-bold text-slate-800">' ls_drafter-zecm_full_name '</h3>'
+          '<p class="text-[0.65rem] text-slate-500">ID: ' ls_drafter-zecm_user_id '</p>'
+        '</div>'
+        '<div class="text-right">'
+          '<span class="text-2xl font-extrabold text-slate-800">' lv_str_tot '</span>'
+          '<p class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide">Total Aktif</p>'
+        '</div>'
+      '</div>'
+      
+      '<div class="p-4 grid grid-cols-4 gap-2 bg-slate-50 flex-1">'
+        '<div class="bg-white rounded-lg p-2 text-center border border-slate-200">'
+          '<div class="text-xs font-bold text-orange-600 mb-0.5">' lv_str_inwk '</div>'
+          '<div class="text-[0.6rem] text-slate-500 uppercase font-semibold">In Work</div>'
+        '</div>'
+        '<div class="bg-white rounded-lg p-2 text-center border border-slate-200">'
+          '<div class="text-xs font-bold text-amber-600 mb-0.5">' lv_str_bmpr '</div>'
+          '<div class="text-[0.6rem] text-slate-500 uppercase font-semibold">BOM Pnd.</div>'
+        '</div>'
+        '<div class="bg-white rounded-lg p-2 text-center border border-slate-200">'
+          '<div class="text-xs font-bold text-emerald-600 mb-0.5">' lv_str_bmap '</div>'
+          '<div class="text-[0.6rem] text-slate-500 uppercase font-semibold">BOM App.</div>'
+        '</div>'
+        '<div class="bg-white rounded-lg p-2 text-center border border-slate-200">'
+          '<div class="text-xs font-bold text-yellow-600 mb-0.5">' lv_str_insp '</div>'
+          '<div class="text-[0.6rem] text-slate-500 uppercase font-semibold">Inspect</div>'
+        '</div>'
+      '</div>'
+
+      '<div class="p-3 border-t border-slate-100">'
+        '<button type="button" onclick="openEcrModalList(''' ls_drafter-zecm_full_name ''', '
+        '''list_' ls_drafter-zecm_user_id ''')" '
+        'class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold '
+        'transition-colors flex items-center justify-center gap-2">'
+          '<span>Lihat Daftar ECR</span>'
+        '</button>'
+      '</div>'
+      
+      '<div id="list_' ls_drafter-zecm_user_id '" class="hidden">'
+        lv_list_html
+      '</div>'
+    '</div>'
+    INTO GV_CAPACITY_HTML.
+
+ENDLOOP.

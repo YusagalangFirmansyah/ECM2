@@ -1,0 +1,1 @@
+TYPES: tt_zecm_user TYPE STANDARD TABLE OF zecm_user.

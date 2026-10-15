@@ -1,0 +1,801 @@
+﻿<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Viewer Dashboard - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe',
+              500: '#10b981', 600: '#059669', 700: '#047857', 800: '#064e3b'
+            }
+          },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+
+  <%@include file="viewer_header.htm" %>
+
+  <div class="px-8 py-7 max-w-[1600px] mx-auto">
+
+    <!-- Header Banner -->
+    <div class="relative overflow-hidden rounded-xl p-6 mb-6 shadow-sm" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+      <div class="absolute -top-[60px] -right-[30px] w-[200px] h-[200px] rounded-full" style="background: radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%);"></div>
+      <div class="flex items-center justify-between relative z-10">
+        <div>
+          <h1 class="text-xl font-bold text-white mb-1">Viewer Dashboard</h1>
+          <p class="text-[0.76rem] text-emerald-200 font-medium">Monitor ECR & Pantau Perubahan Engineering</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Date Range Filter -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+      <form method="get" id="dateFilterForm">
+        <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+        <input type="hidden" name="r" value="<%= GV_ROLE %>">
+        <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-calendar-alt text-emerald-600"></i>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">Filter Tanggal</span>
+          </div>
+          <input type="date" name="date_from" value="<%= GV_DATE_FROM %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          <span class="text-xs text-slate-400">s/d</span>
+          <input type="date" name="date_to" value="<%= GV_DATE_TO %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
+            <i class="fas fa-filter text-[0.65rem]"></i> Terapkan
+          </button>
+          <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+            <i class="fas fa-rotate-left text-[0.65rem]"></i> Reset
+          </a>
+          <div class="flex items-center gap-1.5 ml-2 border-l border-slate-200 pl-3">
+            <span class="text-[0.65rem] text-slate-400 font-semibold">Shortcut:</span>
+            <button type="button" onclick="setRange(1)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">1 Bulan</button>
+            <button type="button" onclick="setRange(2)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">2 Bulan</button>
+            <button type="button" onclick="setRange(6)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">6 Bulan</button>
+          </div>
+          <span class="text-[0.65rem] text-slate-400 ml-auto">
+            <i class="fas fa-info-circle"></i> Data dari <strong><%= GV_DATE_FROM %></strong> sampai <strong><%= GV_DATE_TO %></strong>
+          </span>
+        </div>
+      </form>
+    </div>
+
+    <!-- Status Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-6">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#EFF6FF;color:#3B82F6">
+          <i class="fas fa-file-circle-plus"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">ECR</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_CRTD %></p>
+          <p class="text-xs text-slate-400">Menunggu approval</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FFF7ED;color:#F59E0B">
+          <i class="fas fa-gears"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">ECO</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INWK %></p>
+          <p class="text-xs text-slate-400">ECO aktif</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF3C7;color:#D97706">
+          <i class="fas fa-clock"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Pending</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMPR %></p>
+          <p class="text-xs text-slate-400">Tunggu Master Data</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#D1FAE5;color:#059669">
+          <i class="fas fa-check-double"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Approved</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMAP %></p>
+          <p class="text-xs text-slate-400">Siap submit</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEFCE8;color:#EAB308">
+          <i class="fas fa-magnifying-glass"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">On Inspection</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INSP %></p>
+          <p class="text-xs text-slate-400">Tunggu review</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF2F2;color:#EF4444">
+          <i class="fas fa-circle-xmark"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Rejected</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_REJC %></p>
+          <p class="text-xs text-slate-400">ditolak</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-brand-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#F0FDF4;color:#059669">
+          <i class="fas fa-inbox"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Request Masuk</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_IREQ %></p>
+          <p class="text-xs text-slate-400">menunggu review</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+      <div class="lg:col-span-6 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide mb-1">
+          <i class="fas fa-chart-bar text-emerald-500 mr-1"></i> Volume Perubahan
+        </h2>
+        <p class="text-xs text-slate-500 mb-4">Jumlah ECR/ECO per bulan (sesuai filter tanggal)</p>
+        <div class="w-full h-[280px]">
+          <canvas id="volumeChart"></canvas>
+        </div>
+      </div>
+      <div class="lg:col-span-6 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide mb-1">
+          <i class="fas fa-chart-simple text-emerald-500 mr-1"></i> Status Change Request
+        </h2>
+        <p class="text-xs text-slate-500 mb-4">Distribusi status saat ini</p>
+        <div class="w-full h-[280px]">
+          <canvas id="statusChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel Request Masuk (read-only) -->
+    <div class="bg-white rounded-xl shadow-sm border border-brand-200 overflow-hidden">
+      <div class="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-brand-50 to-white">
+        <div>
+          <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide">
+            <i class="fas fa-inbox text-brand-600 mr-1"></i> Panel Request Masuk
+          </h2>
+          <p class="text-xs text-slate-500 mt-1">Request dari user yang perlu direview (REQ > APPR > ECO)</p>
+        </div>
+        <span class="bg-brand-100 text-brand-700 text-xs font-bold px-3 py-1 rounded-full"><%= GV_COUNT_IREQ %> pending</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50">
+              <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">IREQ ID</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Judul</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Material</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Requester</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Tanggal</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <%= GV_IREQ_HTML %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ECR Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>Daftar ECR (Draft)
+        </h3>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-slate-400 font-mono"><%= lines( LT_ECR ) %> data</span>
+          <!-- ECR Search -->
+          <div class="relative">
+            <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[0.65rem]"></i>
+            <input type="text" id="ecrSearch" placeholder="Cari ECR..."
+              onkeyup="filterEcrTable()"
+              class="pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          </div>
+        </div>
+      </div>
+      <!-- Filter Dropdowns -->
+      <div class="px-5 py-3 border-b border-slate-100 bg-white flex items-center gap-2 flex-wrap">
+        <span class="text-[0.65rem] font-bold text-slate-500 uppercase tracking-wide mr-1">
+          <i class="fas fa-filter text-emerald-500 mr-1"></i>Filter:
+        </span>
+        <select id="filterKat" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Kategori</option>
+          <option value="DRW">DRW</option>
+          <option value="DBX">DBX</option>
+          <option value="DMT">DMT</option>
+        </select>
+        <select id="filterPri" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Prioritas</option>
+          <option value="CRITICAL">Critical</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
+        </select>
+        <select id="filterStatus" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Status</option>
+          <option value="CRTD">Draft</option>
+          <option value="INWK">In Work</option>
+          <option value="INSP">Inspection</option>
+          <option value="CLSD">Closed</option>
+          <option value="REJC">Rejected</option>
+        </select>
+        <select id="filterReq" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Requester</option>
+          <%= GV_REQUESTER_OPTIONS %>
+        </select>
+        <button onclick="resetFilters()" class="px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
+          <i class="fas fa-rotate-left mr-1"></i>Reset
+        </button>
+      </div>
+
+      <% IF LT_ECR IS INITIAL. %>
+        <div class="py-16 text-center">
+          <div class="flex flex-col items-center">
+            <i class="fas fa-file-circle-plus text-3xl text-slate-300 mb-3"></i>
+            <p class="text-sm text-slate-400 font-medium">Tidak ada ECR</p>
+            <p class="text-xs text-slate-300 mt-1">ECR yang sesuai filter akan muncul di sini</p>
+          </div>
+        </div>
+      <% ELSE. %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200">
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">ECR No</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Judul</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Material</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Kategori</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Prioritas</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Requester</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DMS</th>
+              </tr>
+            </thead>
+            <tbody id="ecrTableBody" class="divide-y divide-slate-100">
+              <% LOOP AT LT_ECR INTO LS_ECR. %>
+              <tr data-kat="<%= LS_ECR-kategori %>" data-pri="<%= LS_ECR-priority %>" data-sts="<%= LS_ECR-status %>" data-req="<%= LS_ECR-requester %>"
+                class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="openDetail('<%= LS_ECR-ecr_no %>')">
+                <td class="px-4 py-3 font-bold text-brand-600 font-mono"><%= LS_ECR-ecr_no %></td>
+                <td class="px-4 py-3 text-slate-700 max-w-[200px] truncate" title="<%= LS_ECR-title %>"><%= LS_ECR-title %></td>
+                <td class="px-4 py-3">
+                  <div>
+                    <span class="font-semibold text-slate-700 text-xs"><%= LS_ECR-matnr_fg_no_zero %></span>
+                    <div class="text-[0.7rem] text-slate-500 truncate max-w-[180px]" title="<%= LS_ECR-maktx %>"><%= LS_ECR-maktx %></div>
+                  </div>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="inline-block px-2 py-1 rounded-md text-xs font-bold
+                    <% IF LS_ECR-kategori = 'DRW'. %>bg-emerald-50 text-emerald-700 border border-emerald-200
+                    <% ELSEIF LS_ECR-kategori = 'DBX'. %>bg-emerald-50 text-emerald-700 border border-emerald-200
+                    <% ELSEIF LS_ECR-kategori = 'DMT'. %>bg-orange-50 text-orange-700 border border-orange-200
+                    <% ELSE. %>bg-slate-100 text-slate-600<% ENDIF. %>">
+                    <%= LS_ECR-kategori %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="inline-block px-2 py-1 rounded-md text-xs font-bold" style="
+                    <% IF LS_ECR-priority = 'CRITICAL'. %>background:#FEE2E2;color:#B91C1C
+                    <% ELSEIF LS_ECR-priority = 'HIGH'. %>background:#FFEDD5;color:#C2410C
+                    <% ELSEIF LS_ECR-priority = 'MEDIUM'. %>background:#FEF9C3;color:#854D0E
+                    <% ELSE. %>background:#F1F5F9;color:#475569<% ENDIF. %>">
+                    <%= LS_ECR-priority %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="inline-block px-2 py-1 rounded-md text-xs font-bold" style="
+                    <% IF LS_ECR-status = 'CRTD'. %>background:#DBEAFE;color:#1D4ED8
+                    <% ELSEIF LS_ECR-status = 'INWK'. %>background:#FFEDD5;color:#C2410C
+                    <% ELSEIF LS_ECR-status = 'BMPR'. %>background:#FEF3C7;color:#B45309
+                    <% ELSEIF LS_ECR-status = 'BMAP'. %>background:#CCFBF1;color:#0F766E
+                    <% ELSEIF LS_ECR-status = 'INSP'. %>background:#FEF9C3;color:#854D0E
+                    <% ELSEIF LS_ECR-status = 'CLSD'. %>background:#D1FAE5;color:#065F46
+                    <% ELSEIF LS_ECR-status = 'REJC'. %>background:#FEE2E2;color:#B91C1C
+                    <% ELSE. %>background:#F1F5F9;color:#475569<% ENDIF. %>">
+                    <% IF LS_ECR-status = 'CRTD'. %>Draft
+                    <% ELSEIF LS_ECR-status = 'INWK'. %>In Work
+                    <% ELSEIF LS_ECR-status = 'BMPR'. %>BOM Pending
+                    <% ELSEIF LS_ECR-status = 'BMAP'. %>BOM Approved
+                    <% ELSEIF LS_ECR-status = 'INSP'. %>Inspection
+                    <% ELSEIF LS_ECR-status = 'CLSD'. %>Closed
+                    <% ELSEIF LS_ECR-status = 'REJC'. %>Rejected
+                    <% ELSE. %><%= LS_ECR-status %><% ENDIF. %>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-slate-700 text-xs"><%= LS_ECR-requester_name %></td>
+                <td class="px-4 py-3" onclick="event.stopPropagation()">
+                  <% IF LS_ECR-dms_found = abap_true. %>
+                    <div class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors" onclick="viewDms('<%= LS_ECR-dms_dokar %>', '<%= LS_ECR-dms_doknr %>', '<%= LS_ECR-dms_dokvr %>', '<%= LS_ECR-dms_doktl %>')">
+                      <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                      <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dms_doknr %></span>
+                    </div>
+                  <% ELSEIF LS_ECR-dir_number_clean IS NOT INITIAL. %>
+                    <div class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors" onclick="viewDms('', '<%= LS_ECR-dir_number_clean %>', '', '')">
+                      <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                      <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dir_number_clean %></span>
+                    </div>
+                  <% ELSE. %>
+                    <span class="text-xs text-slate-400">-</span>
+                  <% ENDIF. %>
+                </td>
+              </tr>
+              <% ENDLOOP. %>
+            </tbody>
+          </table>
+        </div>
+      <% ENDIF. %>
+    </div>
+
+    <!-- ECO Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>Daftar ECO
+        </h3>
+        <div class="flex items-center gap-3">
+          <!-- ECO Filter -->
+          <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=ALL"
+               class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all <% IF LV_FILTER = 'ALL'. %>bg-white text-brand-700 shadow-sm<% ELSE. %>text-slate-500 hover:text-slate-700<% ENDIF. %>">
+              Semua ECO
+            </a>
+            <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=INWK"
+               class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all <% IF LV_FILTER = 'INWK'. %>bg-white text-brand-700 shadow-sm<% ELSE. %>text-slate-500 hover:text-slate-700<% ENDIF. %>">
+              In Work
+            </a>
+            <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=BMPR"
+               class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all <% IF LV_FILTER = 'BMPR'. %>bg-white text-brand-700 shadow-sm<% ELSE. %>text-slate-500 hover:text-slate-700<% ENDIF. %>">
+              BOM Pending
+            </a>
+            <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=BMAP"
+               class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all <% IF LV_FILTER = 'BMAP'. %>bg-white text-brand-700 shadow-sm<% ELSE. %>text-slate-500 hover:text-slate-700<% ENDIF. %>">
+              BOM Apprvd
+            </a>
+            <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=INSP"
+               class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all <% IF LV_FILTER = 'INSP'. %>bg-white text-brand-700 shadow-sm<% ELSE. %>text-slate-500 hover:text-slate-700<% ENDIF. %>">
+              Inspection
+            </a>
+            <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=REJC"
+               class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all <% IF LV_FILTER = 'REJC'. %>bg-white text-brand-700 shadow-sm<% ELSE. %>text-slate-500 hover:text-slate-700<% ENDIF. %>">
+              Rejected
+            </a>
+          </div>
+          <span class="text-xs text-slate-400 font-mono">Daftar Seluruh ECO</span>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200">
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">ECR No</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Judul</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Material</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Kategori</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Prioritas</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Requester</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tanggal</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <%= GV_ECO_HTML %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Material History Search -->
+    <div id="matHistory" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+          <i class="fas fa-history text-purple-500 mr-2"></i>Riwayat Perubahan Material
+        </h3>
+        <p class="text-xs text-slate-500 mt-1">Cari material untuk melihat semua riwayat perubahan ECR</p>
+      </div>
+      <div class="p-5">
+        <form method="get" class="flex items-center gap-3 mb-4">
+          <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+          <input type="hidden" name="r" value="<%= GV_ROLE %>">
+          <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+          <div class="relative flex-1 max-w-xl">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input type="text" name="mat_search" value="<%= GV_MAT_SEARCH %>"
+              placeholder="Ketik nomor material atau deskripsi..."
+              class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+          </div>
+          <button type="submit" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
+            <i class="fas fa-search text-[0.65rem]"></i> Cari
+          </button>
+          <% IF GV_MAT_SEARCH IS NOT INITIAL. %>
+          <a href="viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>"
+            class="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+            <i class="fas fa-times text-[0.65rem]"></i> Reset
+          </a>
+          <% ENDIF. %>
+        </form>
+
+        <% IF GV_MAT_SEARCH IS NOT INITIAL. %>
+          <% IF GV_MAT_HISTORY_HTML IS INITIAL. %>
+            <div class="py-12 text-center">
+              <svg class="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <p class="text-sm text-slate-400">Tidak ditemukan riwayat untuk "<strong><%= GV_MAT_SEARCH %></strong>"</p>
+            </div>
+          <% ELSE. %>
+            <div class="space-y-4">
+              <%= GV_MAT_HISTORY_HTML %>
+            </div>
+          <% ENDIF. %>
+        <% ENDIF. %>
+      </div>
+    </div>
+
+    <!-- Audit Trail Modal Overlay -->
+    <div id="detailModal" class="fixed inset-0 bg-black/50 z-[9999] items-center justify-center hidden">
+      <div class="bg-white rounded-2xl max-w-[900px] w-[90%] max-h-[85vh] overflow-y-auto shadow-2xl">
+        <div class="p-6 border-b border-slate-200 rounded-t-2xl" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-white">Audit Trail</h2>
+              <p class="text-[0.78rem] text-emerald-200">Riwayat perubahan ECR</p>
+            </div>
+            <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-all">
+              <span class="text-base font-bold">&times;</span>
+            </button>
+          </div>
+        </div>
+        <div class="p-6">
+
+      <div class="p-6">
+        <!-- ECR Header -->
+        <div class="flex items-center gap-3 mb-4">
+          <h3 class="text-lg font-extrabold text-slate-900"><%= LS_ECR_DETAIL-ecr_no %></h3>
+          <span class="px-2.5 py-1 rounded-md text-[0.68rem] font-bold bg-brand-50 text-brand-700 border border-brand-200"><%= LS_ECR_DETAIL-kategori %></span>
+          <span class="text-[0.78rem] text-slate-600"><%= LS_ECR_DETAIL-title %></span>
+        </div>
+
+        <!-- Status + Priority + Kategori badges -->
+        <div class="flex items-center gap-2 mb-4">
+          <span class="px-2.5 py-1 rounded-full text-[0.65rem] font-bold" style="
+            <% IF LS_ECR_DETAIL-status = 'CRTD'. %>background:#DBEAFE;color:#1D4ED8
+            <% ELSEIF LS_ECR_DETAIL-status = 'INWK'. %>background:#FFEDD5;color:#C2410C
+            <% ELSEIF LS_ECR_DETAIL-status = 'BMPR'. %>background:#FEF3C7;color:#B45309
+            <% ELSEIF LS_ECR_DETAIL-status = 'BMAP'. %>background:#CCFBF1;color:#0F766E
+            <% ELSEIF LS_ECR_DETAIL-status = 'INSP'. %>background:#FEF9C3;color:#854D0E
+            <% ELSEIF LS_ECR_DETAIL-status = 'CLSD'. %>background:#D1FAE5;color:#065F46
+            <% ELSEIF LS_ECR_DETAIL-status = 'REJC'. %>background:#FEE2E2;color:#B91C1C
+            <% ELSE. %>background:#F1F5F9;color:#475569<% ENDIF. %>">
+            <% IF LS_ECR_DETAIL-status = 'CRTD'. %>Draft
+            <% ELSEIF LS_ECR_DETAIL-status = 'INWK'. %>In Work
+            <% ELSEIF LS_ECR_DETAIL-status = 'BMPR'. %>BOM Pending
+            <% ELSEIF LS_ECR_DETAIL-status = 'BMAP'. %>BOM Approved
+            <% ELSEIF LS_ECR_DETAIL-status = 'INSP'. %>Inspection
+            <% ELSEIF LS_ECR_DETAIL-status = 'CLSD'. %>Closed
+            <% ELSEIF LS_ECR_DETAIL-status = 'REJC'. %>Rejected
+            <% ELSE. %><%= LS_ECR_DETAIL-status %><% ENDIF. %>
+          </span>
+          <span class="px-2.5 py-1 rounded-full text-[0.65rem] font-bold bg-slate-100 text-slate-700"><%= LS_ECR_DETAIL-priority %></span>
+        </div>
+
+        <!-- Info Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
+          <div class="bg-slate-50 rounded-lg p-3">
+            <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Material</p>
+            <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-matnr_fg_no_zero %></p>
+            <p class="text-[0.7rem] text-slate-500 truncate" title="<%= LS_ECR_DETAIL-maktx %>"><%= LS_ECR_DETAIL-maktx %></p>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3">
+            <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Drafter</p>
+            <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-drafter_name %></p>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3">
+            <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Requester</p>
+            <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-requester_name %></p>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3">
+            <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Departemen</p>
+            <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-zdept %></p>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3">
+            <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Alasan</p>
+            <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-zreason %></p>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3">
+            <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Estimasi Biaya</p>
+            <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-cost_estimate %></p>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div class="mb-4 p-3 bg-slate-50 rounded-lg">
+          <p class="text-[0.65rem] font-bold text-slate-400 uppercase mb-1">Deskripsi</p>
+          <p class="text-sm text-slate-700"><%= LS_ECR_DETAIL-descr %></p>
+        </div>
+
+        <!-- DMS Link -->
+        <% IF LS_ECR_DETAIL-dms_found = abap_true. %>
+        <div class="mb-4 p-3 bg-green-50 rounded-lg border border-green-200 cursor-pointer hover:bg-green-100 transition-all"
+             onclick="viewDms('<%= LS_ECR_DETAIL-dms_dokar %>','<%= LS_ECR_DETAIL-dms_doknr %>','<%= LS_ECR_DETAIL-dms_dokvr %>','<%= LS_ECR_DETAIL-dms_doktl %>')">
+          <p class="text-xs font-bold text-green-700">DMS: <%= LS_ECR_DETAIL-dms_doknr %></p>
+          <p class="text-[0.65rem] text-green-600">Klik untuk lihat dokumen &rarr;</p>
+        </div>
+        <% ELSEIF LS_ECR_DETAIL-dir_number_clean IS NOT INITIAL. %>
+        <div class="mb-4 p-3 bg-green-50 rounded-lg border border-green-200 cursor-pointer hover:bg-green-100 transition-all"
+             onclick="viewDms('', '<%= LS_ECR_DETAIL-dir_number_clean %>', '', '')">
+          <p class="text-xs font-bold text-green-700">DMS: <%= LS_ECR_DETAIL-dir_number_clean %></p>
+          <p class="text-[0.65rem] text-green-600">Klik untuk lihat dokumen &rarr;</p>
+        </div>
+        <% ENDIF. %>
+
+        <!-- Audit Trail Timeline -->
+        <% IF LT_LOGS IS INITIAL. %>
+          <div class="py-10 text-center">
+            <p class="text-sm text-slate-400">Belum ada riwayat perubahan</p>
+          </div>
+        <% ELSE. %>
+          <div class="relative pl-8 before:content-[''] before:absolute before:left-3 before:top-0 before:bottom-0 before:w-0.5 before:bg-slate-200">
+            <% LOOP AT LT_LOGS INTO LS_LOG. %>
+              <div class="relative mb-4 p-3 bg-white border border-slate-200 rounded-lg">
+                <div class="absolute -left-[22px] top-4 w-2.5 h-2.5 rounded-full bg-brand-600 border-[3px] border-white shadow-[0_0_0_2px_#059669]"></div>
+                <span class="inline-block px-2 py-0.5 rounded text-[0.6rem] font-bold uppercase tracking-wide
+                  <% IF LS_LOG-action = 'CREA'. %>bg-amber-50 text-amber-700
+                  <% ELSEIF LS_LOG-action = 'APPR'. %>bg-green-50 text-green-700
+                  <% ELSEIF LS_LOG-action = 'INSP'. %>bg-emerald-50 text-emerald-700
+                  <% ELSEIF LS_LOG-action = 'REJT'. %>bg-red-50 text-red-700
+                  <% ELSEIF LS_LOG-action = 'REVS'. %>bg-orange-50 text-orange-700
+                  <% ELSEIF LS_LOG-action = 'CLSD'. %>bg-green-50 text-green-700
+                  <% ELSEIF LS_LOG-action = 'CANC'. %>bg-slate-100 text-slate-600
+                  <% ELSE. %>bg-slate-50 text-slate-700
+                  <% ENDIF. %>">
+                  <%= LS_LOG-action_label %>
+                </span>
+                <div class="text-[0.72rem] text-slate-400 mt-1">
+                  <%= LS_LOG-action_date+6(2) %>.<%= LS_LOG-action_date+4(2) %>.<%= LS_LOG-action_date(4) %> <%= LS_LOG-action_time(2) %>:<%= LS_LOG-action_time+2(2) %>
+                </div>
+                <div class="text-[0.75rem] font-semibold text-slate-600">oleh: <%= LS_LOG-user_name %></div>
+                <% IF LS_LOG-old_status IS NOT INITIAL OR LS_LOG-new_status IS NOT INITIAL. %>
+                  <div class="text-[0.75rem] text-slate-500 mt-1">
+                    Status: <strong><%= LS_LOG-old_label %></strong> &rarr; <strong><%= LS_LOG-new_label %></strong>
+                  </div>
+                <% ENDIF. %>
+                <% IF LS_LOG-reason IS NOT INITIAL. %>
+                  <div class="text-[0.75rem] text-slate-600 mt-2 px-3 py-2 bg-amber-50 border-l-[3px] border-amber-400 rounded">
+                    <%= LS_LOG-reason %>
+                  </div>
+                <% ENDIF. %>
+              </div>
+            <% ENDLOOP. %>
+          </div>
+        <% ENDIF. %>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Chart.js -->
+  <script>
+    const COLORS = { IREQ:'#1E3A5F', CRTD:'#3B82F6', INWK:'#F59E0B', BMPR:'#D97706', BMAP:'#059669', INSP:'#EAB308', REJC:'#EF4444' };
+
+    const barValuePlugin = {
+        id: 'barValuePlugin',
+        afterDraw: function(chart) {
+            var ctx = chart.ctx; ctx.save();
+            chart.data.datasets.forEach(function(dataset, i) {
+                var meta = chart.getDatasetMeta(i);
+                if (!meta.hidden) { meta.data.forEach(function(bar, index) {
+                    var val = dataset.data[index];
+                    if (val > 0) { ctx.fillStyle='#1e293b'; ctx.font='bold 12px Plus Jakarta Sans'; ctx.textBaseline='middle';
+                        if (chart.options.indexAxis==='y') { ctx.textAlign='left'; ctx.fillText(val,bar.x+6,bar.y); }
+                        else { ctx.textAlign='center'; ctx.fillText(val,bar.x,bar.y-10); }
+                    }
+                }); }
+            }); ctx.restore();
+        }
+    };
+
+    function setRange(months) {
+      var today = new Date();
+      var from = new Date(today.getFullYear(), today.getMonth() - (months - 1), 1);
+      var fromStr = from.getFullYear() + '-' + String(from.getMonth() + 1).padStart(2, '0') + '-' + String(from.getDate()).padStart(2, '0');
+      var toStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+      document.querySelector('input[name="date_from"]').value = fromStr;
+      document.querySelector('input[name="date_to"]').value = toStr;
+      document.getElementById('dateFilterForm').submit();
+    }
+
+    Chart.register(barValuePlugin);
+
+    new Chart(document.getElementById('volumeChart'), {
+        type:'bar', data:{ labels:<%= GV_MONTHS_LABELS %>, datasets:[
+            {label:'Request Masuk',data:<%= GV_MONTHS_IREQ %>,backgroundColor:COLORS.IREQ,borderRadius:4},
+            {label:'Draft (ECR)',data:<%= GV_MONTHS_CRTD %>,backgroundColor:COLORS.CRTD,borderRadius:4},
+            {label:'In Work (ECO)',data:<%= GV_MONTHS_INWK %>,backgroundColor:COLORS.INWK,borderRadius:4},
+            {label:'BOM Pending',data:<%= GV_MONTHS_BMPR %>,backgroundColor:COLORS.BMPR,borderRadius:4},
+            {label:'BOM Approved',data:<%= GV_MONTHS_BMAP %>,backgroundColor:COLORS.BMAP,borderRadius:4},
+            {label:'Inspection',data:<%= GV_MONTHS_INSP %>,backgroundColor:COLORS.INSP,borderRadius:4},
+            {label:'Rejected',data:<%= GV_MONTHS_REJC %>,backgroundColor:COLORS.REJC,borderRadius:4}
+        ]}, options:{ responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:11,family:'Plus Jakarta Sans'}}} },
+            scales:{ x:{stacked:true,grid:{display:false}}, y:{stacked:true,beginAtZero:true,grid:{color:"#f1f5f9"},ticks:{display:false}} }
+        }
+    });
+
+    new Chart(document.getElementById('statusChart'), {
+        type:'bar', data:{ labels:['Request Masuk','Draft','In Work','BOM Pending','BOM Approved','Inspection','Rejected'], datasets:[{
+            data:[<%= GV_COUNT_IREQ %>,<%= GV_COUNT_CRTD %>,<%= GV_COUNT_INWK %>,<%= GV_COUNT_BMPR %>,<%= GV_COUNT_BMAP %>,<%= GV_COUNT_INSP %>,<%= GV_COUNT_REJC %>],
+            backgroundColor:[COLORS.IREQ,COLORS.CRTD,COLORS.INWK,COLORS.BMPR,COLORS.BMAP,COLORS.INSP,COLORS.REJC], borderRadius:4, barThickness:20
+        }]}, options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{display:false} },
+            scales:{ x:{beginAtZero:true,grid:{display:false},ticks:{display:false}}, y:{grid:{display:false},ticks:{font:{family:'Plus Jakarta Sans',size:12,weight:'600'}}} }
+        }
+    });
+  </script>
+
+  <!-- Actions (read-only: detail + DMS only) -->
+  <script>
+    function openDetail(ecrNo) {
+      window.location.href = 'viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=<%= LV_FILTER %>&ecr_detail=' + ecrNo;
+    }
+
+    function closeModal() {
+      window.location.href = 'viewer_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=<%= LV_FILTER %>';
+    }
+
+    // Auto-open modal if ecr_detail in URL
+    (function() {
+      var urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('ecr_detail')) {
+        var modal = document.getElementById('detailModal');
+        if (modal) {
+          modal.classList.remove('hidden');
+          modal.classList.add('flex');
+        }
+      }
+    })();
+
+    function viewDms(dokar, doknr, dokvr, doktl) {
+      window.location.href = 'dms_detail.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&DOKAR=' + encodeURIComponent(dokar.trim()) + '&DOKNR=' + encodeURIComponent(doknr.trim()) + '&DOKVR=' + encodeURIComponent(dokvr.trim()) + '&DOKTL=' + encodeURIComponent(doktl.trim());
+    }
+
+    // Auto-scroll to material history section after search
+    <% IF GV_MAT_SEARCH IS NOT INITIAL. %>
+    var matSection = document.getElementById("matHistory");
+    if (matSection) { matSection.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    <% ENDIF. %>
+
+    // ECR table filter (client-side: text + dropdowns)
+    function filterEcrTable() {
+      var kw = (document.getElementById('ecrSearch').value || '').toLowerCase();
+      var kat = document.getElementById('filterKat').value;
+      var pri = document.getElementById('filterPri').value;
+      var sts = document.getElementById('filterStatus').value;
+      var req = document.getElementById('filterReq').value;
+      document.querySelectorAll('#ecrTableBody tr').forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        var matchKw = !kw || text.indexOf(kw) > -1;
+        var matchKat = !kat || row.getAttribute('data-kat') === kat;
+        var matchPri = !pri || row.getAttribute('data-pri') === pri;
+        var matchSts = !sts || row.getAttribute('data-sts') === sts;
+        var matchReq = !req || (row.getAttribute('data-req') || '') === req;
+        row.style.display = (matchKw && matchKat && matchPri && matchSts && matchReq) ? '' : 'none';
+      });
+    }
+
+    function resetFilters() {
+      document.getElementById('ecrSearch').value = '';
+      document.getElementById('filterKat').value = '';
+      document.getElementById('filterPri').value = '';
+      document.getElementById('filterStatus').value = '';
+      document.getElementById('filterReq').value = '';
+      filterEcrTable();
+    }
+
+    function toggleDetail(id) {
+        var detailRow = document.getElementById('detail-' + id);
+        var mainRow = document.getElementById('row-' + id);
+        if (detailRow && mainRow) {
+            if (detailRow.classList.contains('hidden')) {
+                detailRow.classList.remove('hidden');
+                mainRow.classList.add('bg-slate-50');
+            } else {
+                detailRow.classList.add('hidden');
+                mainRow.classList.remove('bg-slate-50');
+            }
+        }
+    }
+    
+    function downloadAttachment(attId) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '';
+        form.target = '_blank';
+        
+        var inputAction = document.createElement('input');
+        inputAction.type = 'hidden';
+        inputAction.name = 'OnInputProcessing';
+        inputAction.value = 'download_att';
+        form.appendChild(inputAction);
+        
+        var inputId = document.createElement('input');
+        inputId.type = 'hidden';
+        inputId.name = 'att_id';
+        inputId.value = attId;
+        form.appendChild(inputId);
+        
+        document.body.appendChild(form);
+        form.submit();
+        setTimeout(function() { document.body.removeChild(form); }, 100);
+    }
+    
+    function openLightbox(imgSrc) {
+        Swal.fire({
+            imageUrl: imgSrc,
+            imageAlt: 'Bukti Persetujuan',
+            width: '80%',
+            showConfirmButton: true,
+            confirmButtonText: 'Tutup',
+            confirmButtonColor: '#64748b',
+            background: 'transparent',
+            backdrop: 'rgba(0,0,0,0.85)',
+            customClass: {
+                image: 'max-h-[85vh] object-contain rounded-md shadow-2xl bg-white p-2',
+                popup: 'p-0 bg-transparent'
+            }
+        });
+    }
+
+    // DMS link click handler (material history cards)
+    document.addEventListener('click', function(e) {
+      var dmsEl = e.target.closest('.dms-link');
+      if (dmsEl) {
+        var doknr = dmsEl.getAttribute('data-dmsnr');
+        if (doknr) {
+          window.location.href = 'dms_detail.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&DOKAR=&DOKNR=' + doknr + '&DOKVR=&DOKTL=';
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>

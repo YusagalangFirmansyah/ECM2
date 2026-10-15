@@ -1,0 +1,10 @@
+TYPES: tt_drap  TYPE STANDARD TABLE OF drap.
+TYPES: tt_files TYPE STANDARD TABLE OF cvapi_doc_file.
+
+TYPES: BEGIN OF ty_obj_link,
+        objky          TYPE drad-objky,
+        maktx          TYPE makt-maktx,
+        mtart          TYPE mara-mtart,
+        sort_priority  TYPE i,
+       END OF ty_obj_link.
+TYPES: tt_obj_link TYPE STANDARD TABLE OF ty_obj_link.

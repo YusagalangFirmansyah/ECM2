@@ -1,0 +1,129 @@
+* dms_detail OnInit
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+MV_DOKAR     = request->get_form_field( 'DOKAR' ).
+MV_DOKNR     = request->get_form_field( 'DOKNR' ).
+MV_DOKVR     = request->get_form_field( 'DOKVR' ).
+MV_DOKTL     = request->get_form_field( 'DOKTL' ).
+
+IF MV_DOKNR IS INITIAL.
+  MV_ERROR = 'Parameter DOKNR tidak valid.'.
+  RETURN.
+ENDIF.
+
+" Convert DOKNR with leading zeros
+CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+  EXPORTING  input  = MV_DOKNR
+  IMPORTING  output = MV_DOKNR.
+
+" If DOKAR is empty, lookup from DRAW by DOKNR
+IF MV_DOKAR IS INITIAL.
+  SELECT dokar, dokvr, doktl
+    INTO (@MV_DOKAR, @MV_DOKVR, @MV_DOKTL)
+    FROM draw
+    WHERE doknr = @MV_DOKNR
+    ORDER BY dokvr DESCENDING.
+    EXIT.
+  ENDSELECT.
+ENDIF.
+
+" Load document header + files via CVAPI
+DATA: ls_draw    TYPE draw,
+      lt_files   TYPE STANDARD TABLE OF cvapi_doc_file.
+
+CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
+  EXPORTING
+    pf_batchmode    = 'X'
+    pf_dokar        = MV_DOKAR
+    pf_doknr        = MV_DOKNR
+    pf_dokvr        = MV_DOKVR
+    pf_doktl        = MV_DOKTL
+    pf_active_files = space
+    pf_read_kpro    = 'X'
+  IMPORTING
+    psx_draw        = ls_draw
+  TABLES
+    pt_files        = lt_files
+  EXCEPTIONS
+    OTHERS          = 4.
+
+mt_files = lt_files.
+
+" Load header info via BAPI
+DATA: ls_header TYPE bapi_doc_draw2,
+      lt_desc   TYPE STANDARD TABLE OF bapi_doc_drat.
+
+CALL FUNCTION 'BAPI_DOCUMENT_GETDETAIL2'
+  EXPORTING
+    documenttype         = MV_DOKAR
+    documentnumber       = MV_DOKNR
+    documentpart         = MV_DOKTL
+    documentversion      = MV_DOKVR
+    getdocfiles          = ' '
+    getdocdescriptions   = 'X'
+  IMPORTING
+    documentdata         = ls_header
+  TABLES
+    documentdescriptions = lt_desc.
+
+ms_header = ls_header.
+
+" Load Status Log dari DRAP
+DATA: lt_status_log TYPE STANDARD TABLE OF drap.
+SELECT * FROM drap INTO TABLE lt_status_log
+  WHERE dokar = MV_DOKAR
+    AND doknr = MV_DOKNR
+    AND dokvr = MV_DOKVR
+    AND doktl = MV_DOKTL
+  ORDER BY stzae DESCENDING.
+mt_status_log = lt_status_log.
+
+" Load Object Links (Material) dari DRAD + MAKT
+DATA: ls_obj_link TYPE ty_obj_link.
+SELECT c~objky, d~maktx, e~mtart
+  INTO TABLE @mt_obj_links
+  FROM drad AS c
+  LEFT JOIN makt AS d
+    ON c~objky = d~matnr
+   AND d~spras = @sy-langu
+  LEFT JOIN mara AS e
+    ON c~objky = e~matnr
+  WHERE c~dokar = @MV_DOKAR
+    AND c~doknr = @MV_DOKNR
+    AND c~dokvr = @MV_DOKVR
+    AND c~doktl = @MV_DOKTL
+  ORDER BY c~objky.
+
+" Remove leading zeros from material numbers
+LOOP AT mt_obj_links INTO ls_obj_link.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING  input  = ls_obj_link-objky
+    IMPORTING  output = ls_obj_link-objky.
+  MODIFY mt_obj_links FROM ls_obj_link.
+ENDLOOP.
+
+" Assign sort priority: FERT=1, HALB=2, HALM=3, others=4, empty=5
+LOOP AT mt_obj_links INTO ls_obj_link.
+  CASE ls_obj_link-mtart.
+    WHEN 'FERT'. ls_obj_link-sort_priority = 1.
+    WHEN 'HALB'. ls_obj_link-sort_priority = 2.
+    WHEN 'HALM'. ls_obj_link-sort_priority = 3.
+    WHEN ''  .   ls_obj_link-sort_priority = 5.
+    WHEN OTHERS. ls_obj_link-sort_priority = 4.
+  ENDCASE.
+  MODIFY mt_obj_links FROM ls_obj_link.
+ENDLOOP.
+
+" Sort: priority first, then material number
+SORT mt_obj_links BY sort_priority objky.
+
+" Limit to 5
+IF lines( mt_obj_links ) > 5.
+  DELETE mt_obj_links FROM 6.
+ENDIF.
+
+" Set Navigation Parameters
+navigation->set_parameter( name = 'u' value = GV_USER_ID ).
+navigation->set_parameter( name = 'n' value = GV_FULL_NAME ).
+navigation->set_parameter( name = 'r' value = GV_ROLE ).

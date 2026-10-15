@@ -1,0 +1,18 @@
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ).
+  EXIT.
+ENDIF.
+
+IF GV_ROLE <> 'SUPERADMIN' AND GV_ROLE <> 'ADMIN'.
+  navigation->goto_page( 'login.htm' ).
+  EXIT.
+ENDIF.
+
+CLEAR GV_MESSAGE.
+
+SELECT * INTO TABLE @LT_USERS FROM zecm_user
+  ORDER BY zecm_user_id.

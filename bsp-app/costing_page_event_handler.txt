@@ -1,0 +1,74 @@
+﻿" =======================================================================
+" OnInputProcessing - costing_page.htm
+" =======================================================================
+DATA: LV_ACTION TYPE string,
+      lv_ecr_no TYPE string,
+      ls_req    TYPE zecm_req,
+      ls_log    TYPE zecm_log,
+      lv_url    TYPE string.
+
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+LV_ACTION    = request->get_form_field( 'OnInputProcessing' ).
+
+IF LV_ACTION = 'update_cost'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  
+  IF lv_ecr_no IS NOT INITIAL.
+    SELECT SINGLE * FROM zecm_req INTO ls_req WHERE ecr_no = lv_ecr_no.
+    IF sy-subrc = 0.
+      " Update status to CSTD (Costing Done)
+      ls_req-status = 'CSTD'.
+      MODIFY zecm_req FROM ls_req.
+      
+      IF sy-subrc = 0.
+        " Tulis ke Log Audit
+        ls_log-mandt       = sy-mandt.
+        ls_log-ecr_no      = lv_ecr_no.
+        
+        CALL FUNCTION 'NUMBER_GET_NEXT'
+          EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+          IMPORTING number = ls_log-log_id
+          EXCEPTIONS OTHERS = 1.
+        
+        ls_log-action      = 'COSTING EVALUATED'.
+        ls_log-user_id     = GV_USER_ID.
+        ls_log-action_date = sy-datum.
+        ls_log-action_time = sy-uzeit.
+        ls_log-reason     = request->get_form_field( 'remarks' ).
+        IF ls_log-reason IS INITIAL.
+          ls_log-reason = 'Harga Material dan HPP telah disesuaikan di sistem SAP.'.
+        ENDIF.
+        
+        MODIFY zecm_log FROM ls_log.
+        
+        GV_MESSAGE = 'Konfirmasi Harga Berhasil Disimpan!'.
+        GV_ICON    = 'success'.
+      ELSE.
+        GV_MESSAGE = 'Gagal menyimpan update ke database.'.
+        GV_ICON    = 'error'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+  
+  DATA: lv_esc_msg TYPE string,
+        lv_temp_msg TYPE string.
+  lv_temp_msg = GV_MESSAGE.
+  lv_esc_msg = cl_http_utility=>escape_url( unescaped = lv_temp_msg ).
+  CONCATENATE 'costing_page.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' lv_esc_msg '&icon=' GV_ICON INTO lv_url.
+  navigation->goto_page( lv_url ).
+  RETURN.
+  
+ELSEIF LV_ACTION = 'search_dms'.
+  " Arahkan ke dms_list.htm atau dms_detail.htm dengan parameter pencarian
+  DATA: lv_search TYPE string.
+  lv_search = request->get_form_field( 'matnr' ).
+  
+  IF lv_search IS NOT INITIAL.
+    " Pindah ke halaman DMS List untuk mencari dokumen material tersebut
+    CONCATENATE 'dms_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&matnr=' lv_search INTO lv_url.
+    navigation->goto_page( lv_url ).
+    RETURN.
+  ENDIF.
+ENDIF.

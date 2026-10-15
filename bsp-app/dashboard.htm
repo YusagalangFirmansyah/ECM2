@@ -1,0 +1,134 @@
+<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Admin - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              200: '#a7f3d0',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#064e3b'
+            }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+
+<%@include file="superadmin_header.htm" %>
+
+<div class="px-8 py-7 max-w-[1100px] mx-auto">
+
+  <!-- Banner -->
+  <div class="relative overflow-hidden rounded-xl p-6 mb-6 shadow-sm" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+    <div class="absolute -top-[60px] -right-[30px] w-[200px] h-[200px] rounded-full" style="background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);"></div>
+    <h2 class="relative z-10 text-xl font-bold text-white mb-1">Selamat Datang, <%= GV_FULL_NAME %>.</h2>
+    <p class="relative z-10 text-[0.76rem] text-brand-200 font-medium">Panel admin ECM System - monitoring dan manajemen user.</p>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="grid grid-cols-3 gap-3 mb-5 max-md:grid-cols-2">
+
+    <!-- Created -->
+    <div class="bg-white rounded-[10px] p-5 border border-slate-200 border-l-[3px] border-l-amber-400 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+      <div class="flex items-center justify-end mb-3">
+        <div class="w-[7px] h-[7px] rounded-full bg-amber-400"></div>
+      </div>
+      <p class="text-[0.62rem] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Created</p>
+      <p class="text-[1.7rem] font-extrabold text-slate-900 leading-tight"><%= GV_ECR_CRTD %></p>
+    </div>
+
+    <!-- In Work -->
+    <div class="bg-white rounded-[10px] p-5 border border-slate-200 border-l-[3px] border-l-blue-500 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+      <div class="flex items-center justify-end mb-3">
+        <div class="w-[7px] h-[7px] rounded-full bg-blue-500"></div>
+      </div>
+      <p class="text-[0.62rem] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">In Work</p>
+      <p class="text-[1.7rem] font-extrabold text-slate-900 leading-tight"><%= GV_ECR_INWK %></p>
+    </div>
+
+    <!-- Approved -->
+    <div class="bg-white rounded-[10px] p-5 border border-slate-200 border-l-[3px] border-l-brand-600 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+      <div class="flex items-center justify-end mb-3">
+        <div class="w-[7px] h-[7px] rounded-full bg-brand-600"></div>
+      </div>
+      <p class="text-[0.62rem] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Approved</p>
+      <p class="text-[1.7rem] font-extrabold text-slate-900 leading-tight"><%= GV_ECR_APRV %></p>
+    </div>
+
+    <!-- Closed -->
+    <div class="bg-white rounded-[10px] p-5 border border-slate-200 border-l-[3px] border-l-brand-500 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+      <div class="flex items-center justify-end mb-3">
+        <div class="w-[7px] h-[7px] rounded-full bg-brand-500"></div>
+      </div>
+      <p class="text-[0.62rem] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Closed</p>
+      <p class="text-[1.7rem] font-extrabold text-slate-900 leading-tight"><%= GV_ECR_CLSD %></p>
+    </div>
+
+    <!-- Rejected -->
+    <div class="bg-white rounded-[10px] p-5 border border-slate-200 border-l-[3px] border-l-red-500 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+      <div class="flex items-center justify-end mb-3">
+        <div class="w-[7px] h-[7px] rounded-full bg-red-500"></div>
+      </div>
+      <p class="text-[0.62rem] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Rejected</p>
+      <p class="text-[1.7rem] font-extrabold text-slate-900 leading-tight"><%= GV_ECR_REJECTED %></p>
+    </div>
+
+    <!-- User Aktif -->
+    <div class="bg-white rounded-[10px] p-5 border border-slate-200 border-l-[3px] border-l-indigo-500 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+      <div class="flex items-center justify-end mb-3">
+        <div class="w-[7px] h-[7px] rounded-full bg-indigo-500"></div>
+      </div>
+      <p class="text-[0.62rem] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">User Aktif</p>
+      <p class="text-[1.7rem] font-extrabold text-slate-900 leading-tight"><%= GV_TOTAL_USERS %></p>
+    </div>
+  </div>
+
+  <!-- Total Card -->
+  <div class="bg-white rounded-[10px] p-5 flex items-center justify-between border border-slate-200 border-l-[3px] border-l-brand-600 shadow-sm">
+    <div>
+      <p class="text-[0.72rem] text-slate-500 font-medium mb-0.5">Total Engineering Change Request</p>
+      <p class="text-[2rem] font-extrabold text-slate-900 leading-tight"><%= GV_TOTAL_ECR %></p>
+    </div>
+    <div class="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center text-[0.9rem]">
+      <i class="fas fa-arrows-rotate"></i>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <p class="text-center mt-9 text-[0.64rem] text-slate-300 font-medium">&copy; 2026 PT. Kayu Mebel Indonesia - ECM System</p>
+</div>
+
+</body>
+</html>

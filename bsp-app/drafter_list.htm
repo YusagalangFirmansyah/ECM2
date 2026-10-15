@@ -1,0 +1,1746 @@
+<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ECR Drafter - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0',
+              500: '#10b981', 600: '#059669', 700: '#047857', 800: '#064e3b'
+            }
+          },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    .swal2-container {
+      z-index: 100000 !important;
+    }
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .toggle-active { background: #059669; color: white; }
+    .toggle-inactive { background: #f1f5f9; color: #64748b; }
+    html.overflow-hidden, body.overflow-hidden {
+      overflow: hidden !important;
+    }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+
+  <%@include file="drafter_header.htm" %>
+
+  <div class="px-8 py-7 max-w-[1600px] mx-auto">
+
+    <!-- Header Banner -->
+    <div class="relative overflow-hidden rounded-xl p-6 mb-6 shadow-sm" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+      <div class="absolute pointer-events-none -top-[60px] -right-[30px] w-[200px] h-[200px] rounded-full" style="background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);"></div>
+      <div class="flex items-center justify-between relative z-10">
+        <div>
+          <h1 class="text-xl font-bold text-white mb-1">ECR Drafter</h1>
+          <p class="text-[0.76rem] text-brand-200 font-medium">Daftar Tugas Engineering Change Request</p>
+        </div>
+        <div class="flex items-center gap-3 relative z-50">
+          <a href="dms_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>" class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
+            <svg
+class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1
+0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            DMS List
+          </a>
+          <button type="button" onclick="showBomGuide(1)"
+class="relative z-50 cursor-pointer px-4 py-2 bg-sky-500/20 hover:bg-sky-500/40 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2 border border-sky-400/30">
+            <i class="fas fa-book-open"></i> Panduan BOM
+          </button>
+
+          <button type="button" onclick="openNewEcrModal()" class="px-4 py-2 bg-white hover:bg-white/90 text-brand-700 rounded-lg text-sm font-bold transition-all flex items-center gap-2 shadow-sm">
+            + ECR Baru
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Date Range Filter -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+      <form method="get" id="dateFilterForm">
+        <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+        <input type="hidden" name="r" value="<%= GV_ROLE %>">
+        <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+        <input type="hidden" name="filter" value="<%= LV_FILTER %>">
+        <input type="hidden" name="view" value="<%= LV_VIEW_MODE %>">
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-calendar-alt text-emerald-600"></i>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">Filter Tanggal</span>
+          </div>
+          <input type="date" name="date_from" value="<%= GV_DATE_FROM %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          <span class="text-xs text-slate-400">s/d</span>
+          <input type="date" name="date_to" value="<%= GV_DATE_TO %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
+            <i class="fas fa-filter text-[0.65rem]"></i> Terapkan
+          </button>
+          <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+            <i class="fas fa-rotate-left text-[0.65rem]"></i> Reset
+          </a>
+          <div class="flex items-center gap-1.5 ml-2 border-l border-slate-200 pl-3">
+            <span class="text-[0.65rem] text-slate-400 font-semibold">Shortcut:</span>
+            <button type="button" onclick="setRange(1)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">1 Bulan</button>
+            <button type="button" onclick="setRange(2)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">2 Bulan</button>
+            <button type="button" onclick="setRange(6)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">6 Bulan</button>
+          </div>
+          <span class="text-[0.65rem] text-slate-400 ml-auto">
+            <i class="fas fa-info-circle"></i> Data dari <strong><%= GV_DATE_FROM %></strong> sampai <strong><%= GV_DATE_TO %></strong>
+          </span>
+        </div>
+      </form>
+    </div>
+
+    <!-- Status Cards -->
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-6">
+  
+        <!-- ECR Draft (CRTD) -->
+        <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=<%= LV_VIEW_MODE %>&filter=CRTD"
+class="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer">
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#EFF6FF;color:#3B82F6">
+            <i class="fas fa-file-circle-plus"></i>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">ECR Draft</p>
+            <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_CRTD %></p>
+            <p class="text-xs text-slate-400">Menunggu approval</p>
+          </div>
+        </a>
+  
+        <!-- Dalam Proses (INWK) -->
+        <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=<%= LV_VIEW_MODE %>&filter=INWK"
+class="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:border-amber-300 transition-all cursor-pointer">
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FFF7ED;color:#F59E0B">
+            <i class="fas fa-gears"></i>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Dalam Proses</p>
+            <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INWK %></p>
+            <p class="text-xs text-slate-400">ECO aktif</p>
+          </div>
+        </a>
+  
+        <!-- BOM Pending (BMPR) -->
+        <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=<%= LV_VIEW_MODE %>&filter=BMPR"
+class="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:border-amber-400 transition-all cursor-pointer">
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF3C7;color:#D97706">
+            <i class="fas fa-clock"></i>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Pending</p>
+            <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMPR %></p>
+            <p class="text-xs text-slate-400">Tunggu Master Data</p>
+          </div>
+        </a>
+  
+        <!-- BOM Approved (BMAP) -->
+        <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=<%= LV_VIEW_MODE %>&filter=BMAP"
+class="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer">
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#D1FAE5;color:#059669">
+            <i class="fas fa-check-double"></i>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Approved</p>
+            <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMAP %></p>
+            <p class="text-xs text-slate-400">Siap submit</p>
+          </div>
+        </a>
+  
+        <!-- Inspection (INSP) -->
+        <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=<%= LV_VIEW_MODE %>&filter=INSP"
+class="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:border-yellow-300 transition-all cursor-pointer">
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEFCE8;color:#EAB308">
+            <i class="fas fa-magnifying-glass"></i>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Inspection</p>
+            <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INSP %></p>
+            <p class="text-xs text-slate-400">Tunggu review</p>
+          </div>
+        </a>
+  
+          <!-- CAD Approved (CLSD) -->
+          <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=<%= LV_VIEW_MODE %>&filter=CLSD"
+class="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:border-green-300 transition-all cursor-pointer">
+            <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#F0FDF4;color:#16A34A">
+              <i class="fas fa-file-circle-check"></i>
+            </div>
+            <div>
+              <p class="text-[0.7rem] font-bold text-slate-500 uppercase tracking-wide mb-0.5">CAD Approved</p>
+              <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_CLSD %></p>
+              <p class="text-xs text-slate-400">Selesai</p>
+            </div>
+          </a>
+  
+        <!-- Ditolak (REJC) -->
+        <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=<%= LV_VIEW_MODE %>&filter=REJC"
+class="block bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md hover:border-red-300 transition-all cursor-pointer">
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF2F2;color:#EF4444">
+            <i class="fas fa-circle-xmark"></i>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Ditolak</p>
+            <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_REJC %></p>
+            <p class="text-xs text-slate-400">Rejected</p>
+          </div>
+        </a>
+  
+      </div>
+
+      <!-- Toggle + Filter -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Filter
+        </h3>
+      </div>
+      <form method="post">
+        <div class="px-5 py-4 flex flex-wrap gap-4 items-end">
+          <!-- Toggle: ECR Saya / ECR Selesai -->
+          <div class="flex-1 min-w-[240px]">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
+              Tampilkan
+            </label>
+            <div class="flex rounded-lg border border-slate-200 overflow-hidden">
+              <% IF LV_FILTER <> 'CLSD'. %>
+          <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=MEINE&filter=ALL"
+             class="flex-1 px-3 py-2.5 text-sm font-semibold text-center transition-all toggle-active">
+            <i class="fas fa-user-check mr-1.5"></i> ECR Saya
+          </a>
+              <% ELSE. %>
+          <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=MEINE&filter=ALL"
+             class="flex-1 px-3 py-2.5 text-sm font-semibold text-center transition-all
+                    toggle-inactive hover:bg-slate-100">
+            <i class="fas fa-user-check mr-1.5"></i> ECR Saya
+          </a>
+              <% ENDIF. %>
+              <% IF LV_FILTER = 'CLSD'. %>
+          <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=MEINE&filter=CLSD"
+             class="flex-1 px-3 py-2.5 text-sm font-semibold text-center transition-all toggle-active">
+            <i class="fas fa-check-circle mr-1.5"></i> ECR Selesai
+          </a>
+              <% ELSE. %>
+          <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&view=MEINE&filter=CLSD"
+             class="flex-1 px-3 py-2.5 text-sm font-semibold text-center transition-all
+                    toggle-inactive hover:bg-slate-100">
+            <i class="fas fa-check-circle mr-1.5"></i> ECR Selesai
+          </a>
+              <% ENDIF. %>
+            </div>
+          </div>
+          <!-- Status Filter -->
+          <div class="flex-1 min-w-[180px]">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Status</label>
+            <select name="filter" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-[0.82rem] text-slate-600 bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+              <option value="ALL"<% IF LV_FILTER = 'ALL'. %> selected<% ENDIF. %>>Semua Status</option>
+              <option value="CRTD"<% IF LV_FILTER = 'CRTD'. %> selected<% ENDIF. %>>Draft (CRTD)</option>
+              <option value="INWK"<% IF LV_FILTER = 'INWK'. %> selected<% ENDIF. %>>In Work (INWK)</option>
+              <option value="BMPR"<% IF LV_FILTER = 'BMPR'. %> selected<% ENDIF. %>>BOM Pending (BMPR)</option>
+              <option value="BMAP"<% IF LV_FILTER = 'BMAP'. %> selected<% ENDIF. %>>BOM Approved (BMAP)</option>
+              <option value="INSP"<% IF LV_FILTER = 'INSP'. %> selected<% ENDIF. %>>Inspeksi (INSP)</option>
+              <option value="CLSD"<% IF LV_FILTER = 'CLSD'. %> selected<% ENDIF. %>>Closed (CLSD)</option>
+              <option value="REJC"<% IF LV_FILTER = 'REJC'. %> selected<% ENDIF. %>>Rejected (REJC)</option>
+            </select>
+          </div>
+          <input type="hidden" name="view" value="MEINE">
+          <button type="submit" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-[0.82rem] font-semibold transition-all shadow-sm">
+            Filter
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ECR Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Daftar ECR
+          <% IF LV_FILTER = 'CLSD'. %>
+            <span class="ml-2 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+              ECR Selesai
+            </span>
+          <% ELSE. %>
+            <span class="ml-2 px-2 py-0.5 bg-brand-100 text-brand-700 text-xs font-bold rounded-full">
+              ECR Saya
+            </span>
+          <% ENDIF. %>
+        </h3>
+      </div>
+
+      <% IF LT_ECRS IS INITIAL. %>
+        <div class="py-16 text-center">
+          <svg
+class="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0
+01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+          <p class="text-sm text-slate-400">Tidak ada ECR ditemukan</p>
+        </div>
+      <% ELSE. %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200">
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">ECR No</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Judul</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Material</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Kategori</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Prioritas</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DMS</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">BOM</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tanggal</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <% LOOP AT LT_ECRS INTO LS_ECR. %>
+              <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="openDetail('<%= LS_ECR-ecr_no %>')">
+                <td class="px-4 py-3 font-bold text-brand-600"><%= LS_ECR-ecr_no %></td>
+                <td class="px-4 py-3 text-slate-700 max-w-[200px] truncate" title="<%= LS_ECR-title %>"><%= LS_ECR-title %></td>
+                <td class="px-4 py-3">
+                  <div class="text-xs">
+                    <span class="font-semibold text-slate-700"><%= LS_ECR-matnr_fg_no_zero %></span>
+                    <div class="text-slate-500 text-[0.7rem] truncate max-w-[180px]" title="<%= LS_ECR-maktx %>"><%= LS_ECR-maktx %></div>
+                  </div>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="inline-block px-2 py-1 rounded-md bg-amber-100 text-amber-700 text-xs font-semibold uppercase tracking-wide">
+                    <%= LS_ECR-kategori %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <% IF LS_ECR-priority = 'CRITICAL'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-red-100 text-red-700 text-xs font-bold">Critical</span>
+                  <% ELSEIF LS_ECR-priority = 'HIGH'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-orange-100 text-orange-700 text-xs font-bold">High</span>
+                  <% ELSEIF LS_ECR-priority = 'MEDIUM'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-blue-100 text-blue-700 text-xs font-bold">Medium</span>
+                  <% ELSEIF LS_ECR-priority = 'LOW'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-bold">Low</span>
+                  <% ELSE. %>
+                    <span class="text-xs text-slate-400">-</span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3">
+                    <% IF LS_ECR-status = 'CRTD'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wide border border-blue-200">Draft</span>
+                  <% ELSEIF LS_ECR-status = 'INWK'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-orange-50 text-orange-700 text-xs font-bold uppercase tracking-wide border border-orange-200">In Work</span>
+                  <% ELSEIF LS_ECR-status = 'BMPR'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-xs font-bold uppercase tracking-wide border border-amber-200">BOM Pending</span>
+                  <% ELSEIF LS_ECR-status = 'BMAP'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-teal-50 text-teal-700 text-xs font-bold uppercase tracking-wide border border-teal-200">BOM Approved</span>
+                  <% ELSEIF LS_ECR-status = 'INSP'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-yellow-50 text-yellow-700 text-xs font-bold uppercase tracking-wide border border-yellow-200">Inspeksi</span>
+                  <% ELSEIF LS_ECR-status = 'CLSD'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-bold uppercase tracking-wide border border-green-200">Closed</span>
+                  <% ELSEIF LS_ECR-status = 'REJC'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-red-50 text-red-700 text-xs font-bold uppercase tracking-wide border border-red-200">Rejected</span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3" id="td_dms_<%= LS_ECR-ecr_no %>">
+                    <% IF LS_ECR-status = 'INWK' OR LS_ECR-status = 'BMAP'. %>
+                      <% IF LS_ECR-dms_found = abap_true. %>
+                        <div class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors"
+                             onclick="event.stopPropagation(); viewDms('<%= LS_ECR-dms_dokar %>', '<%= LS_ECR-dms_doknr %>', '<%= LS_ECR-dms_dokvr %>', '<%= LS_ECR-dms_doktl %>')">
+                          <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                          <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dms_doknr %></span>
+                        </div>
+                      <% ELSEIF LS_ECR-dir_number_clean IS NOT INITIAL. %>
+                        <div class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors"
+                             onclick="event.stopPropagation(); viewDms('<%= LS_ECR-kategori %>', '<%= LS_ECR-dir_number_clean %>', '00', '000')">
+                          <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                          <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dir_number_clean %></span>
+                        </div>
+                      <% ELSEIF LS_ECR-bom_check = 'A'. %>
+                        <div class="flex items-center gap-1.5">
+                          <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                          <span class="text-xs text-amber-600 font-medium">Menunggu DMS...</span>
+                        </div>
+                      <% ELSE. %>
+                        <span class="text-xs text-slate-300">-</span>
+                      <% ENDIF. %>
+                  <% ELSEIF LS_ECR-status = 'INSP'. %>
+                    <% IF LS_ECR-dms_found = abap_true. %>
+                      <div
+class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors" onclick="event.stopPropagation(); viewDms('<%= LS_ECR-dms_dokar %>', '<%= LS_ECR-dms_doknr %>', '<%= LS_ECR-dms_dokvr %>',
+'<%= LS_ECR-dms_doktl %>')">
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                        <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dms_doknr %></span>
+                      </div>
+                    <% ELSEIF LS_ECR-dir_number_clean IS NOT INITIAL. %>
+                      <div class="flex items-center gap-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                        <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dir_number_clean %></span>
+                      </div>
+                    <% ELSE. %>
+                      <span class="text-xs text-slate-400">-</span>
+                    <% ENDIF. %>
+                  <% ELSEIF LS_ECR-status = 'CLSD'. %>
+                    <% IF LS_ECR-dms_found = abap_true. %>
+                      <div
+class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors" onclick="event.stopPropagation(); viewDms('<%= LS_ECR-dms_dokar %>', '<%= LS_ECR-dms_doknr %>', '<%= LS_ECR-dms_dokvr %>',
+'<%= LS_ECR-dms_doktl %>')">
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                        <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dms_doknr %></span>
+                      </div>
+                    <% ELSEIF LS_ECR-dir_number_clean IS NOT INITIAL. %>
+                      <div class="flex items-center gap-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                        <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dir_number_clean %></span>
+                      </div>
+                    <% ELSE. %>
+                      <span class="text-xs text-slate-400">-</span>
+                    <% ENDIF. %>
+                  <% ELSE. %>
+                    <span class="text-xs text-slate-400">-</span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3">
+                  <% IF LS_ECR-bom_check = 'P'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-[0.65rem] font-bold border border-amber-200">Pending</span>
+                  <% ELSEIF LS_ECR-bom_check = 'A'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-green-50 text-green-700 text-[0.65rem] font-bold border border-green-200">Ready</span>
+                  <% ELSEIF LS_ECR-bom_check = 'R'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-red-50 text-red-700 text-[0.65rem] font-bold border border-red-200">Rejected</span>
+                  <% ELSE. %>
+                    <span class="text-[0.65rem] text-slate-300">-</span>
+                  <% ENDIF. %>
+                  
+                  <% IF LS_ECR-impl_po IS NOT INITIAL OR ( LS_ECR-impl_date IS NOT INITIAL AND LS_ECR-impl_date <> '00000000' ). %>
+                    <div class="mt-1" title="Target Implementation">
+                      <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[0.6rem] font-bold border border-emerald-200">
+                        <i class="fas fa-clipboard-check"></i> Rilis
+                      </span>
+                    </div>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3 text-slate-500 text-xs">
+                  <%= LS_ECR-created_date+6(2) %>/<%= LS_ECR-created_date+4(2) %>/<%= LS_ECR-created_date(4) %>
+                </td>
+                <td class="px-4 py-3" id="td_act_<%= LS_ECR-ecr_no %>">
+                    <% IF LS_ECR-drafter = GV_USER_ID. %>
+                    <% IF LS_ECR-status = 'CRTD'. %>
+                      <span class="text-xs text-slate-400">Menunggu approval</span>
+                    <% ELSEIF LS_ECR-status = 'INWK'. %>
+                      <div class="flex gap-2">
+                        <% IF LS_ECR-dms_found = 'X' OR LS_ECR-dir_number_clean IS NOT INITIAL. %>
+                          <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="event.stopPropagation(); submitEcr('<%= LS_ECR-ecr_no %>', 'X')"
+                                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                              Submit
+                            </button>
+                            <button type="button" onclick="event.stopPropagation(); openDmsUploadModal('<%= LS_ECR-ecr_no %>', '<%= LS_ECR-matnr_fg_no_zero %>', '<%= LS_ECR-kategori %>')"
+                                    class="px-2.5 py-1.5 flex items-center gap-1.5 bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-600 rounded-md border border-slate-200 text-xs font-semibold transition-all shadow-sm"
+                                    title="Re-upload (Ganti File)">
+                              <i class="fas fa-file-upload text-[0.7rem]"></i> Re-upload
+                            </button>
+                          </div>
+                        <% ELSEIF LS_ECR-bom_check = 'A'. %>
+                          <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="event.stopPropagation();
+                                    openDmsUploadModal('<%= LS_ECR-ecr_no %>',
+                                    '<%= LS_ECR-matnr_fg_no_zero %>', '<%= LS_ECR-kategori %>')"
+                                    class="text-xs text-amber-500 hover:text-amber-600 font-semibold px-2 py-1
+                                           bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded
+                                           transition-colors cursor-pointer">
+                              Upload DMS
+                            </button>
+                            <button type="button"
+                                    onclick="event.stopPropagation(); rejectEcr('<%= LS_ECR-ecr_no %>')"
+                                    class="text-xs text-red-500 hover:text-red-600 font-semibold px-2.5 py-1
+                                           bg-red-50 hover:bg-red-100 border border-red-200 rounded
+                                           transition-colors cursor-pointer">
+                              Reject
+                            </button>
+                          </div>
+                        <% ELSE. %>
+                          <button type="button" onclick="event.stopPropagation(); openDetail('<%= LS_ECR-ecr_no %>')"
+                                  class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                            Upload BOM
+                          </button>
+                          <button type="button" onclick="event.stopPropagation(); rejectEcr('<%= LS_ECR-ecr_no %>')"
+                                  class="px-3 py-1.5 bg-red-400 hover:bg-red-500 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                            Reject
+                          </button>
+                        <% ENDIF. %>
+                      </div>
+                    <% ELSEIF LS_ECR-status = 'BMPR'. %>
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-amber-500 font-semibold">Menunggu BOM approval</span>
+                        <button type="button" onclick="event.stopPropagation(); cancelUploadBom('<%= LS_ECR-ecr_no %>')"
+                                class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[0.65rem] font-bold transition-all shadow-sm border border-slate-200"
+                                title="Batal Upload BOM">
+                          Batal
+                        </button>
+                      </div>
+                    <% ELSEIF LS_ECR-status = 'BMAP'. %>
+                      <div class="flex gap-2">
+                        <% IF LS_ECR-dms_found = 'X' OR LS_ECR-dir_number_clean IS NOT INITIAL. %>
+                          <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="event.stopPropagation(); submitEcr('<%= LS_ECR-ecr_no %>', 'X')"
+                                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                              Submit
+                            </button>
+                            <button type="button" onclick="event.stopPropagation(); openDmsUploadModal('<%= LS_ECR-ecr_no %>', '<%= LS_ECR-matnr_fg_no_zero %>', '<%= LS_ECR-kategori %>')"
+                                    class="px-2.5 py-1.5 flex items-center gap-1.5 bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-600 rounded-md border border-slate-200 text-xs font-semibold transition-all shadow-sm"
+                                    title="Re-upload (Ganti File)">
+                              <i class="fas fa-file-upload text-[0.7rem]"></i> Re-upload
+                            </button>
+                          </div>
+                        <% ELSE. %>
+                          <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="event.stopPropagation();
+                                    openDmsUploadModal('<%= LS_ECR-ecr_no %>',
+                                    '<%= LS_ECR-matnr_fg_no_zero %>', '<%= LS_ECR-kategori %>')"
+                                    class="text-xs text-amber-500 hover:text-amber-600 font-semibold px-2 py-1
+                                           bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded
+                                           transition-colors cursor-pointer">
+                              Upload DMS
+                            </button>
+                            <button type="button"
+                                    onclick="event.stopPropagation(); rejectEcr('<%= LS_ECR-ecr_no %>')"
+                                    class="text-xs text-red-500 hover:text-red-600 font-semibold px-2.5 py-1
+                                           bg-red-50 hover:bg-red-100 border border-red-200 rounded
+                                           transition-colors cursor-pointer">
+                              Reject
+                            </button>
+                          </div>
+                        <% ENDIF. %>
+                      </div>
+                    <% ELSEIF LS_ECR-status = 'INSP'. %>
+                      <span class="text-xs text-slate-400">Menunggu review</span>
+                    <% ELSEIF LS_ECR-status = 'CLSD'. %>
+                      <span class="text-xs text-green-500 font-semibold">Selesai</span>
+                    <% ELSEIF LS_ECR-status = 'REJC'. %>
+                      <span class="text-xs text-red-500 font-semibold">Ditolak</span>
+                    <% ENDIF. %>
+                  <% ELSE. %>
+                    <span class="text-xs text-slate-400 font-semibold flex items-center gap-1" title="PIC ECR">
+                      <i class="fas fa-user-lock"></i> <%= LS_ECR-drafter_name %>
+                    </span>
+                  <% ENDIF. %>
+                </td>
+              </tr>
+              <% ENDLOOP. %>
+            </tbody>
+          </table>
+        </div>
+      <% ENDIF. %>
+    </div>
+
+  </div>
+
+  <!-- ECR Detail Modal (Audit Trail) -->
+  <div id="detailModal"
+       class="fixed inset-0 bg-black/50 z-[9999] items-center justify-center hidden overscroll-contain">
+    <div class="bg-white rounded-2xl max-w-[900px] w-[90%] max-h-[90vh] overflow-y-auto shadow-2xl
+                overscroll-contain">
+      <div class="p-6 border-b border-slate-200 rounded-t-2xl" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold text-white">Audit Trail</h2>
+            <p class="text-[0.78rem] text-brand-200">Riwayat perubahan ECR</p>
+          </div>
+          <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-all">
+            <span class="text-base font-bold">X</span>
+          </button>
+        </div>
+      </div>
+      <div class="p-6">
+        <% IF LS_ECR_DETAIL IS INITIAL. %>
+          <p class="text-center text-slate-400 py-10">ECR tidak ditemukan</p>
+        <% ELSE. %>
+          <!-- ECR Header -->
+          <div class="flex items-center gap-3 mb-5 pb-4 border-b border-slate-200">
+            <h3 class="text-lg font-extrabold text-slate-900"><%= LS_ECR_DETAIL-ecr_no %></h3>
+            <span class="px-2.5 py-1 rounded-md text-[0.68rem] font-bold bg-brand-50 text-brand-700 border border-brand-200"><%= LS_ECR_DETAIL-kategori %></span>
+            <span class="text-[0.78rem] text-slate-600"><%= LS_ECR_DETAIL-title %></span>
+          </div>
+
+          <!-- Info Badges -->
+          <div class="flex flex-wrap gap-2 mb-4">
+            <% IF LS_ECR_DETAIL-status = 'CRTD'. %>
+              <span class="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Created</span>
+            <% ELSEIF LS_ECR_DETAIL-status = 'INWK'. %>
+              <span class="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">In Work</span>
+            <% ELSEIF LS_ECR_DETAIL-status = 'INSP'. %>
+              <span class="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">Inspection</span>
+            <% ELSEIF LS_ECR_DETAIL-status = 'CLSD'. %>
+              <span class="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Closed</span>
+            <% ELSEIF LS_ECR_DETAIL-status = 'REJC'. %>
+              <span class="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Rejected</span>
+            <% ENDIF. %>
+            <span class="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700"><%= LS_ECR_DETAIL-priority %></span>
+            <span class="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700"><%= LS_ECR_DETAIL-kategori %></span>
+          </div>
+
+          <!-- Implementation Tracking (Rencana Rilis) -->
+          <% IF LS_ECR_DETAIL-impl_po IS NOT INITIAL OR ( LS_ECR_DETAIL-impl_date IS NOT INITIAL AND LS_ECR_DETAIL-impl_date <> '00000000' ). %>
+          <div class="mb-5 bg-emerald-50 border border-emerald-100 rounded-lg p-4">
+            <h4 class="text-[0.78rem] font-bold text-emerald-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <i class="fas fa-clipboard-check"></i> Rencana Implementasi Lapangan
+            </h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <span class="text-[0.65rem] font-bold text-emerald-600 block mb-1">Nomor PO</span>
+                <span class="text-[0.8rem] font-bold text-slate-800"><%= LS_ECR_DETAIL-impl_po %></span>
+              </div>
+              <div>
+                <span class="text-[0.65rem] font-bold text-emerald-600 block mb-1">Target Tanggal Rilis</span>
+                <span class="text-[0.8rem] font-bold text-slate-800">
+                  <% IF LS_ECR_DETAIL-impl_date IS NOT INITIAL AND LS_ECR_DETAIL-impl_date <> '00000000'. %>
+                    <%= LS_ECR_DETAIL-impl_date+6(2) %>/<%= LS_ECR_DETAIL-impl_date+4(2) %>/<%= LS_ECR_DETAIL-impl_date(4) %>
+                  <% ELSE. %>
+                    -
+                  <% ENDIF. %>
+                </span>
+              </div>
+            </div>
+            <% IF LS_ECR_DETAIL-impl_reason IS NOT INITIAL. %>
+            <div class="mt-3">
+              <span class="text-[0.65rem] font-bold text-emerald-600 block mb-1">Keterangan / Alasan</span>
+              <p class="text-[0.8rem] text-slate-700 whitespace-pre-wrap"><%= LS_ECR_DETAIL-impl_reason %></p>
+            </div>
+            <% ENDIF. %>
+          </div>
+          <% ENDIF. %>
+
+          <!-- ECR Info Grid -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div class="bg-slate-50 rounded-lg p-3">
+              <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Material</p>
+              <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-matnr_fg_no_zero %></p>
+              <p class="text-[0.7rem] text-slate-500 truncate" title="<%= LS_ECR_DETAIL-maktx %>"><%= LS_ECR_DETAIL-maktx %></p>
+            </div>
+            <div class="bg-slate-50 rounded-lg p-3">
+              <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Drafter</p>
+              <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-drafter_name %></p>
+            </div>
+            <div class="bg-slate-50 rounded-lg p-3">
+              <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Requester</p>
+              <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-requester_name %></p>
+            </div>
+            <div class="bg-slate-50 rounded-lg p-3">
+              <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Departemen</p>
+              <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-zdept %></p>
+            </div>
+            <div class="bg-slate-50 rounded-lg p-3">
+              <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Alasan</p>
+              <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-zreason %></p>
+            </div>
+            <div class="bg-slate-50 rounded-lg p-3">
+              <p class="text-[0.65rem] font-bold text-slate-400 uppercase">Estimasi Biaya</p>
+              <p class="text-sm font-semibold text-slate-700"><%= LS_ECR_DETAIL-cost_estimate %></p>
+            </div>
+          </div>
+
+          <!-- Description -->
+          <div class="mb-4 p-3 bg-slate-50 rounded-lg">
+            <p class="text-[0.65rem] font-bold text-slate-400 uppercase mb-1">Deskripsi</p>
+            <p class="text-sm text-slate-700"><%= LS_ECR_DETAIL-descr %></p>
+          </div>
+
+          <!-- BOM Gate Section -->
+          <% IF LS_ECR_DETAIL-status = 'INWK' OR LS_ECR_DETAIL-status = 'BMPR' OR LT_BOM_ATTS IS NOT INITIAL. %>
+            <div class="mb-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <i class="fas fa-file-pdf text-amber-600"></i>
+                  <p class="text-xs font-bold text-amber-700 uppercase tracking-wide">BOM Attachment</p>
+                </div>
+                <% IF LS_ECR_DETAIL-bom_check = 'P'. %>
+                  <span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-[0.65rem] font-bold rounded-full">Menunggu Review</span>
+                <% ELSEIF LS_ECR_DETAIL-bom_check = 'A'. %>
+                  <span class="px-2 py-0.5 bg-green-100 text-green-700 text-[0.65rem] font-bold rounded-full">Approved</span>
+                <% ELSEIF LS_ECR_DETAIL-bom_check = 'R'. %>
+                  <span class="px-2 py-0.5 bg-red-100 text-red-700 text-[0.65rem] font-bold rounded-full">Rejected</span>
+              <% ENDIF. %>
+              <% IF LS_ECR_DETAIL-bom_check = 'R' AND LS_ECR_DETAIL-bom_notes IS NOT INITIAL. %>
+                <div class="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p class="text-xs font-bold text-red-700 mb-1"><i class="fas fa-sticky-note"></i> Catatan Sebelumnya:</p>
+                  <p class="text-sm text-red-800"><%= LS_ECR_DETAIL-bom_notes %></p>
+                </div>
+              <% ENDIF. %>              </div>
+
+              <% IF LS_ECR_DETAIL-status = 'INWK' OR LS_ECR_DETAIL-status = 'BMPR'. %>
+                <!-- Upload Form -->
+                <form id="bomUploadForm" method="post" >
+                  <input type="hidden" name="OnInputProcessing" value="upload_bom">
+                  <input type="hidden" name="ecr_no" value="<%= LS_ECR_DETAIL-ecr_no %>">
+                  <div class="border-2 border-dashed border-amber-300 rounded-lg p-4 text-center bg-white">
+                    <i class="fas fa-cloud-upload-alt text-2xl text-amber-400 mb-2"></i>
+                    <% IF LS_ECR_DETAIL-status = 'BMPR'. %>
+                        <p class="text-xs font-bold text-red-500 mb-2">Upload file baru untuk menimpa lampiran lama</p>
+                      <% ELSE. %>
+                        <p class="text-xs text-slate-500 mb-2">Upload BOM list (Excel)</p>
+                      <% ENDIF. %>
+                    <input type="file" id="bomFile" accept=".xls,.xlsx" multiple
+class="block w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100">
+
+                    <input type="hidden" name="bom_file_b64" id="bomFileB64">
+                    <input type="hidden" name="bom_file_name" id="bomFileName">
+                    <input type="hidden" name="bom_file_type" id="bomFileType">
+                      <div class="mt-3">
+                      <label class="text-xs font-bold text-slate-600 mb-1 block">Catatan Perubahan BOM</label>
+                      <textarea name="bom_notes" rows="3"
+class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-amber-500" placeholder="Jelaskan perubahan BOM (material baru, perubahan qty, dll)..."><%= LS_ECR_DETAIL-bom_notes %></textarea>
+                    </div>                    <input type="hidden" name="bom_ecr_no" value="">
+                    <div class="mt-3 flex gap-2 justify-center">
+                      <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all">
+                        <i class="fas fa-upload mr-1"></i> Upload BOM
+                      </button>
+                      <button type="button" onclick="skipBom('<%= LS_ECR_DETAIL-ecr_no %>')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm">
+                        <i class="fas fa-forward-step mr-1"></i> Skip BOM (Tidak Ada Perubahan)
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              <% ENDIF. %>
+
+              <% IF LT_BOM_ATTS IS NOT INITIAL. %>
+                <!-- Attachment List -->
+                <div class="mt-3 space-y-2">
+                  <% LOOP AT LT_BOM_ATTS INTO LS_BOM_ATT. %>
+                    <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                      <div class="flex items-center gap-2">
+                        <i class="fas fa-file-pdf text-red-500"></i>
+                        <div>
+                          <p class="text-xs font-semibold text-slate-700"><%= LS_BOM_ATT-file_name %></p>
+                          <p class="text-[0.6rem] text-slate-400"><%= LS_BOM_ATT-file_size %> bytes</p>
+                        </div>
+                      </div>
+                      <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&OnInputProcessing=download_bom&ecr_no=<%= LS_BOM_ATT-ecr_no %>&att_id=<%= LS_BOM_ATT-att_id %>"
+                         class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[0.65rem] font-semibold transition-all">
+                        <i class="fas fa-download mr-1"></i>Download
+                      </a>
+                    </div>
+                  <% ENDLOOP. %>
+                </div>
+              <% ENDIF. %>
+            </div>
+          <% ENDIF. %>
+
+          <!-- DMS Link -->
+          <% IF LS_ECR_DETAIL-dms_doknr IS NOT INITIAL. %>
+          <div class="mb-4 p-3 bg-green-50 rounded-lg border border-green-200 cursor-pointer hover:bg-green-100 transition-all"
+               onclick="viewDms('<%= LS_ECR_DETAIL-dms_dokar %>','<%= LS_ECR_DETAIL-dms_doknr %>','<%= LS_ECR_DETAIL-dms_dokvr %>','<%= LS_ECR_DETAIL-dms_doktl %>')">
+            <div class="flex items-center gap-2">
+              <i class="fas fa-file-alt text-green-600"></i>
+              <div>
+                <p class="text-xs font-bold text-green-700">DMS: <%= LS_ECR_DETAIL-dms_doknr %></p>
+                <p class="text-[0.65rem] text-green-600">Klik untuk lihat dokumen &rarr;</p>
+              </div>
+            </div>
+          </div>
+          <% ENDIF. %>
+
+          <!-- Audit Trail -->
+          <% IF LT_LOGS IS INITIAL. %>
+            <div class="py-10 text-center">
+              <p class="text-sm text-slate-400">Belum ada riwayat perubahan</p>
+            </div>
+          <% ELSE. %>
+            <div class="relative pl-8 before:content-[''] before:absolute before:left-3 before:top-0 before:bottom-0 before:w-0.5 before:bg-slate-200">
+              <% LOOP AT LT_LOGS INTO LS_LOG. %>
+                <div class="relative mb-4 p-3 bg-white border border-slate-200 rounded-lg">
+                  <div class="absolute -left-[22px] top-4 w-2.5 h-2.5 rounded-full bg-brand-600 border-[3px] border-white shadow-[0_0_0_2px_#059669]"></div>
+                  <span class="inline-block px-2 py-0.5 rounded text-[0.6rem] font-bold uppercase tracking-wide
+                    <% IF LS_LOG-action = 'CREA'. %>bg-amber-50 text-amber-700
+                    <% ELSEIF LS_LOG-action = 'APPR'. %>bg-green-50 text-green-700
+                    <% ELSEIF LS_LOG-action = 'INSP'. %>bg-blue-50 text-blue-700
+                    <% ELSEIF LS_LOG-action = 'REJT'. %>bg-red-50 text-red-700
+                    <% ELSEIF LS_LOG-action = 'CANC'. %>bg-slate-100 text-slate-600
+                    <% ELSE. %>bg-slate-50 text-slate-700
+                    <% ENDIF. %>">
+                    <%= LS_LOG-action_label %>
+                  </span>
+                  <div class="text-[0.72rem] text-slate-400 mt-1">
+                    <%= LS_LOG-action_date+6(2) %>.<%= LS_LOG-action_date+4(2) %>.<%= LS_LOG-action_date(4) %> <%= LS_LOG-action_time(2) %>:<%= LS_LOG-action_time+2(2) %>
+                  </div>
+                  <div class="text-[0.75rem] font-semibold text-slate-600">oleh: <%= LS_LOG-user_name %></div>
+                  <% IF LS_LOG-old_status IS NOT INITIAL OR LS_LOG-new_status IS NOT INITIAL. %>
+                    <div class="text-[0.75rem] text-slate-500 mt-1">
+                      Status: <strong><%= LS_LOG-old_label %></strong> &rarr; <strong><%= LS_LOG-new_label %></strong>
+                    </div>
+                  <% ENDIF. %>
+                  <% IF LS_LOG-reason IS NOT INITIAL. %>
+                    <div class="text-[0.75rem] text-slate-600 mt-2 px-3 py-2 bg-amber-50 border-l-[3px] border-amber-400 rounded">
+                      <%= LS_LOG-reason %>
+                    </div>
+                  <% ENDIF. %>
+                </div>
+              <% ENDLOOP. %>
+            </div>
+          <% ENDIF. %>
+        <% ENDIF. %>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden form for actions -->
+  <form id="actionForm" method="post" action="" style="display:none;">
+    <input type="hidden" name="OnInputProcessing" id="actionType" value="">
+    <input type="hidden" name="ecr_no" id="actionEcrNo" value="">
+  </form>
+
+  <script>
+    function lockBodyScroll(lock) {
+      if (lock) {
+        document.body.classList.add('overflow-hidden');
+        document.documentElement.classList.add('overflow-hidden');
+      } else {
+        var anyOpen = false;
+        var modalIds = ['detailModal', 'dmsUploadModal', 'ecrModal'];
+        for (var i = 0; i < modalIds.length; i++) {
+          var m = document.getElementById(modalIds[i]);
+          if (m && !m.classList.contains('hidden')) {
+            anyOpen = true;
+            break;
+          }
+        }
+        if (!anyOpen) {
+          document.body.classList.remove('overflow-hidden');
+          document.documentElement.classList.remove('overflow-hidden');
+        }
+      }
+    }
+
+    function viewDms(dokar, doknr, dokvr, doktl) {
+window.location.href = 'dms_detail.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&DOKAR=' + encodeURIComponent(dokar.trim()) + '&DOKNR=' + encodeURIComponent(doknr.trim()) + '&DOKVR=' +
+encodeURIComponent(dokvr.trim()) + '&DOKTL=' + encodeURIComponent(doktl.trim());
+    }
+
+    function openDetail(ecrNo) {
+      window.location.href = 'drafter_list.htm?u=<%= GV_USER_ID %>&n=<%= GV_FULL_NAME %>&r=<%= GV_ROLE %>&ecr_detail=' + ecrNo;
+    }
+
+    function closeModal() {
+      lockBodyScroll(false);
+      window.location.href = 'drafter_list.htm?u=<%= GV_USER_ID %>&n=<%= GV_FULL_NAME %>&r=<%= GV_ROLE %>&view=<%= LV_VIEW_MODE %>&filter=<%= LV_FILTER %>';
+    }
+
+    function cancelUploadBom(ecrNo) {
+      Swal.fire({
+        title: 'Batal Upload BOM?',
+        text: 'Attachment BOM akan dihapus dan status kembali ke In Work.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Batalkan!'
+      }).then(function(result) {
+        if (result.isConfirmed) {
+          document.getElementById('actionType').value = 'cancel_upload_bom';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    function submitEcr(ecrNo, dmsFound) {
+      if (dmsFound !== 'X') {
+        Swal.fire({
+          icon: 'error',
+          title: 'DMS Belum Terdeteksi',
+          text: 'Tidak bisa submit! DMS dengan status In Work belum ditemukan untuk material ini.',
+          confirmButtonColor: '#dc2626'
+        });
+        return;
+      }
+      Swal.fire({
+        title: 'Submit ECR ' + ecrNo + '?',
+        text: 'ECR akan masuk ke tahap inspeksi.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#059669',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Submit!'
+      }).then(function(result) {
+        if (result.isConfirmed) {
+          document.getElementById('actionType').value = 'submit_ecr';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          var ri = document.createElement('input');
+          ri.type = 'hidden'; ri.name = 'reason'; ri.value = result.value;
+          document.getElementById('actionForm').appendChild(ri);
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    function rejectEcr(ecrNo) {
+      Swal.fire({
+        title: 'Reject ECR ' + ecrNo + '?',
+        text: 'Alasan reject wajib diisi.',
+        input: 'textarea',
+        inputPlaceholder: 'Alasan reject...',
+        inputValidator: (v) => !v && 'Alasan wajib diisi!',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Reject!'
+      }).then(function(result) {
+        if (result.isConfirmed) {
+          document.getElementById('actionType').value = 'reject_ecr';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          var ri = document.createElement('input');
+          ri.type = 'hidden'; ri.name = 'reason'; ri.value = result.value;
+          document.getElementById('actionForm').appendChild(ri);
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    <% IF LV_ECR_DETAIL IS NOT INITIAL. %>
+      var modal = document.getElementById('detailModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lockBodyScroll(true);
+    <% ENDIF. %>
+
+    <% IF GV_MESSAGE IS NOT INITIAL. %>
+      (function() {
+        var isBack = false;
+        var nav = performance.getEntriesByType("navigation");
+        if (nav.length > 0 && nav[0].type === "back_forward") {
+          isBack = true;
+        }
+        if (!isBack) {
+          Swal.fire({
+            icon: '<%= GV_ICON %>',
+            title: '<%= GV_MESSAGE %>',
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true
+          });
+        }
+      })();
+    <% ENDIF. %>
+
+    window.addEventListener("pageshow", function(e) {
+      if (e.persisted && typeof Swal !== "undefined") {
+        Swal.close();
+      }
+    });
+
+    // === Panduan BOM Gate Modal ===
+    window.showBomGuide = function(page) {
+      if (page === 1) {
+        var html1 = '<div style="text-align:left;line-height:1.5;font-size:13px;">' +
+          '<div style="background:#fffbeb;padding:15px;border-radius:8px;border:1px solid #fde68a;margin-bottom:10px;">' +
+          '<strong style="color:#92400e;"><i class="fas fa-clock mr-1"></i> Status Baru: BOM Pending (BMPR)</strong><br>' +
+          '<span style="color:#b45309;font-size:12px;">Setelah ECR di-approve oleh Admin, status ECR akan berubah menjadi BOM Pending. ECO belum bisa Submit ke Inspection sebelum list BOM di-update/Approve oleh Master Data.</span>' +
+          '</div>' +
+          '<div style="background:#ecfdf5;padding:15px;border-radius:8px;border:1px solid #a7f3d0;">' +
+          '<strong style="color:#065f46;"><i class="fas fa-check-double mr-1"></i> Status Baru: BOM Approved (BMAP)</strong><br>' +
+          '<span style="color:#047857;font-size:12px;">Setelah tim Master Data meregister BOM Anda ke SAP, status berubah menjadi BOM Approved. Tombol Submit ECO akan aktif dan Anda dapat meneruskan ECR ini.</span>' +
+          '</div></div>';
+        Swal.fire({
+          title: 'Panduan BOM Gate (1/2)',
+          html: html1,
+          showCancelButton: true,
+          showConfirmButton: true,
+          confirmButtonText: 'Next',
+          cancelButtonText: 'Tutup',
+          confirmButtonColor: '#3b82f6'
+        }).then(function(result) {
+          if (result.isConfirmed) showBomGuide(2);
+        });
+      } else {
+        var html2 = '<div style="text-align:left;line-height:1.5;font-size:13px;">' +
+          '<div style="background:#eff6ff;padding:15px;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:10px;">' +
+          '<strong style="color:#1e40af;"><i class="fas fa-forward-step mr-1"></i> Fitur Baru: Skip BOM</strong><br>' +
+          '<span style="color:#1d4ed8;font-size:12px;">Jika ECR Anda TIDAK ada perubahan BOM (misal: hanya merubah dimensi part tanpa mengubah bahan), Anda dapat menekan tombol Skip BOM pada menu Upload BOM.</span>' +
+          '</div>' +
+          '<div style="background:#f8fafc;padding:15px;border-radius:8px;border:1px solid #e2e8f0;">' +
+          '<strong style="color:#475569;">Efek Skip BOM:</strong>' +
+          '<ul style="margin-left:20px;color:#64748b;font-size:12px;">' +
+          '<li>Tidak perlu mengupload file Excel BOM.</li>' +
+          '<li>Status ECR langsung melompati BOM Pending dan menjadi BOM Approved.</li>' +
+          '<li>Dapat langsung men-submit ECO menjadi On-Inspection.</li>' +
+          '</ul></div></div>';
+        Swal.fire({
+          title: 'Panduan Skip BOM (2/2)',
+          html: html2,
+          showCancelButton: true,
+          showConfirmButton: true,
+          confirmButtonText: 'Prev',
+          cancelButtonText: 'Selesai',
+          confirmButtonColor: '#64748b',
+          cancelButtonColor: '#059669'
+        }).then(function(result) {
+          if (result.isConfirmed) showBomGuide(1);
+        });
+      }
+    };
+
+    window.uploadBOM = function(ecrNo) {
+      var el = document.querySelector('input[name="bom_ecr_no"]');
+      if (el) el.value = ecrNo;
+    };
+
+    window.skipBom = function(ecrNo) {
+      if (!ecrNo) {
+        var inputEcr = document.querySelector('#bomUploadForm input[name="ecr_no"]');
+        if (inputEcr) ecrNo = inputEcr.value;
+      }
+      Swal.fire({
+        title: 'Skip BOM?',
+        text: 'Apakah Anda yakin tidak ada perubahan BOM untuk ECR ini? ECR akan langsung siap disubmit.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#059669',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Ya, Skip BOM',
+        cancelButtonText: 'Batal',
+        target: document.body,
+        customClass: { popup: 'rounded-xl shadow-lg', container: '!z-[100000]' }
+      }).then(function(result) {
+        if (result.isConfirmed) {
+          document.getElementById('actionType').value = 'skip_bom';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          document.getElementById('actionForm').submit();
+        }
+      });
+    };
+    // === END Panduan BOM ===
+  </script>
+
+  <!-- DMS Upload Modal -->
+  <div id="dmsUploadModal"
+       class="fixed inset-0 bg-black/50 z-[9999] items-center justify-center hidden overscroll-contain">
+    <div class="bg-white rounded-2xl max-w-[500px] w-[95%] max-h-[90vh] overflow-y-auto shadow-2xl
+                overscroll-contain">
+      <div class="p-6 border-b border-slate-200 rounded-t-2xl" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+        <div class="flex justify-between items-center">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Upload CAD ke DMS</h2>
+            <p class="text-emerald-200 text-sm mt-1">Penyimpanan Otomatis ke KPRO & BOM</p>
+          </div>
+          <button type="button" onclick="closeDmsUploadModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+      
+      <div class="p-6">
+        <form id="dmsUploadForm" method="post" enctype="multipart/form-data">
+          <input type="hidden" name="OnInputProcessing" value="upload_dms">
+          <input type="hidden" name="dms_ecr_no" id="dms_ecr_no" value="">
+          
+          <div class="mb-5 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">No ECR</label>
+                <div id="disp_dms_ecr" class="font-bold text-slate-700 text-sm">-</div>
+              </div>
+              <div>
+                <label class="block text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Kategori</label>
+                <div id="disp_dms_dokar" class="font-bold text-emerald-600 text-sm">-</div>
+              </div>
+              <div class="col-span-2">
+                <label class="block text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Material Target</label>
+                <div id="disp_dms_matnr" class="font-bold text-slate-800 text-base">-</div>
+              </div>
+            </div>
+            <p class="text-xs text-slate-500 mt-3 border-t border-slate-200 pt-2"><i class="fas fa-info-circle text-sky-500 mr-1"></i> Data material dan kategori diambil otomatis dari dokumen ECR Anda.</p>
+          </div>
+
+          <div class="mb-5">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
+              File Dokumen (CAD/Excel/PDF/Archive) <span class="text-red-500">*</span>
+            </label>
+            <input type="file" id="dms_file_input" name="dms_file"
+              accept=".dwg,.dxf,.pdf,.xls,.xlsx,.rar,.zip"
+              class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 bg-slate-50"
+              multiple required>
+            <p class="text-xs text-slate-500 mt-1">
+              Pilih satu atau beberapa file (.dwg, .dxf, .pdf, .xls, .xlsx, .rar, .zip). Proses berjalan di background.
+            </p>
+          </div>
+          
+          <div class="mb-2">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Antrean Upload</label>
+            <div id="dms_file_list" class="max-h-40 overflow-y-auto pr-1">
+              <!-- JS will populate this -->
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end gap-3">
+        <button type="button" onclick="closeDmsUploadModal()" class="px-5 py-2.5 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-200 transition-colors">Batal</button>
+        <button type="button" onclick="submitDmsUpload()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all shadow-md">
+          <i class="fas fa-upload mr-1"></i> Upload & Simpan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ECR Form Modal -->
+  <div id="ecrModal"
+       class="fixed inset-0 bg-black/50 z-[9999] items-center justify-center hidden overscroll-contain">
+    <div class="bg-white rounded-2xl max-w-[700px] w-[95%] max-h-[90vh] overflow-y-auto shadow-2xl
+                overscroll-contain">
+      <div class="p-6 border-b border-slate-200 rounded-t-2xl" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold text-white">Buat ECR Baru</h2>
+            <p class="text-[0.78rem] text-emerald-200">Engineering Change Request</p>
+          </div>
+          <button onclick="closeEcrModal()" class="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-all">
+            <span class="text-base font-bold">X</span>
+          </button>
+        </div>
+      </div>
+      <div class="p-6">
+        <form id="ecrModalForm" method="post">
+          <input type="hidden" name="OnInputProcessing" value="">
+
+          <!-- Material Search (di atas) -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Material <span class="text-red-500">*</span></label>
+            <div class="flex gap-2 mb-2">
+              <input type="text" name="keyword" id="m_keyword" value="<%= LV_MAT_KEYWORD %>" placeholder="Cari material (nama/ID)..."
+class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <button type="button" onclick="doSearch()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-all">Cari</button>
+            </div>
+            <div id="m_results" class="max-h-[150px] overflow-y-auto border border-slate-200 rounded-lg">
+              <%= GV_MAT_RESULTS %>
+            </div>
+            <div class="mt-2">
+              <p class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Material Terpilih:</p>
+              <div id="m_selectedList" class="text-xs text-slate-500">Belum ada material dipilih</div>
+            </div>
+            <input type="hidden" name="materials" id="m_materials" value="">
+          </div>
+
+          <!-- Judul -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Judul Perubahan <span class="text-red-500">*</span></label>
+            <input type="text" name="title" id="m_title" placeholder="Contoh: Revisi dimensi kaki kursi"
+class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          </div>
+
+          <!-- Kategori -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Kategori <span class="text-red-500">*</span></label>
+            <div class="flex gap-3">
+              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                <input type="radio" name="kategori" value="DRW" class="accent-emerald-600">
+                <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
+              </label>
+              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
+                <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
+              </label>
+              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                <input type="radio" name="kategori" value="DMT" class="accent-emerald-600">
+                <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Prioritas -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Prioritas <span class="text-red-500">*</span></label>
+            <div class="flex gap-3">
+              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                <input type="radio" name="priority" value="CRITICAL" class="accent-red-600">
+                <div><div class="font-semibold text-sm text-red-600">Critical</div></div>
+              </label>
+              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                <input type="radio" name="priority" value="HIGH" class="accent-orange-500">
+                <div><div class="font-semibold text-sm text-orange-600">High</div></div>
+              </label>
+              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                <input type="radio" name="priority" value="MEDIUM" class="accent-blue-600">
+                <div><div class="font-semibold text-sm text-blue-600">Medium</div></div>
+              </label>
+              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                <input type="radio" name="priority" value="LOW" class="accent-slate-500">
+                <div><div class="font-semibold text-sm text-slate-600">Low</div></div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Estimasi Biaya -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Estimasi Dampak Biaya</label>
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-slate-500 font-semibold">Rp</span>
+              <input type="number" name="cost_estimate" placeholder="0 (opsional)"
+class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+            </div>
+          </div>
+
+          <!-- Departemen -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Departemen <span class="text-red-500">*</span></label>
+            <select name="dept" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+              <option value="">-- Pilih Departemen --</option>
+              <option value="Produksi">Produksi</option>
+              <option value="QC">Quality Control</option>
+              <option value="Purchasing">Purchasing</option>
+              <option value="Sales">Sales</option>
+              <option value="Drafter">Drafter</option>
+              <option value="Owner">Owner</option>
+            </select>
+          </div>
+
+          <!-- Alasan -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Alasan Perubahan <span class="text-red-500">*</span></label>
+            <select name="reason" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+              <option value="">-- Pilih Alasan --</option>
+              <option value="Koreksi Cacat">Koreksi Cacat</option>
+              <option value="Reduksi Biaya">Reduksi Biaya</option>
+              <option value="Perbaikan Desain">Perbaikan Desain</option>
+              <option value="Perubahan Bahan">Perubahan Bahan</option>
+              <option value="Req. Buyer">Req. Buyer</option>
+              <option value="Kepatuhan Standar Industri">Kepatuhan Standar Industri</option>
+                <option value="Upload File Baru">Upload File Baru</option>
+            </select>
+          </div>
+
+          <!-- Deskripsi -->
+          <div class="mb-4">
+            <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Deskripsi Perubahan <span class="text-red-500">*</span></label>
+            <textarea name="description" rows="3" placeholder="Jelaskan perubahan yang diinginkan..."
+class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none"></textarea>
+          </div>
+
+          <!-- Submit -->
+          <div class="flex gap-3 pt-2">
+            <button type="button" onclick="closeEcrModal()" class="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">Batal</button>
+            <button type="button" onclick="submitEcrForm()" class="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm">Buat ECR</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .radio-card { transition: all 0.15s; }
+    .radio-card:has(input:checked) { border-color: #059669; background: #ecfdf5; }
+  </style>
+
+  <script>
+    var selectedMats = {};
+
+    function resetEcrModal() {
+      var form = document.getElementById('ecrModalForm');
+      if (form) form.reset();
+      var kw = document.getElementById('m_keyword');
+      if (kw) kw.value = '';
+      var results = document.getElementById('m_results');
+      if (results) results.innerHTML = '';
+      selectedMats = {};
+      updateMatList();
+    }
+
+    function openNewEcrModal() {
+      resetEcrModal();
+      openEcrModal();
+    }
+
+    function openDmsUploadModal(ecrNo, matnr, dokar) {
+      var modal = document.getElementById('dmsUploadModal');
+      if (modal) {
+        // Set hidden input
+        document.getElementById('dms_ecr_no').value = ecrNo;
+        // Set display text
+        document.getElementById('disp_dms_ecr').innerText = ecrNo;
+        document.getElementById('disp_dms_matnr').innerText = matnr;
+        document.getElementById('disp_dms_dokar').innerText = dokar;
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        lockBodyScroll(true);
+      }
+    }
+
+    function closeDmsUploadModal() {
+      var modal = document.getElementById('dmsUploadModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+      lockBodyScroll(false);
+      var form = document.getElementById('dmsUploadForm');
+      if (form) form.reset();
+      dmsSelectedFiles = [];
+      renderDmsFileList();
+    }
+
+    var dmsSelectedFiles = [];
+    document.addEventListener('DOMContentLoaded', function() {
+      var dmsInput = document.getElementById('dms_file_input');
+      if (dmsInput) {
+        dmsInput.addEventListener('change', function(e) {
+          var files = e.target.files;
+          for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            if (f.size === 0) {
+              Swal.fire({
+                icon: 'error',
+                title: 'File Kosong',
+                text: 'File ' + f.name + ' berukuran 0 bytes dan tidak dapat diunggah.'
+              });
+              continue;
+            }
+            var exists = dmsSelectedFiles.some(function(item) {
+              return item.name === f.name && item.size === f.size;
+            });
+            if (!exists) {
+              dmsSelectedFiles.push(f);
+            }
+          }
+          dmsInput.value = '';
+          renderDmsFileList();
+        });
+      }
+    });
+
+    function renderDmsFileList() {
+      var listEl = document.getElementById('dms_file_list');
+      if (!listEl) return;
+      
+      listEl.innerHTML = '';
+      
+      if (dmsSelectedFiles.length === 0) {
+        listEl.innerHTML = '<span class="text-xs text-slate-400 italic">Belum ada file yang dipilih...</span>';
+        return;
+      }
+      
+      dmsSelectedFiles.forEach(function(file, index) {
+        var div = document.createElement('div');
+        div.className = 'flex justify-between items-center bg-emerald-50 border border-emerald-100 rounded px-3 py-1.5 mb-1';
+        
+        var leftGroup = document.createElement('div');
+        leftGroup.className = 'flex items-center flex-1 min-w-0';
+        
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'text-xs font-semibold text-emerald-700 truncate mr-2';
+        nameSpan.innerText = file.name;
+        leftGroup.appendChild(nameSpan);
+        
+        var rightGroup = document.createElement('div');
+        rightGroup.className = 'flex items-center gap-2 flex-shrink-0';
+        
+        var statusSpan = document.createElement('span');
+        statusSpan.id = 'dms_status_' + index;
+        statusSpan.className = 'text-xs';
+        rightGroup.appendChild(statusSpan);
+        
+        var delBtn = document.createElement('button');
+        delBtn.id = 'dms_delbtn_' + index;
+        delBtn.type = 'button';
+        delBtn.className = 'text-red-400 hover:text-red-600 text-xs px-2 py-0.5 font-bold';
+        delBtn.innerHTML = '<i class="fas fa-times"></i>';
+        delBtn.onclick = function() {
+          dmsSelectedFiles.splice(index, 1);
+          renderDmsFileList();
+        };
+        rightGroup.appendChild(delBtn);
+        
+        div.appendChild(leftGroup);
+        div.appendChild(rightGroup);
+        listEl.appendChild(div);
+      });
+    }
+
+    
+    window.globalUploadQueue = [];
+    window.isQueueRunning = false;
+    window.queueCompletedCount = 0;
+    window.queueErrorCount = 0;
+    window.queueErrors = [];
+
+    function submitDmsUpload() {
+      var ecrNo = document.getElementById('dms_ecr_no').value;
+      if (!ecrNo || ecrNo.trim() === '') {
+        Swal.fire({icon: 'error', title: 'Error', text: 'ECR No tidak ditemukan.', target: document.getElementById('dmsUploadModal')});
+        return;
+      }
+      if (dmsSelectedFiles.length === 0) {
+        Swal.fire({icon: 'warning', title: 'Belum ada file', text: 'Pilih file terlebih dahulu.', target: document.getElementById('dmsUploadModal')});
+        return;
+      }
+
+      queueCompletedCount = 0;
+      queueErrorCount = 0;
+      queueErrors = [];
+
+      // 1. Masukkan ke Global Queue
+      for (var i = 0; i < dmsSelectedFiles.length; i++) {
+        var matnr = document.getElementById('disp_dms_matnr').innerText;
+          var kategori = document.getElementById('disp_dms_dokar').innerText;
+          globalUploadQueue.push({ ecrNo: ecrNo, file: dmsSelectedFiles[i], matnr: matnr, kategori: kategori });
+      }
+
+      // 2. Tutup Modal Langsung!
+      closeDmsUploadModal();
+
+      // 3. Ubah UI Baris (Loading state)
+      var tdDms = document.getElementById('td_dms_' + ecrNo);
+      if (tdDms) {
+         tdDms.innerHTML = '<div class="flex items-center gap-1.5"><i class="fas fa-spinner fa-spin text-amber-500"></i> <span class="text-xs text-amber-600 font-bold">Diproses...</span></div>';
+      }
+
+      // 4. Update UI & Jalankan Queue jika belum jalan
+      updateFloatingUI();
+      if (!isQueueRunning) {
+        processGlobalQueue();
+      }
+    }
+
+    function updateFloatingUI() {
+      var ui = document.getElementById('globalUploadProgress');
+      var txt = document.getElementById('globalUploadText');
+      if (globalUploadQueue.length === 0 && !isQueueRunning) {
+        setTimeout(function() { ui.classList.add('hidden'); }, 3000);
+        txt.innerHTML = "Selesai: " + queueCompletedCount + " Sukses, " + queueErrorCount + " Gagal";
+        return;
+      }
+      ui.classList.remove('hidden');
+      var activeCount = isQueueRunning ? 1 : 0;
+      var total = globalUploadQueue.length + activeCount;
+      txt.innerHTML = "Sedang mengunggah " + total + " file... JANGAN TUTUP HALAMAN";
+    }
+
+    function processGlobalQueue() {
+      if (globalUploadQueue.length === 0) {
+        isQueueRunning = false;
+        updateFloatingUI();
+        if (queueErrorCount > 0) {
+          var errHtml = '<b>' + queueCompletedCount + ' Sukses, ' + queueErrorCount + ' Gagal</b><br><br>' +
+            '<div class="text-left text-xs bg-red-50 p-2.5 rounded ' +
+            'border border-red-200 text-red-700 font-mono max-h-40 overflow-y-auto">';
+          for (var k = 0; k < queueErrors.length; k++) {
+            errHtml += '<div class="mb-1">&bull; ' + queueErrors[k] + '</div>';
+          }
+          errHtml += '</div>';
+          Swal.fire({
+            icon: 'warning',
+            title: 'Upload Selesai dengan Error',
+            html: errHtml
+          });
+        }
+        return;
+      }
+
+      isQueueRunning = true;
+      var currentItem = globalUploadQueue.shift();
+      updateFloatingUI();
+      var ecrNo = currentItem.ecrNo;
+      var file = currentItem.file;
+
+      var formData = new FormData();
+      formData.append('OnInputProcessing', 'upload_dms_ajax');
+      formData.append('dms_ecr_no', ecrNo);
+      formData.append('dms_file', file);
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', window.location.href, true);
+      xhr.onload = function() {
+        var isSuccess = false;
+        var doknr = "";
+        var errMsg = "HTTP " + xhr.status;
+        if (xhr.status === 200) {
+          try {
+            var data = JSON.parse(xhr.responseText);
+            if (data.status === 'success') {
+              isSuccess = true;
+              doknr = data.doknr;
+            } else {
+              errMsg = data.message || "Gagal diproses SAP";
+            }
+          } catch(e) {
+            errMsg = "Respon bukan JSON: " + xhr.responseText.substring(0, 80);
+          }
+        } else {
+          if (xhr.responseText) {
+            var clean = xhr.responseText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            if (clean.length > 0) {
+              errMsg = "HTTP " + xhr.status + ": " + clean.substring(0, 100);
+            }
+          }
+        }
+
+        var tdDms = document.getElementById('td_dms_' + ecrNo);
+        var tdAct = document.getElementById('td_act_' + ecrNo);
+
+        if (isSuccess) {
+          queueCompletedCount++;
+          if (tdDms && doknr) {
+tdDms.innerHTML = '<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-50"><span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span><span class="text-xs font-semibold text-green-700">' + doknr +
+'</span></div>';
+          }
+          if (tdAct) {
+              var matnr = currentItem.matnr || "";
+              var kategori = currentItem.kategori || "";
+              tdAct.innerHTML = '<div class="flex gap-2">' +
+                '<div class="flex items-center gap-1.5">' +
+                '<button type="button" onclick="event.stopPropagation(); submitEcr(\'' + ecrNo + '\', \'X\')" ' +
+                'class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold transition-all shadow-sm">' +
+                'Submit</button>' +
+                '<button type="button" onclick="event.stopPropagation(); openDmsUploadModal(\'' + ecrNo + '\', \'' + matnr + '\', \'' + kategori + '\')" ' +
+                'class="px-2.5 py-1.5 flex items-center gap-1.5 bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-600 rounded-md border border-slate-200 text-xs font-semibold transition-all shadow-sm" ' +
+                'title="Re-upload (Ganti File)">' +
+                '<i class="fas fa-file-upload text-[0.7rem]"></i> Re-upload</button>' +
+                '</div></div>';
+          }
+        } else {
+          queueErrorCount++;
+          queueErrors.push(file.name + ': ' + errMsg);
+          if (tdDms) {
+            tdDms.innerHTML = '<div class="flex items-center gap-1.5" title="' + errMsg + '"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="text-xs text-red-600 font-medium">Gagal (Arahkan Mouse)</span></div>';
+          }
+        }
+        processGlobalQueue();
+      };
+      xhr.onerror = function() {
+        queueErrorCount++;
+        queueErrors.push(file.name + ': Gagal Jaringan/HTTP');
+        var tdDms = document.getElementById('td_dms_' + ecrNo);
+        if (tdDms) {
+          tdDms.innerHTML = '<div class="flex items-center gap-1.5" title="Koneksi terputus"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="text-xs text-red-600 font-medium">Gagal Koneksi</span></div>';
+        }
+        processGlobalQueue();
+      };
+      xhr.send(formData);
+    }
+
+    // PENGAMAN BROWSER (NATIVE GUARD)
+    window.addEventListener('beforeunload', function (e) {
+      if (isQueueRunning || globalUploadQueue.length > 0) {
+        e.preventDefault();
+        e.returnValue = 'Proses upload masih berjalan! Jangan tutup halaman ini agar tidak terjadi korupsi data.';
+      }
+    });
+
+    function uploadDmsFileAjax(index, ecrNo) {
+        // Obsolete - digantikan oleh processGlobalQueue
+    }
+
+
+    function openEcrModal() {
+      var modal = document.getElementById('ecrModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lockBodyScroll(true);
+    }
+
+    function closeEcrModal() {
+      var modal = document.getElementById('ecrModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      lockBodyScroll(false);
+      resetEcrModal();
+    }
+
+    function doSearch() {
+      var keyword = document.getElementById('m_keyword').value;
+      if (!keyword) {
+        Swal.fire({icon:'warning', title:'Isi keyword dulu', target: document.getElementById('ecrModal')});
+        return;
+      }
+      var form = document.getElementById('ecrModalForm');
+      form.querySelector('input[name="OnInputProcessing"]').value = 'search_material';
+      form.submit();
+    }
+
+    // Deteksi tombol Enter pada input pencarian material
+    var kwInput = document.getElementById('m_keyword');
+    if (kwInput) {
+      kwInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault(); // Mencegah submit liar
+          doSearch();
+        }
+      });
+    }
+
+    function selectMat(matnr, desc) {
+      if (selectedMats[matnr]) {
+        Swal.fire({icon:'info', title:'Sudah dipilih', timer:1000, showConfirmButton:false, target: document.getElementById('ecrModal')});
+        return;
+      }
+      selectedMats[matnr] = desc;
+      updateMatList();
+    }
+
+    /* Delegation: click on .mat-pick reads data-* attributes */
+    document.addEventListener('click', function(e) {
+      var el = e.target.closest('.mat-pick');
+      if (el) {
+        selectMat(el.getAttribute('data-matnr'), el.getAttribute('data-maktx'));
+      }
+    });
+
+    function removeMat(matnr) {
+      delete selectedMats[matnr];
+      updateMatList();
+    }
+
+    function updateMatList() {
+      var list = document.getElementById('m_selectedList');
+      var hidden = document.getElementById('m_materials');
+      var keys = Object.keys(selectedMats);
+      if (keys.length === 0) {
+        list.innerHTML = '<span class="text-slate-400">Belum ada material dipilih</span>';
+        hidden.value = '';
+        return;
+      }
+      var html = '';
+      keys.forEach(function(k) {
+        html += '<span class="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md mr-2 mb-1 text-xs font-semibold">' +
+          k + ' - ' + selectedMats[k] +
+          ' <button type="button" onclick="removeMat(\'' + k + '\')" class="text-red-500 hover:text-red-700 ml-1 font-bold">&times;</button></span>';
+      });
+      list.innerHTML = html;
+      hidden.value = keys.join(',');
+    }
+
+    function submitEcrForm() {
+      var form = document.getElementById('ecrModalForm');
+      var title = form.querySelector('[name="title"]').value.trim();
+      var kategori = form.querySelector('input[name="kategori"]:checked');
+      var priority = form.querySelector('input[name="priority"]:checked');
+      var desc = form.querySelector('[name="description"]').value.trim();
+      var dept = form.querySelector('[name="dept"]').value;
+      var reason = form.querySelector('[name="reason"]').value;
+      var mats = document.getElementById('m_materials').value;
+
+      var tgt = document.getElementById('ecrModal');
+      if (!title) { Swal.fire({icon:'error', title:'Judul wajib diisi', target: tgt}); return; }
+      if (!kategori) { Swal.fire({icon:'error', title:'Kategori wajib dipilih', target: tgt}); return; }
+      if (!priority) { Swal.fire({icon:'error', title:'Prioritas wajib dipilih', target: tgt}); return; }
+      if (!desc) { Swal.fire({icon:'error', title:'Deskripsi wajib diisi', target: tgt}); return; }
+      if (!dept) { Swal.fire({icon:'error', title:'Departemen wajib dipilih', target: tgt}); return; }
+      if (!reason) { Swal.fire({icon:'error', title:'Alasan wajib dipilih', target: tgt}); return; }
+      if (!mats) { Swal.fire({icon:'error', title:'Pilih minimal satu material', target: tgt}); return; }
+
+      form.querySelector('input[name="OnInputProcessing"]').value = 'create_ecr';
+      form.submit();
+    }
+
+    // Auto-open modal if there are search results
+    var resultsDiv = document.getElementById('m_results');
+    if (resultsDiv && resultsDiv.innerHTML.trim() !== '') {
+      openEcrModal();
+    }
+  </script>
+
+
+<script>
+  // Date range shortcut
+  function setRange(months) {
+    var today = new Date();
+    var from = new Date(today.getFullYear(), today.getMonth() - (months - 1), 1);
+    var fromStr = from.getFullYear() + '-' + String(from.getMonth() + 1).padStart(2, '0') + '-' + String(from.getDate()).padStart(2, '0');
+    var toStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    document.querySelector('input[name="date_from"]').value = fromStr;
+    document.querySelector('input[name="date_to"]').value = toStr;
+    document.getElementById('dateFilterForm').submit();
+  }
+</script>
+
+
+  <script>
+    var bomFileEl = document.getElementById('bomFile');
+    if (bomFileEl) {
+      bomFileEl.addEventListener('change', function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        var fileName = file.name || '';
+        document.getElementById('bomFileName').value = fileName;
+        document.getElementById('bomFileType').value = file.type || 'application/pdf';
+
+        var reader = new FileReader();
+        reader.onload = function(re) {
+          var result = re.target.result;
+          var b64 = result.split(',')[1];
+          document.getElementById('bomFileB64').value = b64;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    var bomFormEl = document.getElementById('bomUploadForm');
+    if (bomFormEl) {
+      bomFormEl.addEventListener('submit', function(e) {
+        var b64Val = document.getElementById('bomFileB64').value;
+        var fName = document.getElementById('bomFileName').value;
+        if (!fName) {
+          e.preventDefault();
+          Swal.fire({
+            icon: 'warning',
+            title: 'Pilih File',
+            text: 'Silakan pilih file PDF BOM terlebih dahulu.'
+          });
+          return false;
+        }
+        if (!b64Val) {
+          e.preventDefault();
+          Swal.fire({
+            icon: 'info',
+            title: 'Sedang Membaca File',
+            text: 'File sedang dibaca browser, silakan klik Upload kembali dalam 1-2 detik.'
+          });
+          return false;
+        }
+      });
+    }
+  </script>
+
+
+  <!-- FLOATING GLOBAL QUEUE UI -->
+  <div id="globalUploadProgress" class="hidden fixed bottom-6 right-6 bg-white shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] rounded-xl p-4 border-2 border-emerald-500 z-[9999] w-80 animate-bounce">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-sm font-extrabold text-emerald-700 flex items-center gap-2">
+        <i class="fas fa-cloud-upload-alt animate-pulse"></i> Background Upload
+      </span>
+    </div>
+    <div class="text-xs font-semibold text-slate-600" id="globalUploadText">
+      Menyiapkan file...
+    </div>
+    <div class="w-full bg-slate-200 rounded-full h-1.5 mt-3 overflow-hidden">
+      <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 100%; animation: indeterminate 1.5s infinite linear; transform-origin: 0% 50%;"></div>
+    </div>
+  </div>
+  <style>
+    @keyframes indeterminate {
+      0% { transform: translateX(-100%) scaleX(0.2); }
+      50% { transform: translateX(0%) scaleX(0.5); }
+      100% { transform: translateX(100%) scaleX(0.2); }
+    }
+  </style>
+</body>
+
+</html>

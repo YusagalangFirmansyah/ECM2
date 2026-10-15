@@ -1,0 +1,142 @@
+DATA: LV_ACTION    TYPE string,
+      LV_USER_ID   TYPE string,
+      LV_NAME      TYPE string,
+      LV_DEPT      TYPE string,
+      LV_PASS      TYPE string,
+      LV_ROLE      TYPE string,
+      LS_USER      TYPE zecm_user.
+
+LV_ACTION  = request->get_form_field( 'OnInputProcessing' ).
+LV_USER_ID = request->get_form_field( 'user_id' ).
+
+IF LV_ACTION IS INITIAL.
+  EXIT.
+ENDIF.
+
+IF LV_ACTION = 'add_user'.
+  LV_NAME  = request->get_form_field( 'full_name' ).
+  LV_DEPT  = request->get_form_field( 'department' ).
+  LV_PASS  = request->get_form_field( 'password' ).
+  LV_ROLE  = request->get_form_field( 'role' ).
+
+  SELECT SINGLE COUNT( * ) FROM zecm_user
+    WHERE zecm_user_id = @LV_USER_ID.
+  IF sy-subrc = 0.
+    GV_MESSAGE = 'GAGAL: User ID sudah terdaftar.'.
+    EXIT.
+  ENDIF.
+
+  IF LV_USER_ID IS INITIAL OR LV_NAME IS INITIAL
+    OR LV_PASS IS INITIAL OR LV_ROLE IS INITIAL.
+    GV_MESSAGE = 'GAGAL: User ID, Nama, Password, dan Role wajib diisi.'.
+    EXIT.
+  ENDIF.
+
+  LS_USER-mandt           = sy-mandt.
+  LS_USER-zecm_user_id    = LV_USER_ID.
+  LS_USER-zecm_full_name  = LV_NAME.
+  LS_USER-zecm_department  = LV_DEPT.
+  LS_USER-zecm_pwd_hash   = LV_PASS.
+  LS_USER-zecm_role       = LV_ROLE.
+  LS_USER-zecm_active     = 'Y'.
+  LS_USER-zecm_created_date = sy-datum.
+  LS_USER-zecm_created_by  = GV_USER_ID.
+
+  INSERT zecm_user FROM LS_USER.
+
+  IF sy-subrc = 0.
+    GV_MESSAGE = 'User ' && LV_USER_ID && ' berhasil ditambahkan.'.
+  ELSE.
+    GV_MESSAGE = 'GAGAL: Tidak dapat menyimpan user.'.
+  ENDIF.
+
+  EXIT.
+ENDIF.
+
+IF LV_ACTION = 'edit_user'.
+  LV_NAME  = request->get_form_field( 'full_name' ).
+  LV_DEPT  = request->get_form_field( 'department' ).
+  LV_PASS  = request->get_form_field( 'password' ).
+  LV_ROLE  = request->get_form_field( 'role' ).
+
+  IF LV_NAME IS INITIAL.
+    GV_MESSAGE = 'GAGAL: Nama wajib diisi.'.
+    EXIT.
+  ENDIF.
+
+  SELECT SINGLE * FROM zecm_user INTO @LS_USER
+    WHERE zecm_user_id = @LV_USER_ID.
+
+  IF sy-subrc = 0.
+    LS_USER-zecm_full_name    = LV_NAME.
+    LS_USER-zecm_department   = LV_DEPT.
+    LS_USER-zecm_role         = LV_ROLE.
+    IF LV_PASS IS NOT INITIAL.
+      LS_USER-zecm_pwd_hash   = LV_PASS.
+    ENDIF.
+    LS_USER-zecm_changed_date = sy-datum.
+    LS_USER-zecm_changed_by   = GV_USER_ID.
+
+    UPDATE zecm_user FROM LS_USER.
+    IF sy-subrc = 0.
+      GV_MESSAGE = 'User ' && LV_USER_ID && ' berhasil diupdate.'.
+    ELSE.
+      GV_MESSAGE = 'GAGAL: Tidak dapat mengupdate user.'.
+    ENDIF.
+  ELSE.
+    GV_MESSAGE = 'GAGAL: User tidak ditemukan.'.
+  ENDIF.
+
+  EXIT.
+ENDIF.
+
+IF LV_ACTION CS 'toggle_status_'.
+  DATA: LV_NEW_STATUS TYPE string.
+  
+  " Robust action parsing - no string offset ambiguity
+  IF LV_ACTION = 'toggle_status_Y'.
+    LV_NEW_STATUS = 'Y'.
+  ELSEIF LV_ACTION = 'toggle_status_N'.
+    LV_NEW_STATUS = 'N'.
+  ELSE.
+    GV_MESSAGE = 'GAGAL: Action status tidak valid.'.
+    EXIT.
+  ENDIF.
+
+  SELECT SINGLE * FROM zecm_user INTO @LS_USER
+    WHERE zecm_user_id = @LV_USER_ID.
+
+  IF sy-subrc = 0.
+    LS_USER-zecm_active = LV_NEW_STATUS.
+    UPDATE zecm_user FROM LS_USER.
+    GV_MESSAGE = 'Status user ' && LV_USER_ID && ' diubah.'.
+  ELSE.
+    GV_MESSAGE = 'GAGAL: User tidak ditemukan.'.
+  ENDIF.
+
+  EXIT.
+ENDIF.
+
+IF LV_ACTION = 'delete_user'.
+
+  IF LV_USER_ID = GV_USER_ID.
+    GV_MESSAGE = 'GAGAL: Tidak bisa menghapus akun sendiri.'.
+    EXIT.
+  ENDIF.
+
+  SELECT SINGLE * FROM zecm_user INTO @LS_USER
+    WHERE zecm_user_id = @LV_USER_ID.
+
+  IF sy-subrc = 0.
+    DELETE zecm_user FROM LS_USER.
+    IF sy-subrc = 0.
+      GV_MESSAGE = 'User ' && LV_USER_ID && ' berhasil dihapus.'.
+    ELSE.
+      GV_MESSAGE = 'GAGAL: Tidak dapat menghapus user.'.
+    ENDIF.
+  ELSE.
+    GV_MESSAGE = 'GAGAL: User tidak ditemukan.'.
+  ENDIF.
+
+  EXIT.
+ENDIF.

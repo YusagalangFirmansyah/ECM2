@@ -1,0 +1,345 @@
+﻿<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buat ECR - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] } } }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .radio-card { transition: all 0.15s; }
+    .radio-card:has(input:checked) { border-color: #059669; background: #ecfdf5; }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+
+  <div class="max-w-[720px] mx-auto px-6 py-8">
+
+    <!-- Header -->
+    <div class="relative overflow-hidden rounded-xl p-6 mb-6 shadow-sm" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+      <div class="absolute -top-[40px] -right-[20px] w-[100px] h-[100px] rounded-full" style="background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);"></div>
+      <div class="relative z-10">
+        <h1 class="text-xl font-bold text-white mb-1">Buat ECR Baru</h1>
+        <p class="text-[0.78rem] text-emerald-200">Engineering Change Request</p>
+      </div>
+    </div>
+
+    <!-- Form -->
+    <form method="post" id="ecrForm">
+      <input type="hidden" name="OnInputProcessing" value="">
+
+      <!-- Section 1: Informasi Perubahan -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-4 p-5">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center mb-4">
+          <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Informasi Perubahan
+        </h3>
+
+        <!-- Judul -->
+        <div class="mb-4">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Judul Perubahan <span class="text-red-500">*</span></label>
+          <input type="text" name="title" id="title" placeholder="Contoh: Revisi dimensi kaki kursi" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+        </div>
+
+        <!-- Kategori (Radio) -->
+        <div class="mb-4">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Kategori <span class="text-red-500">*</span></label>
+          <div class="flex gap-3">
+            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="kategori" value="DRW" class="accent-emerald-600">
+              <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
+            </label>
+            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
+              <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
+            </label>
+            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="kategori" value="DMT" class="accent-emerald-600">
+              <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Prioritas (Radio) -->
+        <div class="mb-4">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Prioritas <span class="text-red-500">*</span></label>
+          <div class="flex gap-3">
+            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="priority" value="CRITICAL" class="accent-red-600">
+              <div><div class="font-semibold text-sm text-red-600">Critical</div></div>
+            </label>
+            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="priority" value="HIGH" class="accent-orange-500">
+              <div><div class="font-semibold text-sm text-orange-600">High</div></div>
+            </label>
+            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="priority" value="MEDIUM" class="accent-blue-600">
+              <div><div class="font-semibold text-sm text-blue-600">Medium</div></div>
+            </label>
+            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+              <input type="radio" name="priority" value="LOW" class="accent-slate-500">
+              <div><div class="font-semibold text-sm text-slate-600">Low</div></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Estimasi Biaya -->
+        <div class="mb-4">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Estimasi Dampak Biaya</label>
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-slate-500 font-semibold">Rp</span>
+            <input type="number" name="cost_estimate" id="cost_estimate" placeholder="0 (opsional)" class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Detail Perubahan -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-4 p-5">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center mb-4">
+          <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Detail Perubahan
+        </h3>
+
+        <!-- Departemen -->
+        <div class="mb-4">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Departemen <span class="text-red-500">*</span></label>
+          <select name="dept" id="dept" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+            <option value="">-- Pilih Departemen --</option>
+            <option value="Produksi">Produksi</option>
+            <option value="QC">Quality Control</option>
+            <option value="Purchasing">Purchasing</option>
+            <option value="Sales">Sales</option>
+            <option value="Drafter">Drafter</option>
+            <option value="Owner">Owner</option>
+          </select>
+        </div>
+
+        <!-- Alasan -->
+        <div class="mb-4">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Alasan Perubahan <span class="text-red-500">*</span></label>
+          <select name="reason" id="reason" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+            <option value="">-- Pilih Alasan --</option>
+            <option value="Koreksi Cacat">Koreksi Cacat</option>
+            <option value="Reduksi Biaya">Reduksi Biaya</option>
+            <option value="Perbaikan Desain">Perbaikan Desain</option>
+            <option value="Perubahan Bahan">Perubahan Bahan</option>
+            <option value="Req. Buyer">Req. Buyer</option>
+            <option value="Kepatuhan Standar Industri">Kepatuhan Standar Industri</option>
+                <option value="Upload File Baru">Upload File Baru</option>
+          </select>
+        </div>
+
+        <!-- Deskripsi -->
+        <div class="mb-0">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Deskripsi Perubahan <span class="text-red-500">*</span></label>
+          <textarea name="description" id="description" rows="4" placeholder="Jelaskan perubahan yang diinginkan..." class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none"></textarea>
+        </div>
+      </div>
+
+      <!-- Section 3: Pilih Material -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-4 p-5">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center mb-4">
+          <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Pilih Material <span class="text-red-500">*</span>
+        </h3>
+
+        <!-- Search -->
+        <div class="flex gap-2 mb-3">
+          <input type="text" name="keyword" id="keyword" placeholder="Cari material (nama/ID)..." class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+          <select name="mtart" class="px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none">
+            <option value="ALL">Semua Tipe</option>
+            <option value="FERT">Finish Goods</option>
+            <option value="HALB">Semifinish Goods</option>
+            <option value="HALM">Semifinish Metal</option>
+          </select>
+          <button type="button" onclick="doSearch()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-all">
+            Cari
+          </button>
+        </div>
+
+        <!-- Results -->
+        <div id="searchResults" class="max-h-[200px] overflow-y-auto">
+          <p class="text-xs text-slate-400 text-center py-4">Ketik keyword lalu klik Cari</p>
+        </div>
+
+        <!-- Selected materials -->
+        <div id="selectedMaterials" class="mt-3">
+          <p class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Material Terpilih:</p>
+          <div id="selectedList" class="text-xs text-slate-500">Belum ada material dipilih</div>
+        </div>
+        <input type="hidden" name="materials" id="materials" value="">
+      </div>
+
+      <!-- V14: Section 4: Rencana Implementasi (Khusus Admin Buat ECO Langsung) -->
+      <% IF GV_ROLE = 'ADMIN'. %>
+      <div class="bg-blue-50/70 rounded-xl border border-blue-200 shadow-sm mb-4 p-5">
+        <div class="flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
+          <i class="fas fa-calendar-check text-blue-600 text-base"></i>
+          <h3 class="text-sm font-bold text-blue-900">Rencana Implementasi (Wajib Diisi Admin) <span class="text-red-500">*</span></h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-[0.68rem] font-bold text-slate-600 uppercase tracking-wide mb-1.5">Target Berjalan (PO) <span class="text-red-500">*</span></label>
+            <input type="text" name="impl_po" id="impl_po" placeholder="Contoh: Next PO / PO 45000123" class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-[0.68rem] font-bold text-slate-600 uppercase tracking-wide mb-1.5">Tanggal Estimasi Jalan <span class="text-red-500">*</span></label>
+            <input type="date" name="impl_date" id="impl_date" class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-[0.68rem] font-bold text-slate-600 uppercase tracking-wide mb-1.5">Keterangan / Alasan Lapangan <span class="text-red-500">*</span></label>
+            <textarea name="impl_reason" id="impl_reason" rows="2" placeholder="Alasan pemilihan PO / tanggal rilis berdasarkan kondisi lapangan..." class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+          </div>
+        </div>
+      </div>
+      <% ENDIF. %>
+
+      <!-- Submit -->
+      <div class="flex gap-3">
+        <% IF GV_ROLE = 'ADMIN'. %>
+        <a href="admin_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>" class="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold text-center transition-all">
+          Batal
+        </a>
+        <button type="button" onclick="submitForm()" class="flex-1 px-4 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm flex items-center justify-center gap-2">
+          <i class="fas fa-plus-circle"></i> Buat ECO Langsung
+        </button>
+        <% ELSE. %>
+        <a href="drafter_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>" class="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold text-center transition-all">
+          Batal
+        </a>
+        <button type="button" onclick="submitForm()" class="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm">
+          Buat ECR
+        </button>
+        <% ENDIF. %>
+      </div>
+    </form>
+
+  </div>
+
+  <script>
+    var selectedMats = {};
+
+    function doSearch() {
+      var form = document.getElementById('ecrForm');
+      var hiddenAction = form.querySelector('input[name="OnInputProcessing"]');
+      hiddenAction.value = 'search_material';
+      form.submit();
+    }
+
+    function selectMat(matnr, desc) {
+      if (selectedMats[matnr]) return;
+
+      var url = window.location.href;
+      var separator = url.indexOf('?') !== -1 ? '&' : '?';
+      var checkUrl = url.split('?')[0] + '?OnInputProcessing=check_mat&check_matnr=' + encodeURIComponent(matnr);
+      
+      fetch(checkUrl)
+          .then(function(response) { return response.text(); })
+          .then(function(text) {
+              if (text.indexOf('BLOCKED:') !== -1) {
+                  var msg = text.split('BLOCKED:')[1];
+                  alert("Material ini sudah dalam proses perubahan:\n\n" + msg + "\n\nHarap hubungi pemegang tiket tersebut.");
+              } else {
+                  selectedMats[matnr] = desc;
+                  updateSelected();
+              }
+          })
+          .catch(function(err) {
+              selectedMats[matnr] = desc;
+              updateSelected();
+          });
+    }
+
+    function removeMat(matnr) {
+      delete selectedMats[matnr];
+      updateSelected();
+    }
+
+    function updateSelected() {
+      var list = document.getElementById('selectedList');
+      var hidden = document.getElementById('materials');
+      var keys = Object.keys(selectedMats);
+      if (keys.length === 0) {
+        list.innerHTML = '<span class="text-slate-400">Belum ada material dipilih</span>';
+        hidden.value = '';
+        return;
+      }
+      var html = '';
+      keys.forEach(function(k) {
+        html += '<span class="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md mr-2 mb-1 text-xs font-semibold">' +
+          k + ' - ' + selectedMats[k] +
+          ' <button type="button" onclick="removeMat(\'' + k + '\')" class="text-red-500 hover:text-red-700 ml-1 font-bold">&times;</button></span>';
+      });
+      list.innerHTML = html;
+      hidden.value = keys.join(',');
+    }
+
+    function submitForm() {
+      var title = document.getElementById('title').value.trim();
+      var kategori = document.querySelector('input[name="kategori"]:checked');
+      var priority = document.querySelector('input[name="priority"]:checked');
+      var desc = document.getElementById('description').value.trim();
+      var dept = document.getElementById('dept').value;
+      var reason = document.getElementById('reason').value;
+      var mats = document.getElementById('materials').value;
+
+      if (!title) { Swal.fire({icon:'error', title:'Judul wajib diisi'}); return; }
+      if (!kategori) { Swal.fire({icon:'error', title:'Kategori wajib dipilih'}); return; }
+      if (!priority) { Swal.fire({icon:'error', title:'Prioritas wajib dipilih'}); return; }
+      if (!desc) { Swal.fire({icon:'error', title:'Deskripsi wajib diisi'}); return; }
+      if (!dept) { Swal.fire({icon:'error', title:'Departemen wajib dipilih'}); return; }
+      if (!reason) { Swal.fire({icon:'error', title:'Alasan wajib dipilih'}); return; }
+      if (!mats) { Swal.fire({icon:'error', title:'Pilih minimal satu material'}); return; }
+
+      // V14: Validasi Implementation Tracking untuk Admin
+      var userRole = '<%= GV_ROLE %>';
+      if (userRole === 'ADMIN') {
+        var implPo = document.getElementById('impl_po') ? document.getElementById('impl_po').value.trim() : '';
+        var implDate = document.getElementById('impl_date') ? document.getElementById('impl_date').value.trim() : '';
+        var implReason = document.getElementById('impl_reason') ? document.getElementById('impl_reason').value.trim() : '';
+
+        if (!implPo || !implDate || !implReason) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Lengkapi Rencana Implementasi!',
+            text: 'Field Target PO, Tanggal Estimasi Jalan, dan Alasan Lapangan wajib diisi sebelum membuat ECO langsung.'
+          });
+          return;
+        }
+      }
+
+      var form = document.getElementById('ecrForm');
+      form.querySelector('input[name="OnInputProcessing"]').value = 'submit_ecr';
+      form.submit();
+    }
+
+    <% IF GV_MESSAGE IS NOT INITIAL. %>
+      Swal.fire({
+        icon: '<%= GV_ICON %>',
+        title: '<%= GV_MESSAGE %>',
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000,
+        timerProgressBar: true
+      });
+    <% ENDIF. %>
+  </script>
+
+</body>
+</html>

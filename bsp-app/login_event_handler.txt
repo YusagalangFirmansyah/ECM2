@@ -1,0 +1,106 @@
+﻿" login Event Handler - V11
+" Routing per role
+
+DATA: LV_USER_ID  TYPE string,
+      LV_PASSWORD TYPE string,
+      LS_USER     TYPE zecm_user,
+      LV_URL      TYPE string.
+
+LV_USER_ID  = request->get_form_field( 'user_id' ).
+LV_PASSWORD = request->get_form_field( 'password' ).
+
+DATA: LV_ACTION TYPE string.
+LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+
+IF LV_ACTION = 'change_pwd'.
+  DATA: LV_CP_USER TYPE string,
+        LV_CP_OLD  TYPE string,
+        LV_CP_NEW  TYPE string.
+        
+  LV_CP_USER = request->get_form_field( 'cp_user_id' ).
+  LV_CP_OLD  = request->get_form_field( 'cp_old_pwd' ).
+  LV_CP_NEW  = request->get_form_field( 'cp_new_pwd' ).
+  
+  IF LV_CP_USER IS NOT INITIAL AND LV_CP_OLD IS NOT INITIAL AND LV_CP_NEW IS NOT INITIAL.
+    SELECT SINGLE * FROM zecm_user INTO LS_USER
+      WHERE zecm_user_id = LV_CP_USER
+        AND zecm_pwd_hash = LV_CP_OLD
+        AND zecm_active   = 'Y'.
+        
+    IF sy-subrc = 0.
+      LS_USER-zecm_pwd_hash = LV_CP_NEW.
+      UPDATE zecm_user FROM LS_USER.
+      GV_MESSAGE = 'Password berhasil diubah! Silakan login dengan password baru.'.
+    ELSE.
+      GV_MESSAGE = 'GAGAL: User ID atau Password Lama salah!'.
+    ENDIF.
+  ELSE.
+    GV_MESSAGE = 'GAGAL: Semua kolom harus diisi!'.
+  ENDIF.
+
+ELSE.
+  " Normal Login Logic (no dependency on LV_ACTION)
+  IF LV_USER_ID IS NOT INITIAL AND LV_PASSWORD IS NOT INITIAL.
+    SELECT SINGLE * FROM zecm_user INTO LS_USER
+      WHERE zecm_user_id = LV_USER_ID
+        AND zecm_pwd_hash = LV_PASSWORD
+        AND zecm_active   = 'Y'.
+
+    IF sy-subrc = 0.
+      LS_USER-zecm_last_login = sy-datum.
+      UPDATE zecm_user FROM LS_USER.
+
+      DATA: lv_name_esc TYPE string,
+            lv_temp_name TYPE string.
+      lv_temp_name = LS_USER-zecm_full_name.
+      lv_name_esc = cl_http_utility=>escape_url( unescaped = lv_temp_name ).
+
+      " Routing per role
+      CONDENSE LS_USER-zecm_role.
+      IF LS_USER-zecm_role = 'SUPERADMIN'.
+        CONCATENATE 'dashboard.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'DRAFTER'.
+        CONCATENATE 'drafter_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'ADMIN'.
+        CONCATENATE 'admin_dashboard.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'APPROVER'.
+        CONCATENATE 'approver_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'REQUESTER'.
+        CONCATENATE 'requester_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'VIEWER'.
+        CONCATENATE 'viewer_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'MASTER_DATA'.
+        CONCATENATE 'master_data_dashboard.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'PRODUKSI'.
+        CONCATENATE 'produksi_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'COSTING'.
+        CONCATENATE 'costing_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'COST_ENG'.
+        CONCATENATE 'costing_page.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSEIF LS_USER-zecm_role = 'PAYROLL'.
+        CONCATENATE 'payroll_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
+      ELSE.
+        DATA: lv_err_role TYPE string,
+              lv_temp_err TYPE string.
+        lv_temp_err = 'Role tidak dikenali oleh sistem routing: ' && LS_USER-zecm_role.
+        lv_err_role = cl_http_utility=>escape_url( unescaped = lv_temp_err ).
+        CONCATENATE 'login.htm?msg=' lv_err_role INTO LV_URL.
+      ENDIF.
+
+      navigation->goto_page( LV_URL ).
+      RETURN.
+    ELSE.
+      DATA: lv_wrong_pwd TYPE string.
+      lv_wrong_pwd = cl_http_utility=>escape_url( unescaped = 'User ID atau password salah. Login GAGAL.' ).
+      CONCATENATE 'login.htm?msg=' lv_wrong_pwd INTO LV_URL.
+      navigation->goto_page( LV_URL ).
+      RETURN.
+    ENDIF.
+  ELSE.
+    DATA: lv_empty TYPE string.
+    lv_empty = cl_http_utility=>escape_url( unescaped = 'Kolom User ID dan Password tidak boleh kosong.' ).
+    CONCATENATE 'login.htm?msg=' lv_empty INTO LV_URL.
+    navigation->goto_page( LV_URL ).
+    RETURN.
+  ENDIF.
+ENDIF.

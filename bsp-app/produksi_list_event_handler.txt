@@ -1,0 +1,338 @@
+" =======================================================================
+" Event Handler â€” produksi_list.htm
+" V07_d: Submit request + material search (ECR-form style) + file upload
+" =======================================================================
+
+DATA: LV_ACTION    TYPE string,
+      LV_KEYWORD   TYPE string,
+      LV_TITLE     TYPE string,
+      LV_DESC      TYPE string,
+      LV_KATEGORI  TYPE string,
+      LV_PRIORITY  TYPE string,
+      " LV_COST      TYPE string,  -- removed, ZECM_IROUTING has no COST_ESTIMATE
+      LV_DEPT      TYPE string,
+      LV_REASON    TYPE string,
+      LV_MATERIALS TYPE string,
+      LV_IROUTING_ID   TYPE numc10,
+      LV_URL       TYPE string,
+      LV_MATNR     TYPE matnr,
+      LT_SELECTED  TYPE STANDARD TABLE OF string,
+      LV_SEARCH    TYPE string,
+      LV_PLANT     TYPE string,
+      LV_MTART     TYPE string,
+      LV_Q_ALPHA   TYPE matnr,
+      LV_Q_UP      TYPE string,
+      LT_RAW       TYPE TT_MAT,
+      LS_RAW       TYPE TY_MAT,
+      " LS_DEDUP     TYPE TY_DEDUP,  -- removed, dedup not needed
+      " LT_DEDUP     TYPE TT_DEDUP,  -- removed
+      LR_MTART     TYPE RANGE OF mara-mtart,
+      LS_RMT       LIKE LINE OF LR_MTART,
+      LR_WERKS     TYPE RANGE OF marc-werks,
+      LS_RWK       LIKE LINE OF LR_WERKS,
+      LV_PLANT_TMP TYPE string,
+      ls_ireq      TYPE zecm_req,
+      ls_log       TYPE zecm_log,
+      lv_dummy     TYPE string,
+      LV_COUNT     TYPE i.
+
+LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+LV_PLANT  = request->get_form_field( 'plant' ).
+LV_MTART  = request->get_form_field( 'mtart' ).
+
+IF LV_PLANT IS INITIAL. LV_PLANT = 'ALL'. ENDIF.
+IF LV_MTART IS INITIAL. LV_MTART = 'ALL'. ENDIF.
+
+" ================================================================
+" SEARCH MATERIAL â€” handled by OnInit, just return
+" ================================================================
+IF LV_ACTION = 'search_material'.
+  RETURN.
+ENDIF.
+
+IF LV_ACTION = 'download_att'.
+  DATA: ls_dl_att TYPE zecm_bom_att,
+        lv_dl_att_id TYPE zecm_bom_att-att_id,
+        lv_dl_att_str TYPE string.
+
+  lv_dl_att_str = request->get_form_field( 'ireq_id' ). " form input namanya ireq_id dari JS downloadAttachment()
+  lv_dl_att_id = lv_dl_att_str.
+
+  SELECT SINGLE * FROM zecm_bom_att INTO @ls_dl_att WHERE att_id = @lv_dl_att_id.
+  IF sy-subrc = 0.
+    " Setup response for download
+    DATA: lv_content_type TYPE string.
+    lv_content_type = ls_dl_att-mime_type.
+
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Type'
+        value = lv_content_type.
+
+    CONCATENATE 'attachment; filename="' ls_dl_att-file_name '"' INTO DATA(lv_disp).
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Disposition'
+        value = lv_disp.
+
+    CALL METHOD _m_response->set_data
+      EXPORTING
+        data = ls_dl_att-file_data.
+
+    navigation->response_complete( ).
+    RETURN.
+  ENDIF.
+ENDIF.
+
+IF LV_ACTION = 'cancel_irouting'.
+  DATA: LV_CANCEL_RT_NUM TYPE numc10.
+  LV_IROUTING_ID = request->get_form_field( 'cancel_irouting_id' ).
+  IF LV_IROUTING_ID IS NOT INITIAL.
+    " Convert to NUMC with leading zeros
+    LV_CANCEL_RT_NUM = LV_IROUTING_ID.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING input  = LV_CANCEL_RT_NUM
+      IMPORTING output = LV_CANCEL_RT_NUM.
+    " 1. Delete attachment jika ada
+    DELETE FROM zecm_bom_att WHERE ecr_no = @LV_CANCEL_RT_NUM.
+
+    " 2. Delete audit trail yang terkait dengan IREQ ini
+    DELETE FROM zecm_log WHERE ecr_no = @LV_CANCEL_RT_NUM AND is_ireq = ''.
+
+    " 3. Hard Delete IREQ (hanya jika masih berstatus REQ)
+    DELETE FROM zecm_req WHERE ecr_no = @LV_CANCEL_RT_NUM AND status = 'REQ'.
+    IF sy-subrc = 0.
+      CONCATENATE 'produksi_list.htm?msg=Request+berhasil+dibatalkan+dan+dihapus&u=' GV_USER_ID '&n=' GV_FULL_NAME '&r=' GV_ROLE INTO LV_URL.
+    ELSE.
+      CONCATENATE 'produksi_list.htm?msg=Gagal+membatalkan:+Request+sudah+diproses+admin&u=' GV_USER_ID '&n=' GV_FULL_NAME '&r=' GV_ROLE INTO LV_URL.
+    ENDIF.
+    navigation->goto_page( LV_URL ).
+    RETURN.
+  ENDIF.
+ENDIF.
+
+" ================================================================
+" SUBMIT REQUEST (IREQ)
+" ================================================================
+IF LV_ACTION = 'submit_request'.
+
+  LV_MATERIALS = request->get_form_field( 'materials' ).
+  LV_TITLE     = request->get_form_field( 'title' ).
+  LV_DESC      = request->get_form_field( 'description' ).
+  LV_KATEGORI  = request->get_form_field( 'kategori' ).
+  LV_PRIORITY  = request->get_form_field( 'priority' ).
+  " LV_COST = request->get_form_field( 'cost_estimate' ).  -- removed, no field
+  LV_DEPT      = request->get_form_field( 'dept' ).
+
+
+  IF GV_USER_ID IS INITIAL.
+    GV_USER_ID = request->get_form_field( 'u' ).
+  ENDIF.
+  IF GV_ROLE IS INITIAL.
+    GV_ROLE = request->get_form_field( 'r' ).
+  ENDIF.
+
+  IF GV_USER_ID IS INITIAL.
+    GV_MESSAGE = 'Session expired. Silakan login ulang.'.
+    GV_ICON = 'error'.
+    navigation->goto_page( 'login.htm' ).
+    RETURN.
+  ENDIF.
+
+  IF LV_TITLE IS INITIAL.
+    GV_MESSAGE = 'Judul perubahan wajib diisi.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_MATERIALS IS INITIAL.
+    GV_MESSAGE = 'Pilih minimal satu material.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+
+  IF LV_DESC IS INITIAL.
+    GV_MESSAGE = 'Deskripsi perubahan wajib diisi.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_DEPT IS INITIAL.
+    GV_MESSAGE = 'Departemen wajib dipilih.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+
+  SPLIT LV_MATERIALS AT ',' INTO TABLE LT_SELECTED.
+  READ TABLE LT_SELECTED INTO LV_MATERIALS INDEX 1.
+  CONDENSE LV_MATERIALS NO-GAPS.
+
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_REQ'
+    IMPORTING
+      number      = LV_IROUTING_ID
+    EXCEPTIONS
+      OTHERS      = 1.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Gagal generate nomor request.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  CLEAR ls_ireq.
+  ls_ireq-ecr_no       = LV_IROUTING_ID.
+  ls_ireq-title      = LV_TITLE.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING  input  = LV_MATERIALS
+    IMPORTING  output = LV_MATERIALS.
+  CONDENSE LV_MATERIALS NO-GAPS.
+  ls_ireq-matnr_fg   = LV_MATERIALS.
+  ls_ireq-kategori   = ''. " Kosong karena dihapus dari form
+  ls_ireq-priority   = ''. " Kosong karena dihapus dari form
+
+
+
+  ls_ireq-zdept      = LV_DEPT.
+
+  ls_ireq-descr        = LV_DESC.
+  ls_ireq-requester  = GV_USER_ID.
+  ls_ireq-status     = 'REQ'.
+  ls_ireq-change_scope = 'ROUT'.
+  ls_ireq-created_by   = GV_USER_ID.
+  ls_ireq-created_date = sy-datum.
+  ls_ireq-created_time = sy-uzeit.
+  ls_ireq-changed_date = sy-datum.
+  ls_ireq-changed_time = sy-uzeit.
+
+  INSERT zecm_req FROM ls_ireq.
+
+  " Handle Multiple Attachments
+  DATA: lv_count_str TYPE string,
+        lv_att_count TYPE i,
+        lv_index     TYPE i,
+        lv_idx_str   TYPE string,
+        lv_field_b64 TYPE string,
+        lv_field_name TYPE string,
+        lv_field_type TYPE string,
+        lv_b64       TYPE string,
+        lv_name      TYPE string,
+        lv_type      TYPE string,
+        lv_xstr      TYPE xstring,
+        lv_max_att_id TYPE zecm_bom_att-att_id,
+        ls_bom_att   TYPE zecm_bom_att.
+
+  lv_count_str = request->get_form_field( 'req_file_count' ).
+
+  IF lv_count_str IS NOT INITIAL.
+    lv_att_count = lv_count_str.
+
+    " Get max attachment ID once before loop
+    SELECT MAX( att_id ) FROM zecm_bom_att INTO lv_max_att_id.
+
+    lv_index = 1.
+    WHILE lv_index <= lv_att_count.
+      lv_idx_str = lv_index.
+      CONDENSE lv_idx_str NO-GAPS.
+
+      CONCATENATE 'req_file_b64_' lv_idx_str INTO lv_field_b64.
+      CONCATENATE 'req_file_name_' lv_idx_str INTO lv_field_name.
+      CONCATENATE 'req_file_type_' lv_idx_str INTO lv_field_type.
+
+      lv_b64 = request->get_form_field( lv_field_b64 ).
+      lv_name = request->get_form_field( lv_field_name ).
+      lv_type = request->get_form_field( lv_field_type ).
+
+      IF lv_b64 IS NOT INITIAL AND lv_name IS NOT INITIAL.
+        CALL FUNCTION 'SSFC_BASE64_DECODE'
+          EXPORTING
+            b64data = lv_b64
+          IMPORTING
+            bindata = lv_xstr
+          EXCEPTIONS
+            OTHERS  = 1.
+
+        IF sy-subrc = 0.
+          lv_max_att_id = lv_max_att_id + 1.
+
+          ls_bom_att-att_id = lv_max_att_id.
+          ls_bom_att-ecr_no = ls_ireq-ecr_no.
+          ls_bom_att-file_name = lv_name.
+          ls_bom_att-mime_type = lv_type.
+          ls_bom_att-file_data = lv_xstr.
+          ls_bom_att-uploaded_by = GV_USER_ID.
+          ls_bom_att-uploaded_at = sy-datum.
+          ls_bom_att-uploaded_time = sy-uzeit.
+
+          INSERT zecm_bom_att FROM ls_bom_att.
+        ENDIF.
+      ENDIF.
+
+      lv_index = lv_index + 1.
+    ENDWHILE.
+  ENDIF.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Gagal menyimpan request.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = ls_log-log_id
+    EXCEPTIONS OTHERS = 1.
+
+  IF sy-subrc = 0.
+    ls_log-mandt       = sy-mandt.
+    ls_log-ecr_no      = LV_IROUTING_ID.
+    ls_log-action      = 'CREA'.
+    ls_log-old_status  = ''.
+    ls_log-new_status  = 'REQ'.
+    ls_log-user_id     = GV_USER_ID.
+    ls_log-action_date = sy-datum.
+    ls_log-action_time = sy-uzeit.
+    ls_log-is_ireq    = ''.
+    INSERT zecm_log FROM ls_log.
+  ENDIF.
+
+  GV_MESSAGE = 'Request berhasil dikirim.'.
+  CONCATENATE 'produksi_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE
+    INTO LV_URL.
+  navigation->goto_page( LV_URL ).
+  RETURN.
+ENDIF.
+
+" ================================================================
+" CANCEL REQUEST
+" ================================================================
+IF LV_ACTION = 'cancel_ireq'.
+  DATA: LV_CANCEL_ID TYPE string,
+        LV_CANCEL_NUM TYPE numc10.
+  LV_CANCEL_ID = request->get_form_field( 'cancel_ireq_id' ).
+  IF LV_CANCEL_ID IS NOT INITIAL.
+    " Convert to NUMC with leading zeros
+    LV_CANCEL_NUM = LV_CANCEL_ID.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING input  = LV_CANCEL_NUM
+      IMPORTING output = LV_CANCEL_NUM.
+    DELETE FROM zecm_bom_att WHERE ecr_no = LV_CANCEL_NUM.
+    DELETE FROM zecm_log WHERE ecr_no = LV_CANCEL_NUM AND is_ireq = ''.
+    DELETE FROM zecm_req WHERE ecr_no = LV_CANCEL_NUM AND status = 'REQ'.
+    IF sy-subrc = 0.
+      GV_MESSAGE = 'Request berhasil dibatalkan dan dihapus.'.
+      GV_ICON = 'success'.
+    ELSE.
+      GV_MESSAGE = 'Gagal membatalkan: Request sudah diproses.'.
+      GV_ICON = 'error'.
+    ENDIF.
+  ENDIF.
+  CONCATENATE 'produksi_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE INTO LV_URL.
+  navigation->goto_page( LV_URL ).
+  RETURN.
+ENDIF.
+
+" ================================================================
+" LOGOUT
+" ================================================================
+IF LV_ACTION = 'logout'.
+  navigation->goto_page( 'login.htm' ).
+ENDIF.

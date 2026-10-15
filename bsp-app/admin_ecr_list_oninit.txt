@@ -1,0 +1,616 @@
+  GV_USER_ID     = request->get_form_field( 'u' ).
+  GV_FULL_NAME   = request->get_form_field( 'n' ).
+  GV_ROLE        = request->get_form_field( 'r' ).
+  LV_FILTER      = request->get_form_field( 'filter' ).
+  LV_DATE_FILTER = request->get_form_field( 'date_filter' ).
+  LV_DATE_FROM   = request->get_form_field( 'date_from' ).
+  LV_DATE_TO     = request->get_form_field( 'date_to' ).
+  GV_MAT_SEARCH  = request->get_form_field( 'mat_search' ).
+
+  IF LV_FILTER IS INITIAL.
+    LV_FILTER = 'ALL'.
+  ENDIF.
+
+  IF LV_DATE_FILTER IS INITIAL.
+    LV_DATE_FILTER = 'ALL'.
+  ENDIF.
+
+  IF LV_DATE_FROM IS NOT INITIAL.
+    TRY.
+        LV_DATE_FROM = |{ LV_DATE_FROM+4(4) }{ LV_DATE_FROM+2(2) }{ LV_DATE_FROM(2) }|.
+      CATCH cx_sy_conversion_no_date.
+        LV_DATE_FROM = sy-datum.
+    ENDTRY.
+  ENDIF.
+
+  IF LV_DATE_TO IS NOT INITIAL.
+    TRY.
+        LV_DATE_TO = |{ LV_DATE_TO+4(4) }{ LV_DATE_TO+2(2) }{ LV_DATE_TO(2) }|.
+      CATCH cx_sy_conversion_no_date.
+        LV_DATE_TO = sy-datum.
+    ENDTRY.
+  ENDIF.
+
+  LV_ECR_DETAIL = request->get_form_field( 'ecr_detail' ).
+
+  IF LV_ECR_DETAIL IS NOT INITIAL.
+
+    SELECT SINGLE a~ecr_no, a~matnr_fg, a~kategori, a~status,
+          a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+          a~created_date, a~created_time, a~changed_date, a~changed_time,
+          a~created_by, a~change_scope, b~maktx
+          INTO CORRESPONDING FIELDS OF @LS_ECR_DETAIL
+          FROM zecm_req AS a
+          LEFT OUTER JOIN makt AS b
+            ON a~matnr_fg = b~matnr
+            AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+          WHERE a~ecr_no = @LV_ECR_DETAIL.
+
+    IF LS_ECR_DETAIL IS NOT INITIAL.
+      LS_ECR_DETAIL-matnr_fg_no_zero = LS_ECR_DETAIL-matnr_fg.
+      SHIFT LS_ECR_DETAIL-matnr_fg_no_zero LEFT DELETING LEADING '0'.
+    ENDIF.
+
+    SELECT log_id, ecr_no, action, old_status, new_status,
+          user_id, e~zecm_full_name AS user_name, action_date, action_time, reason
+          INTO TABLE @LT_LOGS
+          FROM zecm_log
+          LEFT OUTER JOIN zecm_user AS e
+            ON zecm_log~user_id = e~zecm_user_id
+          WHERE ecr_no = @LV_ECR_DETAIL
+          AND is_ireq = ''
+          ORDER BY action_date DESCENDING, action_time DESCENDING.
+
+    LOOP AT LT_LOGS INTO LS_LOG.
+      CASE LS_LOG-old_status.
+        WHEN 'CRTD'. LS_LOG-old_label = 'Created'.
+        WHEN 'INAS'. LS_LOG-old_label = 'In Assigned'.
+        WHEN 'INWK'. LS_LOG-old_label = 'In Work'.
+        WHEN 'INSP'. LS_LOG-old_label = 'In Inspection'.
+        WHEN 'CLSD'. LS_LOG-old_label = 'Closed'.
+        WHEN 'REJC'. LS_LOG-old_label = 'Rejected'.
+        WHEN OTHERS. LS_LOG-old_label = LS_LOG-old_status.
+      ENDCASE.
+      CASE LS_LOG-new_status.
+        WHEN 'CRTD'. LS_LOG-new_label = 'Created'.
+        WHEN 'INAS'. LS_LOG-new_label = 'In Assigned'.
+        WHEN 'INWK'. LS_LOG-new_label = 'In Work'.
+        WHEN 'INSP'. LS_LOG-new_label = 'In Inspection'.
+        WHEN 'CLSD'. LS_LOG-new_label = 'Closed'.
+        WHEN 'REJC'. LS_LOG-new_label = 'Rejected'.
+        WHEN OTHERS. LS_LOG-new_label = LS_LOG-new_status.
+      ENDCASE.
+          CASE LS_LOG-action.
+        WHEN 'CREA'. LS_LOG-action_label = 'Created'.
+        WHEN 'UPD'.  LS_LOG-action_label = 'Updated'.
+        WHEN 'ASSG'. LS_LOG-action_label = 'Assigned'.
+        WHEN 'REJT'. LS_LOG-action_label = 'Rejected'.
+        WHEN OTHERS. LS_LOG-action_label = LS_LOG-action.
+      ENDCASE.
+      MODIFY LT_LOGS FROM LS_LOG.
+    ENDLOOP.
+
+    LOOP AT LT_LOGS INTO LS_LOG.
+      IF LS_LOG-action = 'ASSG' AND LS_LOG-reason IS NOT INITIAL.
+        SELECT SINGLE zecm_full_name
+          INTO LS_LOG-assignee_name
+          FROM zecm_user
+          WHERE zecm_user_id = LS_LOG-reason.
+        MODIFY LT_LOGS FROM LS_LOG.
+      ENDIF.
+    ENDLOOP.
+
+  ELSE.
+
+    IF LV_FILTER = 'ALL'.
+      IF LV_DATE_FILTER = 'ALL'.
+        SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+              a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+              a~created_date, a~created_time, a~changed_date, a~changed_time,
+              a~created_by, a~change_scope, b~maktx
+              INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+              FROM zecm_req AS a
+              LEFT OUTER JOIN makt AS b
+                ON a~matnr_fg = b~matnr
+                AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+              ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+      ELSEIF LV_DATE_FILTER = '30'.
+        LV_DATE_FROM = sy-datum - 30.
+        SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+              a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+              a~created_date, a~created_time, a~changed_date, a~changed_time,
+              a~created_by, a~change_scope, b~maktx
+              INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+              FROM zecm_req AS a
+              LEFT OUTER JOIN makt AS b
+                ON a~matnr_fg = b~matnr
+                AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+              WHERE a~created_date >= @LV_DATE_FROM
+              ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+      ELSEIF LV_DATE_FILTER = '90'.
+        LV_DATE_FROM = sy-datum - 90.
+        SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+              a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+              a~created_date, a~created_time, a~changed_date, a~changed_time,
+              a~created_by, a~change_scope, b~maktx
+              INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+              FROM zecm_req AS a
+              LEFT OUTER JOIN makt AS b
+                ON a~matnr_fg = b~matnr
+                AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+              WHERE a~created_date >= @LV_DATE_FROM
+              ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+      ELSEIF LV_DATE_FILTER = 'custom'.
+        IF LV_DATE_FROM IS NOT INITIAL AND LV_DATE_TO IS NOT INITIAL.
+          SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+                a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+                a~created_date, a~created_time, a~changed_date, a~changed_time,
+                a~created_by, a~change_scope, b~maktx
+                INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+                FROM zecm_req AS a
+                LEFT OUTER JOIN makt AS b
+                  ON a~matnr_fg = b~matnr
+                  AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+                WHERE a~created_date >= @LV_DATE_FROM
+                  AND a~created_date <= @LV_DATE_TO
+                ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+        ELSE.
+          SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+                a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+                a~created_date, a~created_time, a~changed_date, a~changed_time,
+                a~created_by, a~change_scope, b~maktx
+                INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+                FROM zecm_req AS a
+                LEFT OUTER JOIN makt AS b
+                  ON a~matnr_fg = b~matnr
+                  AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+                ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+        ENDIF.
+      ENDIF.
+    ELSE.
+      IF LV_DATE_FILTER = 'ALL'.
+        SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+              a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+              a~created_date, a~created_time, a~changed_date, a~changed_time,
+              a~created_by, a~change_scope, b~maktx
+              INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+              FROM zecm_req AS a
+              LEFT OUTER JOIN makt AS b
+                ON a~matnr_fg = b~matnr
+                AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+              WHERE a~status = @LV_FILTER
+              ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+      ELSEIF LV_DATE_FILTER = '30'.
+        LV_DATE_FROM = sy-datum - 30.
+        SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+              a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+              a~created_date, a~created_time, a~changed_date, a~changed_time,
+              a~created_by, a~change_scope, b~maktx
+              INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+              FROM zecm_req AS a
+              LEFT OUTER JOIN makt AS b
+                ON a~matnr_fg = b~matnr
+                AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+              WHERE a~status = @LV_FILTER
+                AND a~created_date >= @LV_DATE_FROM
+              ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+      ELSEIF LV_DATE_FILTER = '90'.
+        LV_DATE_FROM = sy-datum - 90.
+        SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+              a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+              a~created_date, a~created_time, a~changed_date, a~changed_time,
+              a~created_by, a~change_scope, b~maktx
+              INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+              FROM zecm_req AS a
+              LEFT OUTER JOIN makt AS b
+                ON a~matnr_fg = b~matnr
+                AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+              WHERE a~status = @LV_FILTER
+                AND a~created_date >= @LV_DATE_FROM
+              ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+      ELSEIF LV_DATE_FILTER = 'custom'.
+        IF LV_DATE_FROM IS NOT INITIAL AND LV_DATE_TO IS NOT INITIAL.
+          SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+                a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+                a~created_date, a~created_time, a~changed_date, a~changed_time,
+                a~created_by, a~change_scope, b~maktx
+                INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+                FROM zecm_req AS a
+                LEFT OUTER JOIN makt AS b
+                  ON a~matnr_fg = b~matnr
+                  AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+                WHERE a~status = @LV_FILTER
+                  AND a~created_date >= @LV_DATE_FROM
+                  AND a~created_date <= @LV_DATE_TO
+                ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+        ELSE.
+          SELECT a~ecr_no, a~matnr_fg, a~kategori, a~status, a~title,
+                a~drafter, c~zecm_full_name AS requester_name, a~requester, d~zecm_full_name AS drafter_name, a~descr,
+                a~created_date, a~created_time, a~changed_date, a~changed_time,
+                a~created_by, a~change_scope, b~maktx
+                INTO CORRESPONDING FIELDS OF TABLE @LT_ECRS
+                FROM zecm_req AS a
+                LEFT OUTER JOIN makt AS b
+                  ON a~matnr_fg = b~matnr
+                  AND b~spras = @sy-langu
+                LEFT OUTER JOIN zecm_user AS c
+                  ON a~requester = c~zecm_user_id
+                LEFT OUTER JOIN zecm_user AS d
+                  ON a~drafter = d~zecm_user_id
+                WHERE a~status = @LV_FILTER
+                ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    " Filter out routing requests manually
+    DELETE LT_ECRS WHERE change_scope = 'ROUT' OR title CS 'Routing' OR title CS 'alur proses'.
+
+    " SAP Standard: Delete internal table by condition
+    DELETE LT_ECRS WHERE ecr_no = '000000000068' OR ecr_no = '0000000068'.
+    DELETE LT_ECRS WHERE change_scope = 'ROUT'.
+    
+    " Terakhir kita loop untuk format matnr
+    LOOP AT LT_ECRS INTO LS_ECR.
+      LS_ECR-matnr_fg_no_zero = LS_ECR-matnr_fg.
+      SHIFT LS_ECR-matnr_fg_no_zero LEFT DELETING LEADING '0'.
+      MODIFY LT_ECRS FROM LS_ECR.
+    ENDLOOP.
+
+    " Hapus ECR Routing 
+    " SAP Standard: Delete internal table by condition
+    DELETE LT_ECRS WHERE ecr_no = '000000000068' OR ecr_no = '0000000068'.
+    DELETE LT_ECRS WHERE change_scope = 'ROUT'.
+    
+    " Terakhir kita loop untuk format matnr
+    LOOP AT LT_ECRS INTO LS_ECR.
+      LS_ECR-matnr_fg_no_zero = LS_ECR-matnr_fg.
+      SHIFT LS_ECR-matnr_fg_no_zero LEFT DELETING LEADING '0'.
+      MODIFY LT_ECRS FROM LS_ECR.
+    ENDLOOP.
+
+    " Sort LT_ECRS: CRTD (Need Approval) first, then by date
+    DATA: lt_ecrs_temp LIKE LT_ECRS.
+    LOOP AT LT_ECRS INTO LS_ECR WHERE status = 'CRTD'.
+      APPEND LS_ECR TO lt_ecrs_temp.
+    ENDLOOP.
+    LOOP AT LT_ECRS INTO LS_ECR WHERE status <> 'CRTD'.
+      APPEND LS_ECR TO lt_ecrs_temp.
+    ENDLOOP.
+    LT_ECRS = lt_ecrs_temp.
+
+  ENDIF.
+
+
+  " ================================================================
+  " Requester dropdown options (from zecm_user where role = DRAFTER)
+  " ================================================================
+  DATA: ls_drafter_opt TYPE zecm_user,
+        lv_opt_html   TYPE string.
+  CLEAR lv_opt_html.
+  SELECT zecm_user_id, zecm_full_name FROM zecm_user
+    INTO (@ls_drafter_opt-zecm_user_id, @ls_drafter_opt-zecm_full_name)
+    WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+    CONCATENATE lv_opt_html '<option value="' ls_drafter_opt-zecm_user_id '">'
+      ls_drafter_opt-zecm_user_id ' - ' ls_drafter_opt-zecm_full_name '</option>'
+      INTO lv_opt_html.
+  ENDSELECT.
+  GV_REQUESTER_OPTIONS = lv_opt_html.
+
+
+  " ================================================================
+  " Material History Search
+  " ================================================================
+  IF GV_MAT_SEARCH IS NOT INITIAL.
+    DATA: lt_mat_hist TYPE tt_mat_hist,
+          ls_mat_hist TYPE ty_mat_hist,
+          lv_kw       TYPE string,
+          lv_mat_html TYPE string.
+
+    lv_kw = GV_MAT_SEARCH.
+    TRANSLATE lv_kw TO UPPER CASE.
+    CONCATENATE '%' lv_kw '%' INTO lv_kw.
+
+    SELECT a~ecr_no, a~title, a~matnr_fg, a~descr,
+          a~kategori, a~priority, a~requester, a~drafter,
+          a~status, a~reject_reason, a~cost_estimate,
+          a~zdept, a~zreason, a~change_scope, a~created_date, a~dir_number,
+          c~zecm_full_name AS requester_name,
+          d~zecm_full_name AS drafter_name,
+          b~maktx
+      INTO CORRESPONDING FIELDS OF TABLE @lt_mat_hist
+      FROM zecm_req AS a
+      LEFT OUTER JOIN makt AS b
+        ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+      LEFT OUTER JOIN zecm_user AS c
+        ON a~requester = c~zecm_user_id
+      LEFT OUTER JOIN zecm_user AS d
+        ON a~drafter = d~zecm_user_id
+      WHERE ( a~matnr_fg LIKE @lv_kw OR b~maktx LIKE @lv_kw )
+      ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+
+    " Build HTML cards
+    DATA: lv_s_status  TYPE string,
+          lv_s_badge   TYPE string,
+          lv_s_pri_clr TYPE string,
+          lv_s_kat_clr TYPE string,
+          lv_s_date    TYPE string,
+          lv_s_cost    TYPE string,
+          lv_s_dms     TYPE string,
+          lv_s_reject  TYPE string,
+          lv_cd        TYPE string.
+
+    CLEAR lv_mat_html.
+
+    " SAP Standard: Delete internal table by condition
+    DELETE lt_mat_hist WHERE ecr_no = '000000000068' OR ecr_no = '0000000068'.
+    DELETE lt_mat_hist WHERE change_scope = 'ROUT'.
+
+    LOOP AT lt_mat_hist INTO ls_mat_hist.
+      ls_mat_hist-matnr_fg_no_zero = ls_mat_hist-matnr_fg.
+      SHIFT ls_mat_hist-matnr_fg_no_zero LEFT DELETING LEADING '0'.
+
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING  input  = ls_mat_hist-ecr_no
+        IMPORTING  output = ls_mat_hist-ecr_no.
+
+      " Clean dir_number
+      IF ls_mat_hist-dir_number IS NOT INITIAL.
+        DATA: lv_dir_parts_m TYPE STANDARD TABLE OF string,
+              lv_dir_doknr_m TYPE string.
+        CLEAR lv_dir_parts_m.
+        SPLIT ls_mat_hist-dir_number AT '/' INTO TABLE lv_dir_parts_m.
+        READ TABLE lv_dir_parts_m INTO lv_dir_doknr_m INDEX 2.
+        IF lv_dir_doknr_m IS NOT INITIAL.
+          SHIFT lv_dir_doknr_m LEFT DELETING LEADING '0'.
+          ls_mat_hist-dir_number_clean = lv_dir_doknr_m.
+        ELSE.
+          ls_mat_hist-dir_number_clean = ls_mat_hist-dir_number.
+        ENDIF.
+      ENDIF.
+
+      " Status badge
+      CASE ls_mat_hist-status.
+        WHEN 'CRTD'. lv_s_status = 'Draft'.       lv_s_badge = 'bg-blue-100 text-blue-700'.
+        WHEN 'INWK'. lv_s_status = 'In Work'.     lv_s_badge = 'bg-orange-100 text-orange-700'.
+        WHEN 'INSP'. lv_s_status = 'Inspection'.  lv_s_badge = 'bg-amber-100 text-amber-700'.
+        WHEN 'CLSD'. lv_s_status = 'Closed'.      lv_s_badge = 'bg-green-100 text-green-700'.
+        WHEN 'REJC'. lv_s_status = 'Rejected'.    lv_s_badge = 'bg-red-100 text-red-700'.
+        WHEN OTHERS. lv_s_status = ls_mat_hist-status. lv_s_badge = 'bg-slate-100 text-slate-600'.
+      ENDCASE.
+
+      " Priority color
+      CASE ls_mat_hist-priority.
+        WHEN 'CRITICAL'. lv_s_pri_clr = 'bg-red-100 text-red-700'.
+        WHEN 'HIGH'.     lv_s_pri_clr = 'bg-orange-100 text-orange-700'.
+        WHEN 'MEDIUM'.   lv_s_pri_clr = 'bg-blue-100 text-blue-700'.
+        WHEN OTHERS.     lv_s_pri_clr = 'bg-slate-100 text-slate-600'.
+      ENDCASE.
+
+      " Kategori color
+      CASE ls_mat_hist-kategori.
+        WHEN 'DRW'. lv_s_kat_clr = 'bg-emerald-100 text-emerald-700 border-emerald-200'.
+        WHEN 'DBX'. lv_s_kat_clr = 'bg-blue-100 text-blue-700 border-blue-200'.
+        WHEN 'DMT'. lv_s_kat_clr = 'bg-orange-100 text-orange-700 border-orange-200'.
+        WHEN OTHERS. lv_s_kat_clr = 'bg-slate-100 text-slate-600'.
+      ENDCASE.
+
+      " Date format
+      lv_cd = |{ ls_mat_hist-created_date+6(2) }.{ ls_mat_hist-created_date+4(2) }.{ ls_mat_hist-created_date(4) }|.
+
+      " Cost
+      IF ls_mat_hist-cost_estimate IS NOT INITIAL.
+        DATA: lv_cost_str TYPE string.
+        lv_cost_str = ls_mat_hist-cost_estimate.
+        lv_s_cost = |Rp { lv_cost_str }|.
+      ELSE.
+        lv_s_cost = '-'.
+      ENDIF.
+
+      " V14: Tambahkan informasi Implementation Tracking (Read-Only)
+      " Admin Dashboard ECR List -> Check IREQ data related to this ECR
+      DATA: ls_ireq_impl TYPE zecm_ireq.
+      SELECT SINGLE impl_po impl_date impl_reason 
+        FROM zecm_ireq 
+        INTO CORRESPONDING FIELDS OF ls_ireq_impl 
+        WHERE ecr_no = ls_mat_hist-ecr_no.
+      
+      DATA: lv_impl_info TYPE string.
+      lv_impl_info = ''.
+      IF sy-subrc = 0 AND ( ls_ireq_impl-impl_po IS NOT INITIAL OR ( ls_ireq_impl-impl_date IS NOT INITIAL AND ls_ireq_impl-impl_date <> '00000000' ) ).
+        DATA: lv_len_ecr TYPE i.
+        DATA: lv_impl_date_safe_ecr TYPE string.
+        lv_len_ecr = strlen( ls_ireq_impl-impl_date ).
+        IF ls_ireq_impl-impl_date IS NOT INITIAL AND ls_ireq_impl-impl_date <> '00000000' AND lv_len_ecr >= 8.
+          CONCATENATE ls_ireq_impl-impl_date+6(2) '/' ls_ireq_impl-impl_date+4(2) '/' ls_ireq_impl-impl_date(4) INTO lv_impl_date_safe_ecr.
+        ELSE.
+          lv_impl_date_safe_ecr = '-'.
+        ENDIF.
+        
+        CONCATENATE '<div class="mt-3 pt-3 border-t border-slate-200">'
+                    '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-2"><i class="fas fa-calendar-check mr-1 text-emerald-500"></i>Rencana Implementasi (Dari R&D)</div>'
+                    '<div class="grid grid-cols-2 gap-4 bg-emerald-50/50 p-3 rounded-lg border border-emerald-100/50">'
+                    '<div><span class="text-[0.6rem] font-bold text-emerald-600 block uppercase mb-0.5">Target PO</span><span class="text-sm font-semibold text-slate-800">' ls_ireq_impl-impl_po '</span></div>'
+                    '<div><span class="text-[0.6rem] font-bold text-emerald-600 block uppercase mb-0.5">Estimasi Tanggal</span><span class="text-sm font-semibold text-slate-800">' 
+                    lv_impl_date_safe_ecr '</span></div>'
+                    '<div class="col-span-2"><span class="text-[0.6rem] font-bold text-emerald-600 block uppercase mb-0.5">Alasan & Keterangan</span><span class="text-xs font-medium text-slate-700">' ls_ireq_impl-impl_reason '</span></div>'
+                    '</div>'
+                    '</div>'
+                    INTO lv_impl_info.
+      ENDIF.
+
+      " DMS link (data attribute)
+      IF ls_mat_hist-dir_number_clean IS NOT INITIAL.
+        CONCATENATE '<div class="dms-link flex items-center gap-1.5'
+          ' cursor-pointer hover:bg-green-50'
+          ' px-2 py-1 rounded transition-colors'
+          ' inline-flex"'
+          ' data-dmsnr="' ls_mat_hist-dir_number_clean '">'
+          '<span class="w-2 h-2 rounded-full'
+          ' bg-green-500"></span>'
+          '<span class="text-xs font-semibold'
+          ' text-green-700">'
+          ls_mat_hist-dir_number_clean
+          '</span></div>'
+          INTO lv_s_dms.
+      ELSE.
+        lv_s_dms = '<span class="text-xs text-slate-400">-</span>'.
+      ENDIF.
+
+      " Reject reason
+      IF ls_mat_hist-reject_reason IS NOT INITIAL AND ls_mat_hist-status = 'REJC'.
+        CONCATENATE '<div class="mt-2 px-3 py-2 bg-red-50'
+          ' border-l-[3px] border-red-400 rounded'
+          ' text-xs text-red-700">'
+          '<strong>Alasan Reject:</strong> '
+          ls_mat_hist-reject_reason '</div>'
+          INTO lv_s_reject.
+      ELSE.
+        CLEAR lv_s_reject.
+      ENDIF.
+
+      " V14: append lv_impl_info
+      CONCATENATE lv_s_reject lv_impl_info INTO lv_s_reject.
+
+      " Build card HTML (green theme)
+      CONCATENATE lv_mat_html
+        '<div class="bg-white rounded-xl border-l-4 border-l-emerald-500'
+        ' border border-slate-200 shadow-sm overflow-hidden'
+        ' hover:shadow-md transition-shadow mb-4">'
+        '<div class="px-5 py-3 bg-gradient-to-r from-emerald-50'
+        ' to-white border-b border-slate-100'
+        ' flex items-center justify-between">'
+        '  <div class="flex items-center gap-2 flex-wrap">'
+        '    <span class="text-sm font-extrabold text-emerald-800'
+        ' font-mono"><i class="fas fa-file-circle-exclamation'
+        ' text-emerald-500 mr-1"></i>' ls_mat_hist-ecr_no '</span>'
+        '    <span class="px-2.5 py-0.5 rounded-full text-[0.6rem]'
+        ' font-bold ' lv_s_badge '">'
+        lv_s_status '</span>'
+        '    <span class="px-2.5 py-0.5 rounded-full text-[0.6rem]'
+        ' font-bold ' lv_s_pri_clr '">'
+        ls_mat_hist-priority '</span>'
+        '    <span class="px-2.5 py-0.5 rounded text-[0.6rem]'
+        ' font-bold border ' lv_s_kat_clr '">'
+        ls_mat_hist-kategori '</span>'
+        '  </div>'
+        '  <span class="text-xs text-slate-500 font-semibold">'
+        '<i class="far fa-calendar mr-1"></i>' lv_cd '</span>'
+        '</div>'
+        '<div class="px-5 py-4">'
+        '<h4 class="text-sm font-bold text-slate-800 mb-3">'
+        ls_mat_hist-title '</h4>'
+        '<div class="grid grid-cols-2 sm:grid-cols-3'
+        ' lg:grid-cols-4 gap-2.5 mb-3">'
+        '  <div class="bg-emerald-50 rounded-lg px-3 py-2'
+        ' border border-emerald-100">'
+        '    <p class="text-[0.6rem] font-bold text-emerald-600'
+        ' uppercase"><i class="fas fa-box mr-1"></i>Material</p>'
+        '    <p class="text-xs font-bold text-slate-800">'
+        ls_mat_hist-matnr_fg_no_zero '</p>'
+        '    <p class="text-[0.65rem] text-emerald-700 truncate">'
+        ls_mat_hist-maktx '</p>'
+        '  </div>'
+        '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+        ' border border-slate-100">'
+        '    <p class="text-[0.6rem] font-bold text-slate-500'
+        ' uppercase"><i class="fas fa-user mr-1"></i>Requester</p>'
+        '    <p class="text-xs font-semibold text-slate-800">'
+        ls_mat_hist-requester_name '</p>'
+        '  </div>'
+        '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+        ' border border-slate-100">'
+        '    <p class="text-[0.6rem] font-bold text-slate-500'
+        ' uppercase"><i class="fas fa-user-pen mr-1"></i>Drafter'
+        '</p>'
+        '    <p class="text-xs font-semibold text-slate-800">'
+        ls_mat_hist-drafter_name '</p>'
+        '  </div>'
+        '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+        ' border border-slate-100">'
+        '    <p class="text-[0.6rem] font-bold text-slate-500'
+        ' uppercase"><i class="fas fa-building mr-1"></i>Dept</p>'
+        '    <p class="text-xs font-semibold text-slate-800">'
+        ls_mat_hist-zdept '</p>'
+        '  </div>'
+        '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+        ' border border-slate-100">'
+        '    <p class="text-[0.6rem] font-bold text-slate-500'
+        ' uppercase"><i class="fas fa-circle-question mr-1">'
+        '</i>Alasan</p>'
+        '    <p class="text-xs font-semibold text-slate-800">'
+        ls_mat_hist-zreason '</p>'
+        '  </div>'
+        '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+        ' border border-slate-100">'
+        '    <p class="text-[0.6rem] font-bold text-slate-500'
+        ' uppercase"><i class="fas fa-coins mr-1"></i>Estimasi</p>'
+        '    <p class="text-xs font-semibold text-slate-800">'
+        lv_s_cost '</p>'
+        '  </div>'
+        '  <div class="bg-emerald-50 rounded-lg px-3 py-2'
+        ' border border-emerald-100">'
+        '    <p class="text-[0.6rem] font-bold text-emerald-600'
+        ' uppercase"><i class="fas fa-folder-open mr-1"></i>DMS</p>'
+        '    ' lv_s_dms
+        '  </div>'
+        '</div>'
+        '<div class="bg-slate-50 rounded-lg px-3 py-2.5'
+        ' border border-slate-100 mb-2">'
+        '  <p class="text-[0.6rem] font-bold text-slate-500'
+        ' uppercase mb-1">'
+        '<i class="fas fa-align-left mr-1"></i>Deskripsi</p>'
+        '  <p class="text-xs text-slate-700">'
+        ls_mat_hist-descr '</p>'
+        '</div>'
+        lv_s_reject
+        '</div></div>' INTO lv_mat_html.
+    ENDLOOP.
+
+    GV_MAT_HISTORY_HTML = lv_mat_html.
+  ENDIF.
+
+  navigation->set_parameter( name = 'u' value = GV_USER_ID ).
+  navigation->set_parameter( name = 'n' value = GV_FULL_NAME ).
+  navigation->set_parameter( name = 'r' value = GV_ROLE ).

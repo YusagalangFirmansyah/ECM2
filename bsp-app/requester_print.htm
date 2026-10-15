@@ -1,0 +1,583 @@
+<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cetak Request - ECM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #1e293b;
+            background: #f8fafc;
+            padding: 30px 40px;
+            line-height: 1.5;
+        }
+        @media print {
+            body { padding: 0 !important; background: #fff !important; color: #0f172a !important; }
+            .no-print { display: none !important; }
+            @page { margin: 10mm 12mm; size: A4 portrait; }
+
+            /* Block container mengatasi bug pagination flexbox di engine print Chromium */
+            .print-list-container {
+                display: block !important;
+            }
+
+            /* Card styling untuk cetak: Lebih ringkas, padat, dan hemat kertas */
+            .request-card {
+                display: block !important;
+                box-shadow: none !important;
+                border: 1px solid #94a3b8 !important;
+                border-radius: 6px !important;
+                padding: 10px 14px !important;
+                margin-bottom: 12px !important;
+                background: #ffffff !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+
+            /* Header Dokumen Compact */
+            .header {
+                text-align: center;
+                margin-bottom: 14px !important;
+                padding-bottom: 10px !important;
+                border-bottom: 2px solid #059669 !important;
+            }
+            .header-top { margin-bottom: 6px !important; }
+            .header-top .logo { height: 36px !important; }
+            .header-top .company-name { font-size: 14px !important; }
+            .header h1 { font-size: 16px !important; margin-bottom: 4px !important; }
+            .header .meta { font-size: 9.5px !important; }
+
+            /* Proteksi elemen internal kartu agar tidak terpotong canggung */
+            .card-header-bar,
+            .req-title,
+            .req-grid {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+
+            .card-header-bar {
+                padding-bottom: 6px !important;
+                margin-bottom: 8px !important;
+            }
+            .tag-num { font-size: 9.5px !important; padding: 2px 6px !important; }
+            .tag-id { font-size: 10px !important; padding: 2px 6px !important; }
+            .tag-badge { font-size: 9px !important; padding: 2px 6px !important; }
+            .header-date { font-size: 10px !important; }
+
+            .req-title {
+                font-size: 12.5px !important;
+                margin-bottom: 8px !important;
+            }
+
+            .req-grid {
+                padding: 6px 10px !important;
+                margin-bottom: 8px !important;
+                gap: 4px 12px !important;
+                background: #f8fafc !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+            .grid-label { font-size: 8.5px !important; }
+            .grid-val { font-size: 10px !important; }
+
+            .desc-box {
+                margin-bottom: 8px !important;
+            }
+            .desc-box-label {
+                font-size: 9px !important;
+                margin-bottom: 3px !important;
+                break-after: avoid !important;
+            }
+            .desc-box-content {
+                padding: 6px 10px !important;
+                font-size: 10px !important;
+                line-height: 1.45 !important;
+                background: #ffffff !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+
+            .alert-box {
+                padding: 6px 10px !important;
+                font-size: 10px !important;
+                margin-bottom: 8px !important;
+                break-inside: avoid !important;
+            }
+
+            .audit-container {
+                padding-top: 8px !important;
+                margin-top: 4px !important;
+                border-top: 1px dashed #94a3b8 !important;
+            }
+            .audit-heading {
+                font-size: 9.5px !important;
+                margin-bottom: 6px !important;
+                break-after: avoid !important;
+            }
+            .timeline {
+                display: block !important;
+                padding-left: 14px !important;
+                margin-left: 4px !important;
+            }
+            .timeline-dot {
+                left: -19px !important;
+                top: 4px !important;
+                width: 6px !important;
+                height: 6px !important;
+            }
+            .timeline-item {
+                display: block !important;
+                margin-bottom: 6px !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .timeline-content {
+                padding: 4px 8px !important;
+                font-size: 9.5px !important;
+                background: #f8fafc !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+            .timeline-top { gap: 6px !important; }
+            .timeline-badge { font-size: 8.5px !important; padding: 1px 5px !important; }
+            .timeline-time { font-size: 9px !important; }
+            .timeline-reason {
+                margin-top: 3px !important;
+                padding: 3px 6px !important;
+                font-size: 9px !important;
+            }
+        }
+
+        /* Top Toolbar */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 20px;
+            background: #e2e8f0;
+            color: #475569;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn-back:hover { background: #cbd5e1; color: #1e293b; }
+        .btn-print {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 24px;
+            background: #059669;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .btn-print:hover { background: #047857; }
+        .count-badge {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        /* Document Header */
+        .header {
+            text-align: center;
+            margin-bottom: 26px;
+            padding-bottom: 18px;
+            border-bottom: 3px solid #059669;
+        }
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .header-top .logo { height: 50px; }
+        .header-top .company-name {
+            font-size: 17px;
+            font-weight: 800;
+            color: #059669;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+        .header .meta {
+            font-size: 11px;
+            color: #64748b;
+        }
+        .header .meta strong { color: #334155; }
+
+        /* List Cards Container */
+        .print-list-container {
+            display: block;
+        }
+
+        /* Request Card */
+        .request-card {
+            display: block;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 18px 22px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+            margin-bottom: 18px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* Card Header Bar */
+        .card-header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .header-tags {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .tag-num {
+            background: #059669;
+            color: #ffffff;
+            font-size: 10.5px;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 6px;
+        }
+        .tag-id {
+            font-family: 'JetBrains Mono', monospace, Consolas;
+            font-size: 11px;
+            font-weight: 700;
+            color: #0f172a;
+            background: #f1f5f9;
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        .tag-badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .tag-req { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+        .tag-appr { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .tag-eco { background: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; }
+        .tag-rejc { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+
+        .tag-prio-crit { background: #fee2e2; color: #b91c1c; }
+        .tag-prio-high { background: #ffedd5; color: #c2410c; }
+        .tag-prio-med { background: #dbeafe; color: #1d4ed8; }
+        .tag-prio-low { background: #f1f5f9; color: #475569; }
+
+        .tag-kat { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }
+        .tag-dept { background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; }
+
+        .header-date {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        /* Request Title */
+        .req-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 12px;
+            line-height: 1.45;
+        }
+
+        /* Metadata Grid */
+        .req-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 8px 16px;
+            background: #f8fafc;
+            border: 1px solid #f1f5f9;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .grid-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .grid-label {
+            font-size: 9.5px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .grid-val {
+            font-size: 11px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .font-mono { font-family: 'JetBrains Mono', monospace, Consolas; }
+
+        /* Description Box */
+        .desc-box {
+            margin-bottom: 14px;
+        }
+        .desc-box-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .desc-box-content {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 11px;
+            line-height: 1.6;
+            color: #334155;
+        }
+
+        /* Alerts (Rejection / Target) */
+        .alert-box {
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+        .alert-rejc {
+            background: #fef2f2;
+            border-left: 3px solid #ef4444;
+            color: #991b1b;
+        }
+        .alert-info {
+            background: #eff6ff;
+            border-left: 3px solid #3b82f6;
+            color: #1e40af;
+        }
+
+        /* Audit Trail Section */
+        .audit-container {
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 12px;
+            margin-top: 6px;
+        }
+        .audit-heading {
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .timeline {
+            position: relative;
+            padding-left: 18px;
+            margin-left: 6px;
+            border-left: 2px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .timeline-item {
+            position: relative;
+        }
+        .timeline-dot {
+            position: absolute;
+            left: -23px;
+            top: 4px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #059669;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 0 1.5px #059669;
+        }
+        .timeline-content {
+            background: #f8fafc;
+            border: 1px solid #f1f5f9;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 10.5px;
+        }
+        .timeline-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .timeline-badge {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.2px;
+        }
+        .badge-act-crea { background: #e0f2fe; color: #0369a1; }
+        .badge-act-appr { background: #dcfce7; color: #15803d; }
+        .badge-act-rejc { background: #fee2e2; color: #b91c1c; }
+        .badge-act-eco  { background: #ffedd5; color: #c2410c; }
+        .badge-act-insp { background: #fef3c7; color: #b45309; }
+        .badge-act-clsd { background: #d1fae5; color: #047857; }
+        .badge-act-oth  { background: #f1f5f9; color: #475569; }
+
+        .timeline-time { color: #64748b; font-size: 10px; }
+        .timeline-user { color: #1e293b; }
+        .timeline-status { color: #475569; }
+        .timeline-reason {
+            margin-top: 4px;
+            padding: 4px 8px;
+            background: #ffffff;
+            border-left: 3px solid #f59e0b;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #475569;
+            font-style: italic;
+        }
+
+        /* Dynamic Hide Audit Trail */
+        body.hide-audit .audit-container {
+            display: none !important;
+        }
+
+        /* Toggle Audit Trail Toolbar Button */
+        .toggle-audit-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 13px;
+            background: #ffffff;
+            border: 1.5px solid #059669;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+            color: #065f46;
+            transition: all 0.2s;
+            user-select: none;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .toggle-audit-btn:hover {
+            background: #ecfdf5;
+        }
+        .toggle-audit-btn input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            accent-color: #059669;
+            cursor: pointer;
+        }
+        .toolbar-sep {
+            width: 1px;
+            height: 22px;
+            background: #cbd5e1;
+        }
+    </style>
+</head>
+<body class="<% IF GV_SHOW_AUDIT = '0' OR GV_SHOW_AUDIT = 'N'. %>hide-audit<% ENDIF. %>">
+
+    <!-- Toolbar (hidden on print) -->
+    <div class="toolbar no-print">
+        <a href="requester_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>" class="btn-back">
+            <i class="fas fa-arrow-left"></i> Kembali ke Dashboard
+        </a>
+        <div style="display:flex;align-items:center;gap:12px">
+            <!-- Toggle Audit Trail -->
+            <label class="toggle-audit-btn" title="Klik untuk menampilkan atau menyembunyikan riwayat audit trail">
+                <input type="checkbox" id="toggleAudit" onchange="toggleAuditTrail(this.checked)" <% IF GV_SHOW_AUDIT <> '0' AND GV_SHOW_AUDIT <> 'N'. %>checked<% ENDIF. %>>
+                <i class="fas fa-history text-emerald-600"></i>
+                <span>Sertakan Audit Trail</span>
+            </label>
+
+            <span class="toolbar-sep"></span>
+
+            <span style="font-size:11px;color:#475569;background:#f8fafc;padding:6px 12px;border-radius:6px;border:1px solid #cbd5e1;">
+                <i class="fas fa-info-circle text-emerald-600"></i> <strong>Tips:</strong> Hilangkan centang <em>Headers &amp; footers</em> di print dialog.
+            </span>
+            <span class="count-badge">Total: <strong><%= GV_PRINT_COUNT %></strong> Request</span>
+            <button onclick="window.print()" class="btn-print">
+                <i class="fas fa-print"></i> Cetak / Print PDF
+            </button>
+        </div>
+    </div>
+
+    <!-- Print Header -->
+    <div class="header">
+        <div class="header-top">
+            <img src="logo.png" alt="Logo" class="logo">
+            <span class="company-name">PT. Kayu Mebel Indonesia</span>
+        </div>
+        <h1>Laporan Improvement Request</h1>
+        <div class="meta">
+            Periode: <strong><%= GV_DATE_FROM %></strong> s/d <strong><%= GV_DATE_TO %></strong>
+            &nbsp;|&nbsp; Dicetak oleh: <strong><%= GV_FULL_NAME %></strong>
+            &nbsp;|&nbsp; Total: <strong><%= GV_PRINT_COUNT %></strong> Request
+            <% IF GV_FILTER_STATUS IS NOT INITIAL AND GV_FILTER_STATUS <> 'ALL'. %>
+            &nbsp;|&nbsp; Filter Status: <strong><%= GV_FILTER_STATUS %></strong>
+            <% ENDIF. %>
+            &nbsp;|&nbsp; Mode: <strong id="modeLabel"><% IF GV_SHOW_AUDIT = '0' OR GV_SHOW_AUDIT = 'N'. %>Ringkas (Tanpa Audit Trail)<% ELSE. %>Lengkap (Dengan Audit Trail)<% ENDIF. %></strong>
+        </div>
+    </div>
+
+    <!-- Request List Container (Vertical Cards Layout) -->
+    <div class="print-list-container">
+        <%= GV_PRINT_HTML %>
+    </div>
+
+    <script>
+        function toggleAuditTrail(show) {
+            if (show) {
+                document.body.classList.remove('hide-audit');
+            } else {
+                document.body.classList.add('hide-audit');
+            }
+            var lbl = document.getElementById('modeLabel');
+            if (lbl) {
+                lbl.innerText = show ? 'Lengkap (Dengan Audit Trail)' : 'Ringkas (Tanpa Audit Trail)';
+            }
+        }
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,162 @@
+* =======================================================================
+* SE11 Creation Steps — ZECM_IREQ_FILE
+* To create, follow these steps in SAP GUI
+* =======================================================================
+
+== TABLE DEFINITION ==
+Table Name:      ZECM_IREQ_FILE
+Short Text:      ECM IREQ File Attachments
+Delivery Class:  A  (Application table)
+Display/Maint:   Allowed
+
+== FIELDS ==
+  Field name       Key   Data element/reference      Length
+  ----------------------------------------------------------
+  MANDT             X    MANDT                         3
+  FILE_ID           X    CHAR40                       40     (or ZECM_IREQ_FILE_ID)
+  IREQ_ID                ZECM_IREQ-IREQ_ID            10     (DOM_10)
+  FILE_NAME              CHAR200                     200
+  FILE_EXT               CHAR10                       10
+  FILE_SIZE              INT4                          4
+  MIME_TYPE              CHAR100                     100
+  UPLOADED_BY            SYUNAME_012                  12     (or CHAR12)
+  UPLOADED_AT            SYDATUM                       8     (DATS)
+  UPLOADED_TIME          SYUZEIT                       6     (TIMS)
+
+== CREATION STEPS ==
+1. /nSE11
+2. Enter "ZECM_IREQ_FILE" → Create
+3. Enter fields as above
+4. Technical Settings:
+   - Data class: APPL0
+   - Size category: 0
+   - Buffering not allowed
+5. Save + Activate (Ctrl+F3)
+
+* =======================================================================
+* FILE UPLOAD FLOW (ABAP)
+* =======================================================================
+
+== EVENT HANDLER CODE (for requester_list_event_handler.txt) ==
+
+" --- add AFTER INSERT zecm_ireq and audit log ---
+
+" ==============================================================
+" FILE UPLOAD — parse multipart, save to disk, insert metadata
+" ==============================================================
+DATA: lv_content_type TYPE string,
+      lv_boundary     TYPE string,
+      lv_raw_body     TYPE string,
+      lt_parts        TYPE TABLE OF string,
+      lv_part         TYPE string,
+      lv_filename     TYPE string,
+      lv_mime_type    TYPE string,
+      lv_file_content TYPE string,
+      lv_file_name    TYPE string,
+      lv_file_ext     TYPE string,
+      lv_file_path    TYPE string,
+      lv_file_id      TYPE string,
+      lv_guid_16      TYPE xstring,
+      lv_guid_22      TYPE string,
+      ls_ireq_file    TYPE zecm_ireq_file.
+
+" Check if form is multipart
+lv_content_type = runtime->server->request->get_header_field( 'content-type' ).
+IF lv_content_type CS 'multipart/form-data'.
+
+  " Extract boundary from content type
+  FIND FIRST OCCURRENCE OF 'boundary=(.+)' IN lv_content_type
+    SUBMATCHES lv_boundary.
+  IF sy-subrc = 0.
+    REPLACE ALL OCCURRENCES OF '"' IN lv_boundary WITH ''.
+    lv_boundary = '--' && lv_boundary.
+
+    " Get raw request body
+    lv_raw_body = runtime->server->request->get_cdata( ).
+
+    " Split by boundary
+    SPLIT lv_raw_body AT lv_boundary INTO TABLE lt_parts.
+
+    LOOP AT lt_parts INTO lv_part.
+      " Skip if not a file part
+      IF lv_part NS 'Content-Disposition' OR lv_part NS 'filename="'.
+        CONTINUE.
+      ENDIF.
+
+      " Extract original filename
+      CLEAR lv_filename.
+      FIND FIRST OCCURRENCE OF 'filename="(.*?)"' IN lv_part
+        SUBMATCHES lv_filename.
+      IF sy-subrc <> 0 OR lv_filename IS INITIAL OR lv_filename CP '--*'.
+        CONTINUE.
+      ENDIF.
+
+      " Extract MIME type
+      CLEAR lv_mime_type.
+      FIND FIRST OCCURRENCE OF 'Content-Type: (.*)\r\n' IN lv_part
+        SUBMATCHES lv_mime_type.
+
+      " Extract content (after blank line \r\n\r\n)
+      FIND FIRST OCCURRENCE OF '\r\n\r\n' IN lv_part.
+      IF sy-subrc = 0.
+        lv_file_content = lv_part+sy-fdpos(4).
+      ENDIF.
+
+      " Trim trailing \r\n from content
+      IF lv_file_content CP '*\r\n\r\n'.
+        lv_file_content = substring( val = lv_file_content
+          len = strlen( lv_file_content ) - 4 ).
+      ELSEIF lv_file_content CP '*\r\n'.
+        lv_file_content = substring( val = lv_file_content
+          len = strlen( lv_file_content ) - 2 ).
+      ENDIF.
+
+      " Generate GUID for unique filename on disk
+      CALL FUNCTION 'GUID_CREATE_RAW'
+        IMPORTING
+          ev_guid_16 = lv_guid_16.
+      lv_guid_22 = cl_bcs_convert=>raw_to_string( lv_guid_16 ).
+
+      " Get extension
+      lv_file_name = lv_filename.
+      CALL FUNCTION 'STRING_REVERSE'
+        CHANGING string = lv_filename.
+      SPLIT lv_filename AT '.' INTO lv_file_ext lv_filename.
+      CALL FUNCTION 'STRING_REVERSE'
+        CHANGING string = lv_file_ext.
+      CLEAR lv_filename.
+      lv_filename = lv_file_name.
+      IF lv_file_ext IS INITIAL.
+        lv_file_ext = 'bin'.
+      ENDIF.
+
+      " Build path: /mnt/sap_media/ecm_files/<guid>.<ext>
+      CONCATENATE '/mnt/sap_media/ecm_files/' lv_guid_22 '.' lv_file_ext
+        INTO lv_file_path.
+
+      " Save file to disk (binary mode preserves image data)
+      OPEN DATASET lv_file_path FOR OUTPUT IN BINARY MODE.
+      IF sy-subrc = 0.
+        DATA: lv_xstring TYPE xstring.
+        lv_xstring = cl_abap_codepage=>convert_to( lv_file_content ).
+        TRANSFER lv_xstring TO lv_file_path.
+        CLOSE DATASET lv_file_path.
+
+        " Insert metadata into DB
+        lv_file_id = lv_guid_22.
+        CLEAR ls_ireq_file.
+        ls_ireq_file-file_id     = lv_file_id.
+        ls_ireq_file-ireq_id     = lv_ireq_id.
+        ls_ireq_file-file_name   = lv_file_name.
+        ls_ireq_file-file_ext    = lv_file_ext.
+        ls_ireq_file-file_size   = xstrlen( lv_xstring ).
+        ls_ireq_file-mime_type   = lv_mime_type.
+        ls_ireq_file-uploaded_by = GV_USER_ID.
+        ls_ireq_file-uploaded_at = sy-datum.
+        ls_ireq_file-uploaded_time = sy-uzeit.
+
+        INSERT zecm_ireq_file FROM ls_ireq_file.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+ENDIF.

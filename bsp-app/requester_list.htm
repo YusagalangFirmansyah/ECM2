@@ -1,0 +1,1004 @@
+﻿    <%@page language="abap"%>
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Request Dashboard - ECM</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        fontFamily: {
+                            sans: ['"Plus Jakarta Sans"', 'Segoe UI', 'sans-serif'],
+                        },
+                        colors: {
+                            brand: {
+                                50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0',
+                                300: '#6ee7b7', 400: '#34d399', 500: '#10b981',
+                                600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b',
+                            }
+                        }
+                    }
+                }
+            }
+        </script>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <style>
+            body { background-color: #f8fafc; background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px); background-size: 24px 24px; }
+            ::-webkit-scrollbar { width: 8px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+            .radio-card { transition: all 0.15s; }
+            .radio-card:has(input:checked) { border-color: #059669; background: #ecfdf5; }
+        </style>
+    </head>
+    <body class="font-sans text-slate-800 min-h-screen">
+
+    <!-- INCLUDE HEADER -->
+    <%@include file="requester_header.htm"%>
+
+    <!-- Alert Message -->
+    <% IF GV_MESSAGE IS NOT INITIAL. %>
+    <div class="w-full px-4 sm:px-6 mt-4">
+        <div class="flex items-center gap-2 px-4 py-3 rounded-lg <% IF GV_ICON = 'error'. %>bg-red-50 text-red-700 border border-red-200<% ELSE. %>bg-emerald-50 text-emerald-700 border border-emerald-200<% ENDIF. %>">
+            <i class="fas fa-<% IF GV_ICON = 'error'. %>exclamation-circle<% ELSE. %>check-circle<% ENDIF. %>"></i>
+            <span class="text-sm font-medium"><%= GV_MESSAGE %></span>
+        </div>
+    </div>
+    <% ENDIF. %>
+
+    <!-- ========== REQUEST LIST SECTION ========== -->
+    <div class="w-full px-4 sm:px-6 pb-6 mt-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <!-- Header -->
+            <div class="px-4 sm:px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-700">
+                        <i class="fas fa-clipboard-list text-brand-600 mr-2"></i>Daftar Request Saya
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-1">Total: <strong><%= GV_REQUEST_COUNT %></strong> request</p>
+                </div>
+                <div class="flex w-full md:w-auto gap-2">
+                        <!-- Dropdown Cetak -->
+                        <div class="relative flex-1 md:flex-none text-left" id="printMenuDropdown">
+                            <button type="button" onclick="togglePrintDropdown(event)" 
+                                class="w-full md:w-auto px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200 transition flex justify-center items-center gap-2 border border-slate-200">
+                                <i class="fas fa-print text-emerald-600"></i> Cetak <i class="fas fa-chevron-down text-xs ml-0.5 text-slate-400"></i>
+                            </button>
+                            <div id="printMenuContent" class="hidden absolute left-0 md:right-0 md:left-auto mt-1.5 w-full md:w-60 rounded-xl shadow-xl bg-white ring-1 ring-black ring-opacity-5 z-50 p-1.5 border border-slate-200 divide-y divide-slate-100">
+                                <div class="p-1">
+                                    <button type="button" onclick="cetakRequest('X')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 transition flex items-center gap-2.5">
+                                        <i class="fas fa-history text-emerald-600 text-sm"></i>
+                                        <div>
+                                            <div class="font-bold">Cetak dengan Audit Trail</div>
+                                            <div class="text-[10px] text-slate-400 font-normal">Sertakan riwayat lengkap</div>
+                                        </div>
+                                    </button>
+                                </div>
+                                <div class="p-1">
+                                    <button type="button" onclick="cetakRequest('0')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition flex items-center gap-2.5">
+                                        <i class="fas fa-file-alt text-slate-400 text-sm"></i>
+                                        <div>
+                                            <div class="font-bold">Cetak tanpa Audit Trail</div>
+                                            <div class="text-[10px] text-slate-400 font-normal">Hanya info request (ringkas)</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <button onclick="openNewRequest()" 
+                            class="flex-1 md:flex-none justify-center px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 transition shadow-md flex items-center gap-2">
+                            <i class="fas fa-plus-circle"></i> Request Baru
+                        </button>
+                    </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="px-4 sm:px-6 py-4 border-b border-slate-100">
+                <form id="filterForm" method="get" class="flex flex-col md:flex-row flex-wrap items-start md:items-end gap-4">
+                    <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+                    <input type="hidden" name="r" value="<%= GV_ROLE %>">
+                    <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+                    <input type="hidden" name="filter_status" value="<%= GV_FILTER_STATUS %>">
+                    
+                    <!-- Status Pills -->
+                    <div class="w-full md:w-auto">
+                        <label class="block text-xs font-bold text-slate-500 mb-1.5">Status</label>
+                        <div class="flex gap-1 overflow-x-auto pb-2 -mb-2 no-scrollbar" style="scrollbar-width: none; -ms-overflow-style: none;">
+                            <style>.no-scrollbar::-webkit-scrollbar { display: none; }</style>
+                            <button type="button" onclick="setStatusFilter('ALL')" 
+                                class="status-pill whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 <% IF GV_FILTER_STATUS = 'ALL' OR GV_FILTER_STATUS IS INITIAL. %>bg-brand-600 text-white border-brand-600<% ELSE. %>bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200<% ENDIF. %>"
+                                data-value="ALL">Semua</button>
+                            <button type="button" onclick="setStatusFilter('REQ')" 
+                                class="status-pill whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 <% IF GV_FILTER_STATUS = 'REQ'. %>bg-yellow-500 text-white border-yellow-500<% ELSE. %>bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-100<% ENDIF. %>"
+                                data-value="REQ">Menunggu</button>
+                            <button type="button" onclick="setStatusFilter('APPR')" 
+                                class="status-pill whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 <% IF GV_FILTER_STATUS = 'APPR'. %>bg-blue-500 text-white border-blue-500<% ELSE. %>bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100<% ENDIF. %>"
+                                data-value="APPR">Disetujui</button>
+                            <button type="button" onclick="setStatusFilter('REJC')" 
+                                class="status-pill whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 <% IF GV_FILTER_STATUS = 'REJC'. %>bg-red-500 text-white border-red-500<% ELSE. %>bg-red-50 text-red-600 border-red-200 hover:bg-red-100<% ENDIF. %>"
+                                data-value="REJC">Ditolak</button>
+                            <button type="button" onclick="setStatusFilter('BMPR')" 
+                                class="status-pill whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 <% IF GV_FILTER_STATUS = 'BMPR'. %>bg-amber-500 text-white border-amber-500<% ELSE. %>bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100<% ENDIF. %>"
+                                data-value="BMPR">BOM Pending</button>
+                            <button type="button" onclick="setStatusFilter('BMAP')" 
+                                class="status-pill whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 <% IF GV_FILTER_STATUS = 'BMAP'. %>bg-teal-500 text-white border-teal-500<% ELSE. %>bg-teal-50 text-teal-600 border-teal-200 hover:bg-teal-100<% ENDIF. %>"
+                                data-value="BMAP">BOM Approved</button>
+                        </div>
+                    </div>
+
+                    <!-- Date Range -->
+                    <div class="w-full md:w-auto">
+                        <label class="block text-xs font-bold text-slate-500 mb-1.5">Tanggal</label>
+                        <div class="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                            <input type="date" name="date_from" value="<%= GV_DATE_FROM %>"
+                                class="w-full sm:w-auto px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                            <span class="text-xs text-slate-400 hidden sm:inline">s/d</span>
+                            <input type="date" name="date_to" value="<%= GV_DATE_TO %>"
+                                class="w-full sm:w-auto px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                        </div>
+                    </div>
+
+                    <!-- Search -->
+                    <div class="w-full md:flex-1 min-w-0 md:min-w-[200px]">
+                        <label class="block text-xs font-bold text-slate-500 mb-1.5">Cari</label>
+                        <div class="relative">
+                            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <input type="text" name="search" value="<%= GV_SEARCH %>" placeholder="Judul atau material..."
+                                class="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="w-full md:w-auto flex gap-2 pt-2 md:pt-0">
+                        <button type="submit" 
+                            class="px-4 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition shadow-sm">
+                            <i class="fas fa-filter mr-1"></i>Filter</button>
+                        <button type="button" onclick="resetFilters()"
+                            class="px-4 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200 transition">
+                            <i class="fas fa-undo mr-1"></i>Reset</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Table -->
+            <div class="">
+                <table class="w-full block md:table">
+                    <thead class="hidden md:table-header-group">
+                        <tr class="bg-slate-50 text-left">
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap w-[120px]">IREQ ID</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase min-w-[250px]">Judul / Material</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap w-[140px]">Status</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap w-[120px]">ECR</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap w-[180px]">Drafter</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap w-[120px]">Tanggal</th>
+                            <th class="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase whitespace-nowrap w-[140px]">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="block md:table-row-group divide-y-0 md:divide-y divide-slate-100 space-y-3 md:space-y-0 p-3 md:p-0">
+                        <%= GV_REQUEST_HTML %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== REQUEST FORM MODAL ========== -->
+    <div id="reqModal" class="fixed inset-0 z-[200] hidden bg-black/50 flex items-center justify-center" style="backdrop-filter: blur(2px);">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto m-4">
+            <!-- Modal Header -->
+            <div class="sticky top-0 bg-white px-6 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-2xl z-10">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-700">
+                        <i class="fas fa-paper-plane text-brand-600 mr-2"></i>Request Perubahan Baru
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Lengkapi form di bawah untuk mengajukan perubahan</p>
+                </div>
+                <button onclick="closeRequestForm()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+            </div>
+
+            <!-- Form -->
+            <form action="requester_list.htm" method="post" id="reqForm" class="px-6 py-4" enctype="multipart/form-data">
+                <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+                <input type="hidden" name="r" value="<%= GV_ROLE %>">
+                <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+                <input type="hidden" name="OnInputProcessing" value="">
+                <input type="hidden" name="materials" id="materials" value="">
+
+                <!-- Section 3: Pilih Material -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-4 p-5">
+                    <h3 class="text-sm font-bold text-slate-800 flex items-center mb-4">
+                        <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Pilih Material <span class="text-red-500">*</span>
+                    </h3>
+
+                    <!-- Search -->
+                    <div class="flex gap-2 mb-3">
+                        <input type="text" name="keyword" id="keyword" placeholder="Cari material (nama/ID)..." class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+                        <button type="button" onclick="doSearch()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-all">
+                            Cari
+                        </button>
+                        <button type="button" onclick="resetMaterialSearch()" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-all" title="Reset Pencarian">
+                            <i class="fas fa-undo mr-1"></i>Reset
+                        </button>
+                    </div>
+
+                    <!-- Results (rendered from ABAP) -->
+                    <div id="searchResults" class="max-h-[200px] overflow-y-auto">
+                        <% IF GV_MAT_RESULTS IS NOT INITIAL. %>
+                            <%= GV_MAT_RESULTS %>
+                        <% ELSE. %>
+                            <p class="text-xs text-slate-400 text-center py-4">Ketik keyword lalu klik Cari</p>
+                        <% ENDIF. %>
+                    </div>
+
+                    <!-- Selected materials -->
+                    <div id="selectedMaterials" class="mt-3 pt-3 border-t border-slate-100">
+                        <p class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Material Terpilih:</p>
+                        <div id="selectedList" class="text-xs text-slate-500">Belum ada material dipilih</div>
+                    </div>
+                </div>
+
+                <!-- 🚫 Upload Lampiran disabled — aktifkan di requester_list.htm kalo perlu -->
+
+                <!-- Section 1: Informasi Perubahan -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-4 p-5">
+                    <h3 class="text-sm font-bold text-slate-800 flex items-center mb-4">
+                        <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Informasi Perubahan
+                    </h3>
+
+                    <!-- Judul -->
+                    <div class="mb-4">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Judul Perubahan <span class="text-red-500">*</span></label>
+                        <input type="text" name="title" id="title" placeholder="Contoh: Revisi dimensi kaki kursi" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                    </div>
+
+                    <!-- Kategori (Radio) -->
+                    <div class="mb-4">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Kategori <span class="text-red-500">*</span></label>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                                <input type="radio" name="kategori" value="DRW" class="accent-emerald-600">
+                                <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
+                            </label>
+                            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                                <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
+                                <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
+                            </label>
+                            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                                <input type="radio" name="kategori" value="DMT" class="accent-emerald-600">
+                                <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Prioritas (Radio) -->
+                    <div class="mb-4">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Prioritas <span class="text-red-500">*</span></label>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                                <input type="radio" name="priority" value="CRITICAL" class="accent-red-600">
+                                <div><div class="font-semibold text-sm text-red-600">Critical</div></div>
+                            </label>
+                            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                                <input type="radio" name="priority" value="HIGH" class="accent-orange-500">
+                                <div><div class="font-semibold text-sm text-orange-600">High</div></div>
+                            </label>
+                            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                                <input type="radio" name="priority" value="MEDIUM" class="accent-blue-600">
+                                <div><div class="font-semibold text-sm text-blue-600">Medium</div></div>
+                            </label>
+                            <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                                <input type="radio" name="priority" value="LOW" class="accent-slate-500">
+                                <div><div class="font-semibold text-sm text-slate-600">Low</div></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Estimasi Biaya -->
+                    <div class="mb-0">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Estimasi Dampak Biaya</label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-slate-500 font-semibold">Rp</span>
+                            <input type="number" name="cost_estimate" id="cost_estimate" placeholder="0 (opsional)" class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Detail Perubahan -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-4 p-5">
+                    <h3 class="text-sm font-bold text-slate-800 flex items-center mb-4">
+                        <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Detail Perubahan
+                    </h3>
+
+                    <!-- Departemen -->
+                    <div class="mb-4">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Departemen <span class="text-red-500">*</span></label>
+                        <select name="dept" id="dept" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                            <option value="">-- Pilih Departemen --</option>
+                            <option value="Produksi">Produksi</option>
+                            <option value="QC">Quality Control</option>
+                            <option value="Purchasing">Purchasing</option>
+                            <option value="Sales">Sales</option>
+                            <option value="Drafter">Drafter</option>
+                            <option value="Owner">Owner</option>
+                        </select>
+                    </div>
+
+                    <!-- Alasan -->
+                    <div class="mb-4">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Alasan Perubahan <span class="text-red-500">*</span></label>
+                        <select name="reason" id="reason" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                            <option value="">-- Pilih Alasan --</option>
+                            <option value="Koreksi Cacat">Koreksi Cacat</option>
+                            <option value="Reduksi Biaya">Reduksi Biaya</option>
+                            <option value="Perbaikan Desain">Perbaikan Desain</option>
+                            <option value="Perubahan Bahan">Perubahan Bahan</option>
+                            <option value="Req. Buyer">Req. Buyer</option>
+                            <option value="Kepatuhan Standar Industri">Kepatuhan Standar Industri</option>
+                <option value="Upload File Baru">Upload File Baru</option>
+                        </select>
+                    </div>
+
+                    <!-- Deskripsi -->
+                    <div class="mb-4">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Deskripsi Perubahan <span class="text-red-500">*</span></label>
+                        <textarea name="description" id="description" rows="4" placeholder="Jelaskan perubahan yang diinginkan..." class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none"></textarea>
+                    </div>
+
+                    <!-- Attachment Bukti Owner -->
+                    <div class="mb-0 p-4 border border-slate-200 rounded-lg bg-slate-50">
+                        <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
+                            <i class="fas fa-paperclip mr-1"></i> File Attachment
+                            <span class="text-xs font-normal normal-case text-slate-500 ml-1">(Opsional, max 5 file, max total 10MB)</span>
+                        </label>
+                        <input type="file" id="reqAttFile" multiple accept="image/jpeg,image/png,image/jpg,application/pdf" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 focus:outline-none cursor-pointer">
+                        <p class="mt-1 text-[0.65rem] text-slate-400">Format didukung: JPG, PNG, PDF. File ini akan otomatis dihapus setelah request di-approve oleh Admin.</p>
+                        
+                        <div id="fileListContainer" class="mt-2 space-y-1"></div>
+                        <div id="hiddenInputsContainer"></div>
+                    </div>
+                </div>
+
+                <!-- Submit -->
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeRequestForm()" class="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+                        Batal
+                    </button>
+                    <button type="button" onclick="submitRequest()" class="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm">
+                        Kirim Request
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== EDIT REQUEST MODAL ========== -->
+    <div id="editModal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center" style="backdrop-filter: blur(2px);">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div class="sticky top-0 bg-white px-6 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-2xl z-10">
+                <h3 class="text-lg font-bold text-slate-700">
+                    <i class="fas fa-edit text-blue-600 mr-2"></i>Edit Request (IREQ)
+                </h3>
+                <button type="button" onclick="closeEditModal()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+            </div>
+            
+            <form method="POST" action="" onsubmit="return validateEditForm()">
+                <input type="hidden" name="OnInputProcessing" value="update">
+                <input type="hidden" name="ireq_id" id="edit_ireq_id" value="">
+                
+                <div class="p-6 space-y-5">
+                    <!-- Judul Perubahan -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Judul Perubahan <span class="text-red-500">*</span></label>
+                        <input type="text" name="title" id="edit_title" required class="w-full text-sm border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500">
+                    </div>
+
+                    <!-- Material FG -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Material Finish Good <span class="text-red-500">*</span></label>
+                        <input type="text" name="matnr_fg" id="edit_matnr_fg" required class="w-full text-sm border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500 font-mono">
+                        <p class="text-[0.65rem] text-slate-400 mt-1">Contoh: 30010596 (Ketikan kode SAP material)</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Kategori -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Kategori <span class="text-red-500">*</span></label>
+                            <select name="kategori" id="edit_kategori" required class="w-full text-sm border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500">
+                                <option value="">-- Pilih --</option>
+                                <option value="DRW">DRW - Drawing/Konstruksi</option>
+                                <option value="DBX">DBX - Dus/Kemasan</option>
+                                <option value="DMT">DMT - Dimensi/Toleransi</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Prioritas -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Prioritas <span class="text-red-500">*</span></label>
+                            <select name="priority" id="edit_priority" required class="w-full text-sm border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500">
+                                <option value="LOW">Rendah (Low)</option>
+                                <option value="MEDIUM" selected>Sedang (Medium)</option>
+                                <option value="HIGH">Tinggi (High)</option>
+                                <option value="CRITICAL">Kritis (Critical)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Departemen -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">
+                                Departemen Pemohon <span class="text-red-500">*</span>
+                            </label>
+                            <select name="zdept" id="edit_zdept" required
+                                class="w-full text-sm border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500">
+                                <option value="">-- Pilih Departemen --</option>
+                                <option value="Produksi">Produksi</option>
+                                <option value="QC">Quality Control</option>
+                                <option value="Purchasing">Purchasing</option>
+                                <option value="Sales">Sales</option>
+                                <option value="Drafter">Drafter</option>
+                                <option value="Owner">Owner</option>
+                            </select>
+                        </div>
+
+                        <!-- Alasan Perubahan -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">
+                                Alasan Utama <span class="text-red-500">*</span>
+                            </label>
+                            <select name="zreason" id="edit_zreason" required
+                                class="w-full text-sm border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500">
+                                <option value="">-- Pilih Alasan --</option>
+                                <option value="Koreksi Cacat">Koreksi Cacat</option>
+                                <option value="Reduksi Biaya">Reduksi Biaya</option>
+                                <option value="Perbaikan Desain">Perbaikan Desain</option>
+                                <option value="Perubahan Bahan">Perubahan Bahan</option>
+                                <option value="Req. Buyer">Req. Buyer</option>
+                                <option value="Kepatuhan Standar Industri">Kepatuhan Standar Industri</option>
+                <option value="Upload File Baru">Upload File Baru</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Deskripsi Detail -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Deskripsi Detail <span class="text-red-500">*</span></label>
+                        <textarea name="description" id="edit_description" rows="4" required class="w-full text-sm border-slate-300 rounded-lg shadow-sm focus:ring-brand-500 focus:border-brand-500" placeholder="Jelaskan secara detail apa yang perlu dirubah..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Footer Buttons -->
+                <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex justify-end gap-3 rounded-b-2xl">
+                    <button type="button" onclick="closeEditModal()" class="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition">Batal</button>
+                    <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition shadow-sm">
+                        <i class="fas fa-save mr-1"></i> Simpan Perubahan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== AUDIT TRAIL MODAL ========== -->
+    <div id="auditModal" class="fixed inset-0 z-[200] hidden bg-black/50 flex items-center justify-center" style="backdrop-filter: blur(2px);">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto m-4">
+            <div class="sticky top-0 z-10 bg-white px-6 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-2xl">
+                <h3 class="text-lg font-bold text-slate-700">
+                    <i class="fas fa-history text-brand-600 mr-2"></i>Audit Trail
+                </h3>
+                <button onclick="closeAuditModal()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+            </div>
+            <div class="px-6 py-4">
+                <div class="relative pl-8 before:content-[''] before:absolute before:left-3 before:top-0 before:bottom-0 before:w-0.5 before:bg-slate-200" id="auditContent">
+                    <%= GV_AUDIT_HTML %>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var selectedMats = {};
+
+        // --- Modal controls ---
+        // Form Cancel IREQ
+        function confirmCancelIreq(ireqId) {
+            Swal.fire({
+                title: 'Batalkan Request?',
+                text: "Request yang belum diproses akan dihapus secara permanen dari sistem.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'Ya, Hapus!',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    var form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '';
+                    
+                    var inputAction = document.createElement('input');
+                    inputAction.type = 'hidden';
+                    inputAction.name = 'OnInputProcessing';
+                    inputAction.value = 'cancel_ireq';
+                    form.appendChild(inputAction);
+                    
+                    var inputId = document.createElement('input');
+                    inputId.type = 'hidden';
+                    inputId.name = 'cancel_ireq_id';
+                    inputId.value = ireqId;
+                    form.appendChild(inputId);
+                    
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            });
+        }
+
+        function openNewRequest() {
+            resetRequestForm();
+            openRequestForm();
+        }
+
+        function openRequestForm() {
+            document.getElementById('reqModal').classList.remove('hidden');
+        }
+
+        function resetMaterialSearch() {
+            var kw = document.getElementById('keyword');
+            if (kw) {
+                kw.value = '';
+            }
+            var sr = document.getElementById('searchResults');
+            if (sr) {
+                sr.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">' +
+                    'Ketik keyword lalu klik Cari</p>';
+            }
+            if (window.history && window.history.replaceState) {
+                var cleanUrl = window.location.href;
+                cleanUrl = cleanUrl.replace(/([?&])search=1(&|$)/, '$1');
+                cleanUrl = cleanUrl.replace(/[?&]$/, '');
+                window.history.replaceState(null, '', cleanUrl);
+            }
+        }
+
+        function resetRequestForm() {
+            var form = document.getElementById('reqForm');
+            if (form) {
+                form.reset();
+            }
+
+            resetMaterialSearch();
+
+            selectedMats = {};
+            updateSelected();
+
+            var fileListContainer = document.getElementById('fileListContainer');
+            var hiddenInputsContainer = document.getElementById('hiddenInputsContainer');
+            if (fileListContainer) {
+                fileListContainer.innerHTML = '';
+            }
+            if (hiddenInputsContainer) {
+                hiddenInputsContainer.innerHTML = '';
+            }
+            var reqAttFile = document.getElementById('reqAttFile');
+            if (reqAttFile) {
+                reqAttFile.value = '';
+            }
+
+            if (window.history && window.history.replaceState) {
+                var cleanUrl = window.location.href;
+                cleanUrl = cleanUrl.replace(/([?&])search=1(&|$)/, '$1');
+                cleanUrl = cleanUrl.replace(/([?&])new=1(&|$)/, '$1');
+                cleanUrl = cleanUrl.replace(/[?&]$/, '');
+                window.history.replaceState(null, '', cleanUrl);
+            }
+        }
+
+        function closeRequestForm() {
+            document.getElementById('reqModal').classList.add('hidden');
+            resetRequestForm();
+        }
+
+        function downloadAttachment(attId) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '';
+            form.target = '_blank';
+            
+            var inputAction = document.createElement('input');
+            inputAction.type = 'hidden';
+            inputAction.name = 'OnInputProcessing';
+            inputAction.value = 'download_att';
+            form.appendChild(inputAction);
+            
+            var inputId = document.createElement('input');
+            inputId.type = 'hidden';
+            inputId.name = 'att_id';
+            inputId.value = attId;
+            form.appendChild(inputId);
+            
+            document.body.appendChild(form);
+            form.submit();
+            setTimeout(function() { document.body.removeChild(form); }, 100);
+        }
+        
+        function openLightbox(imgSrc) {
+            Swal.fire({
+                imageUrl: imgSrc,
+                imageAlt: 'Bukti Persetujuan',
+                width: '80%',
+                showConfirmButton: true,
+                confirmButtonText: 'Tutup',
+                confirmButtonColor: '#64748b',
+                background: 'transparent',
+                backdrop: 'rgba(0,0,0,0.85)',
+                customClass: {
+                    image: 'max-h-[85vh] object-contain rounded-md shadow-2xl bg-white p-2',
+                    popup: 'p-0 bg-transparent'
+                }
+            });
+        }
+
+        // Auto-open if search results exist (server-side)
+        <% IF GV_MAT_RESULTS IS NOT INITIAL. %>
+        (function() {
+            var m = document.getElementById('reqModal');
+            if (m) m.classList.remove('hidden');
+        })();
+        <% ENDIF. %>
+        // Auto-open via URL param (after search redirect)
+        if (window.location.search.indexOf('search=1') > -1) {
+            openRequestForm();
+        }
+        if (window.location.search.indexOf('new=1') > -1) {
+            openRequestForm();
+        }
+
+        // --- Material Search ---
+        function doSearch() {
+            var form = document.getElementById('reqForm');
+            var hiddenAction = form.querySelector('input[name="OnInputProcessing"]');
+            hiddenAction.value = 'search_material';
+            form.submit();
+        }
+
+        // Deteksi tombol Enter pada input pencarian material
+        var kwInputReq = document.getElementById('keyword');
+        if (kwInputReq) {
+            kwInputReq.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    doSearch();
+                }
+            });
+        }
+
+        // --- Material Selection ---
+        function selectMat(matnr, desc) {
+            if (selectedMats[matnr]) return;
+
+            // Check availability via AJAX / Server-Side Call
+            var url = window.location.href;
+            var separator = url.indexOf('?') !== -1 ? '&' : '?';
+            var checkUrl = url.split('?')[0] + '?OnInputProcessing=check_mat&check_matnr=' + encodeURIComponent(matnr);
+            
+            fetch(checkUrl)
+                .then(function(response) { return response.text(); })
+                .then(function(text) {
+                    if (text.indexOf('BLOCKED:') !== -1) {
+                        var msg = text.split('BLOCKED:')[1];
+                        alert("Material ini sudah dalam proses perubahan:\n\n" + msg + "\n\nHarap hubungi pemegang tiket tersebut.");
+                    } else {
+                        selectedMats[matnr] = desc;
+                        updateSelected();
+                    }
+                })
+                .catch(function(err) {
+                    // Fallback if AJAX fails
+                    selectedMats[matnr] = desc;
+                    updateSelected();
+                });
+        }
+
+        /* Delegation: click on .mat-pick reads data-* attributes */
+        document.addEventListener('click', function(e) {
+        var el = e.target.closest('.mat-pick');
+        if (el) {
+            selectMat(el.getAttribute('data-matnr'), el.getAttribute('data-maktx'));
+        }
+        });
+
+        function removeMat(matnr) {
+            delete selectedMats[matnr];
+            updateSelected();
+        }
+
+        function updateSelected() {
+            var list = document.getElementById('selectedList');
+            var hidden = document.getElementById('materials');
+            var keys = Object.keys(selectedMats);
+            if (keys.length === 0) {
+                list.innerHTML = '<span class="text-slate-400">Belum ada material dipilih</span>';
+                hidden.value = '';
+                return;
+            }
+            var html = '';
+            keys.forEach(function(k) {
+                html += '<span class="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md mr-2 mb-1 text-xs font-semibold">' +
+                    k + ' - ' + selectedMats[k] +
+                    ' <button type="button" onclick="removeMat(\'' + k + '\')" class="text-red-500 hover:text-red-700 ml-1 font-bold">&times;</button></span>';
+            });
+            list.innerHTML = html;
+            hidden.value = keys.join(',');
+        }
+
+        // --- Submit Request ---
+        // File Reader for Attachment
+        var reqFileEl = document.getElementById('reqAttFile');
+        if (reqFileEl) {
+        reqFileEl.addEventListener('change', function(e) {
+            var files = e.target.files;
+            if (!files || files.length === 0) return;
+            
+            var fileListContainer = document.getElementById('fileListContainer');
+            var hiddenInputsContainer = document.getElementById('hiddenInputsContainer');
+            
+            // Clear previous selection
+            fileListContainer.innerHTML = '';
+            hiddenInputsContainer.innerHTML = '';
+            
+            // Cek total file max 5
+            if (files.length > 5) {
+                Swal.fire({icon: 'error', title: 'Terlalu banyak file', text: 'Maksimal 5 file per request.'});
+                this.value = ''; // reset
+                return;
+            }
+            
+            var totalSize = 0;
+            for (var i = 0; i < files.length; i++) {
+                totalSize += files[i].size;
+            }
+            
+            // Cek total ukuran max 10MB (2MB * 5)
+            if (totalSize > 10485760) {
+                Swal.fire({icon: 'error', title: 'Ukuran total terlalu besar', text: 'Total ukuran semua file maksimal 10 MB.'});
+                this.value = ''; // reset
+                return;
+            }
+            
+            // Process each file
+            for (var i = 0; i < files.length; i++) {
+                (function(file, index) {
+                    // UI feedback
+                    var p = document.createElement('p');
+                    p.className = 'text-[0.65rem] text-emerald-600 font-semibold flex items-center gap-1';
+                    p.innerHTML = '<i class="fas fa-check-circle"></i> ' + file.name + ' (' + Math.round(file.size/1024) + ' KB)';
+                    fileListContainer.appendChild(p);
+                    
+                    // Read and create hidden inputs
+                    var reader = new FileReader();
+                    reader.onload = function(re) {
+                        var result = re.target.result;
+                        var b64 = result.split(',')[1];
+                        
+                        var inputB64 = document.createElement('input');
+                        inputB64.type = 'hidden';
+                        inputB64.name = 'req_file_b64_' + index;
+                        inputB64.value = b64;
+                        
+                        var inputName = document.createElement('input');
+                        inputName.type = 'hidden';
+                        inputName.name = 'req_file_name_' + index;
+                        inputName.value = file.name;
+                        
+                        var inputType = document.createElement('input');
+                        inputType.type = 'hidden';
+                        inputType.name = 'req_file_type_' + index;
+                        inputType.value = file.type;
+                        
+                        hiddenInputsContainer.appendChild(inputB64);
+                        hiddenInputsContainer.appendChild(inputName);
+                        hiddenInputsContainer.appendChild(inputType);
+                    };
+                    reader.readAsDataURL(file);
+                })(files[i], i + 1); // index starts at 1
+            }
+            
+            // Set total files count
+            var inputCount = document.createElement('input');
+            inputCount.type = 'hidden';
+            inputCount.name = 'req_file_count';
+            inputCount.value = files.length;
+            hiddenInputsContainer.appendChild(inputCount);
+        });
+        }
+
+        function submitRequest() {
+            var title = document.getElementById('title').value.trim();
+            var kategori = document.querySelector('input[name="kategori"]:checked');
+            var priority = document.querySelector('input[name="priority"]:checked');
+            var desc = document.getElementById('description').value.trim();
+            var dept = document.getElementById('dept').value;
+            var reason = document.getElementById('reason').value;
+            var mats = document.getElementById('materials').value;
+
+            if (!title) { Swal.fire({icon:'error', title:'Judul wajib diisi', target:document.getElementById('reqModal')}); return; }
+            if (!kategori) { Swal.fire({icon:'error', title:'Kategori wajib dipilih', target:document.getElementById('reqModal')}); return; }
+            if (!priority) { Swal.fire({icon:'error', title:'Prioritas wajib dipilih', target:document.getElementById('reqModal')}); return; }
+            if (!desc) { Swal.fire({icon:'error', title:'Deskripsi wajib diisi', target:document.getElementById('reqModal')}); return; }
+            if (!dept) { Swal.fire({icon:'error', title:'Departemen wajib dipilih', target:document.getElementById('reqModal')}); return; }
+            if (!reason) { Swal.fire({icon:'error', title:'Alasan wajib dipilih', target:document.getElementById('reqModal')}); return; }
+            if (!mats) { Swal.fire({icon:'error', title:'Pilih minimal satu material', target:document.getElementById('reqModal')}); return; }
+
+            Swal.fire({
+                title: 'Kirim Request?',
+                text: 'Request akan dikirim ke admin untuk direview.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Ya, Kirim!',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#059669',
+                target: document.getElementById('reqModal')
+            }).then(function(result) {
+                if (result.isConfirmed) {
+                    var form = document.getElementById('reqForm');
+                    form.querySelector('input[name="OnInputProcessing"]').value = 'submit_request';
+                    form.submit();
+                }
+            });
+        }
+
+        // --- Accordion Detail Toggle ---
+        function toggleDetail(ireqId) {
+            var detailRow = document.getElementById('detail-' + ireqId);
+            if (!detailRow) return;
+            if (detailRow.classList.contains('hidden')) {
+                detailRow.classList.remove('hidden');
+            } else {
+                detailRow.classList.add('hidden');
+            }
+        }
+
+        // --- Edit Modal ---
+        function openEditModal(ireqId, title, matnr, kat, prio, dept, reason, desc) {
+            document.getElementById('edit_ireq_id').value = ireqId;
+            document.getElementById('edit_title').value = title;
+            document.getElementById('edit_matnr_fg').value = matnr;
+            document.getElementById('edit_kategori').value = kat;
+            document.getElementById('edit_priority').value = prio;
+
+            var deptSelect = document.getElementById('edit_zdept');
+            deptSelect.value = dept;
+            if (dept && (!deptSelect.value || deptSelect.value === '')) {
+                var optD = document.createElement('option');
+                optD.value = dept;
+                optD.textContent = dept;
+                optD.selected = true;
+                deptSelect.appendChild(optD);
+                deptSelect.value = dept;
+            }
+
+            var reasonSelect = document.getElementById('edit_zreason');
+            reasonSelect.value = reason;
+            if (reason && (!reasonSelect.value || reasonSelect.value === '')) {
+                var optR = document.createElement('option');
+                optR.value = reason;
+                optR.textContent = reason;
+                optR.selected = true;
+                reasonSelect.appendChild(optR);
+                reasonSelect.value = reason;
+            }
+
+            document.getElementById('edit_description').value = desc;
+            
+            var m = document.getElementById('editModal');
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+        
+        function closeEditModal() {
+            var m = document.getElementById('editModal');
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+        
+        function validateEditForm() {
+            var btn = document.querySelector('#editModal button[type="submit"]');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Menyimpan...';
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            return true;
+        }
+
+        // --- Audit Trail ---
+        function showAudit(ireqId) {
+            var url = window.location.pathname + '?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&ireq_detail=' + ireqId;
+            window.location.href = url;
+        }
+        function closeAuditModal() {
+            var url = window.location.pathname + '?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>';
+            window.location.href = url;
+        }
+
+        // Auto-open audit modal
+        <% IF GV_SELECTED_IREQ IS NOT INITIAL. %>
+        document.getElementById('auditModal').classList.remove('hidden');
+        <% ENDIF. %>
+
+        // Filter functions
+        function setStatusFilter(val) {
+            // Set hidden input or add to form
+            var form = document.getElementById('filterForm');
+            var existing = form.querySelector('input[name=filter_status]');
+            if (!existing) {
+                var inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'filter_status';
+                form.appendChild(inp);
+            }
+            form.querySelector('input[name=filter_status]').value = val;
+            form.submit();
+        }
+        function resetFilters() {
+            var form = document.getElementById('filterForm');
+            form.querySelector('input[name=filter_status]').value = 'ALL';
+            form.querySelector('input[name=date_from]').value = '';
+            form.querySelector('input[name=date_to]').value = '';
+            form.querySelector('input[name=search]').value = '';
+            form.submit();
+        }
+
+        // Cetak Dropdown toggle & outside click
+        function togglePrintDropdown(e) {
+            if (e) e.stopPropagation();
+            var menu = document.getElementById('printMenuContent');
+            if (menu) menu.classList.toggle('hidden');
+        }
+        document.addEventListener('click', function(e) {
+            var menu = document.getElementById('printMenuContent');
+            if (menu && !menu.classList.contains('hidden')) {
+                var container = document.getElementById('printMenuDropdown');
+                if (container && !container.contains(e.target)) {
+                    menu.classList.add('hidden');
+                }
+            }
+        });
+
+        // Cetak/Print function (with or without audit trail)
+        function cetakRequest(showAudit) {
+            var menu = document.getElementById('printMenuContent');
+            if (menu) menu.classList.add('hidden');
+            var form = document.getElementById('filterForm');
+            var status = form.querySelector('input[name="filter_status"]').value || 'ALL';
+            var df = form.querySelector('input[name="date_from"]').value;
+            var dt = form.querySelector('input[name="date_to"]').value;
+            var url = 'requester_print.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>';
+            url += '&filter_status=' + status;
+            if (df) url += '&date_from=' + df;
+            if (dt) url += '&date_to=' + dt;
+            if (showAudit !== undefined && showAudit !== null) {
+                url += '&show_audit=' + showAudit;
+            } else {
+                url += '&show_audit=X';
+            }
+            window.open(url, '_blank');
+        }
+
+        // Close modals on outside click
+        document.getElementById('reqModal').addEventListener('click', function(e) {
+            if (e.target === this) closeRequestForm();
+        });
+        document.getElementById('auditModal').addEventListener('click', function(e) {
+            if (e.target === this) closeAuditModal();
+        });
+    </script>
+
+    </body>
+    </html>

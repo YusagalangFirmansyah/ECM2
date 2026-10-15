@@ -1,0 +1,9 @@
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+
+DATA(lv_action) = request->get_form_field( 'action' ).
+
+IF lv_action = 'logout'.
+  navigation->goto_page( 'login.htm' ).
+ENDIF.

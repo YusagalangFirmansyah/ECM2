@@ -1,0 +1,33 @@
+* =======================================================================
+* Page Attributes — master_data_dashboard.htm
+* V07_r: Master Data Dashboard — BOM Gate Review
+* =======================================================================
+
+* User info
+GV_USER_ID   TYPE string
+GV_FULL_NAME TYPE string
+GV_ROLE      TYPE string
+
+* Summary cards
+GV_COUNT_PENDING  TYPE i
+GV_COUNT_APPROVED TYPE i
+GV_COUNT_REJECTED TYPE i
+
+* ECR list (HTML table rows)
+GV_ECR_HTML  TYPE string
+GV_ECR_COUNT TYPE string
+
+* Detail view (accordion content)
+GV_DETAIL_HTML  TYPE string
+GV_ATTACH_HTML  TYPE string
+GV_AUDIT_HTML   TYPE string
+
+* Filter
+GV_FILTER TYPE string
+
+* Message
+GV_MESSAGE TYPE string
+GV_ICON    TYPE string
+
+GV_ROUTING_HTML TYPE STRING
+GV_ROUTING_COUNT TYPE STRING

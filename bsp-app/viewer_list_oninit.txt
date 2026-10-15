@@ -1,0 +1,1063 @@
+" viewer_list OnInit — V06
+" Viewer: read-only monitor, sees ALL ECRs
+
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+LV_FILTER    = request->get_form_field( 'filter' ).
+LV_ECR_DETAIL = request->get_form_field( 'ecr_detail' ).
+GV_DATE_FROM = request->get_form_field( 'date_from' ).
+GV_DATE_TO   = request->get_form_field( 'date_to' ).
+
+" Default date range: first day of current month to today
+IF GV_DATE_FROM IS INITIAL.
+  " Default: 4 months ago
+  DATA: lv_yr TYPE n LENGTH 4, lv_mo TYPE n LENGTH 2, lv_yy TYPE n LENGTH 4, lv_mm TYPE n LENGTH 2.
+  lv_yy = sy-datum(4). lv_mm = sy-datum+4(2).
+  lv_yr = lv_yy. lv_mo = lv_mm.
+  IF lv_mo > 4.
+    lv_mo = lv_mo - 4.
+  ELSE.
+    lv_yr = lv_yr - 1. lv_mo = lv_mo + 8.
+  ENDIF.
+  CONCATENATE lv_yr lv_mo '01' INTO GV_DATE_FROM.
+ENDIF.
+IF GV_DATE_TO IS INITIAL.
+  GV_DATE_TO = sy-datum.
+ENDIF.
+
+" Strip dashes (HTML date input sends YYYY-MM-DD)
+REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_FROM WITH ''.
+REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_TO WITH ''.
+
+DATA: lv_df_internal TYPE sy-datum,
+      lv_dt_internal TYPE sy-datum.
+lv_df_internal = GV_DATE_FROM.
+lv_dt_internal = GV_DATE_TO.
+
+" Default filter: ALL (viewer monitors everything)
+IF LV_FILTER IS INITIAL.
+  LV_FILTER = 'ALL'.
+ENDIF.
+
+" ================================================================
+" 1. Status counts (cards) — ALL ECRs
+" ================================================================
+DATA: lt_status TYPE tt_status_count,
+      ls_status TYPE ty_status_count.
+
+SELECT status, COUNT(*) AS cnt
+  INTO TABLE @lt_status
+  FROM zecm_req
+  WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+  GROUP BY status.
+
+LOOP AT lt_status INTO ls_status.
+  CASE ls_status-status.
+    WHEN 'CRTD'. GV_COUNT_CRTD = ls_status-count.
+    WHEN 'INWK'. GV_COUNT_INWK = ls_status-count.
+    WHEN 'BMPR'. GV_COUNT_BMPR = ls_status-count.
+    WHEN 'BMAP'. GV_COUNT_BMAP = ls_status-count.
+    WHEN 'INSP'. GV_COUNT_INSP = ls_status-count.
+    WHEN 'REJC'. GV_COUNT_REJC = ls_status-count.
+  ENDCASE.
+ENDLOOP.
+
+" Add IREQ Count from ZECM_IREQ
+SELECT COUNT(*) INTO @GV_COUNT_IREQ
+  FROM zecm_ireq
+  WHERE status = 'REQ'
+    AND req_date >= @lv_df_internal AND req_date <= @lv_dt_internal.
+
+" ================================================================
+" 1b. Panel Request Masuk — ZECM_IREQ (read-only for viewer)
+" ================================================================
+CLEAR: GV_IREQ_HTML.
+DATA: lt_ireq_v         TYPE TABLE OF zecm_ireq,
+      ls_ireq_v         TYPE zecm_ireq,
+      lv_ireq_reqname_v TYPE string,
+      lv_ireq_row_v     TYPE string.
+
+SELECT * FROM zecm_ireq INTO TABLE @lt_ireq_v
+  WHERE status = 'REQ'
+    AND req_date >= @lv_df_internal AND req_date <= @lv_dt_internal
+  ORDER BY req_date DESCENDING.
+
+IF sy-subrc = 0.
+  LOOP AT lt_ireq_v INTO ls_ireq_v.
+    SELECT SINGLE zecm_full_name FROM zecm_user
+      INTO @lv_ireq_reqname_v
+      WHERE zecm_user_id = @ls_ireq_v-requester.
+
+    CONCATENATE GV_IREQ_HTML
+      '<tr class="hover:bg-slate-50 cursor-pointer transition-colors" '
+      'onclick="toggleDetail(''' ls_ireq_v-ireq_id ''')" id="row-' ls_ireq_v-ireq_id '">'
+      '<td class="px-4 py-3 font-bold text-brand-600 font-mono">' ls_ireq_v-ireq_id '</td>'
+      '<td class="px-4 py-3 text-slate-700 max-w-[200px] truncate" title="' ls_ireq_v-title '">' ls_ireq_v-title '</td>'
+      '<td class="px-4 py-3 text-slate-700 text-xs">' ls_ireq_v-matnr_fg '</td>'
+      '<td class="px-4 py-3 text-slate-700 text-xs">' lv_ireq_reqname_v '</td>'
+      '<td class="px-4 py-3 text-slate-500 text-xs">' ls_ireq_v-req_date '</td>'
+      '</tr>'
+      INTO GV_IREQ_HTML.
+
+    " Expandable detail row (hidden by default)
+    DATA: lv_kat_label TYPE string, lv_kat_color TYPE string,
+          lv_pri_label TYPE string, lv_pri_color TYPE string.
+          
+    CASE ls_ireq_v-kategori.
+      WHEN 'DRW'. lv_kat_label = 'Drawing'. lv_kat_color = 'bg-blue-100 text-blue-700'.
+      WHEN 'DBX'. lv_kat_label = 'Box'. lv_kat_color = 'bg-orange-100 text-orange-700'.
+      WHEN 'DMT'. lv_kat_label = 'Metal'. lv_kat_color = 'bg-green-100 text-green-700'.
+      WHEN OTHERS. lv_kat_label = ls_ireq_v-kategori. lv_kat_color = 'bg-slate-100 text-slate-600'.
+    ENDCASE.
+    CASE ls_ireq_v-priority.
+      WHEN 'HIGH'. lv_pri_label = 'Tinggi'. lv_pri_color = 'bg-red-100 text-red-700'.
+      WHEN 'MEDIUM'. lv_pri_label = 'Sedang'. lv_pri_color = 'bg-yellow-100 text-yellow-700'.
+      WHEN 'LOW'. lv_pri_label = 'Rendah'. lv_pri_color = 'bg-slate-100 text-slate-600'.
+      WHEN OTHERS. lv_pri_label = ls_ireq_v-priority. lv_pri_color = 'bg-slate-100 text-slate-600'.
+    ENDCASE.
+
+    CONCATENATE GV_IREQ_HTML
+      '<tr id="detail-' ls_ireq_v-ireq_id '" class="hidden">'
+      '<td colspan="5" class="px-0 py-0">'
+      '<div class="bg-slate-50 border-t border-b border-slate-200 px-6 py-4">'
+      '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">'
+      '<div>'
+      '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Kategori</div>'
+      '<span class="inline-block px-2 py-1 rounded text-xs font-bold ' lv_kat_color '">' lv_kat_label '</span>'
+      '</div>'
+      '<div>'
+      '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Prioritas</div>'
+      '<span class="inline-block px-2 py-1 rounded text-xs font-bold ' lv_pri_color '">' lv_pri_label '</span>'
+      '</div>'
+      '<div>'
+      '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Departemen</div>'
+      '<div class="text-sm text-slate-700">' ls_ireq_v-zdept '</div>'
+      '</div>'
+      '<div>'
+      '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Alasan</div>'
+      '<div class="text-sm text-slate-700">' ls_ireq_v-zreason '</div>'
+      '</div>'
+      '</div>'
+      INTO GV_IREQ_HTML.
+
+    IF ls_ireq_v-description IS NOT INITIAL.
+      CONCATENATE GV_IREQ_HTML
+        '<div class="mt-3 pt-3 border-t border-slate-200">'
+        '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Deskripsi</div>'
+        '<div class="text-sm text-slate-600">' ls_ireq_v-description '</div>'
+        '</div>'
+        INTO GV_IREQ_HTML.
+    ENDIF.
+
+    " V14: Tambahkan informasi Implementation Tracking (Read-Only)
+    DATA: lv_len_v TYPE i.
+    DATA: lv_impl_date_safe_v TYPE string.
+    lv_len_v = strlen( ls_ireq_v-impl_date ).
+    IF ls_ireq_v-impl_date IS NOT INITIAL AND ls_ireq_v-impl_date <> '00000000' AND lv_len_v >= 8.
+      CONCATENATE ls_ireq_v-impl_date+6(2) '/' ls_ireq_v-impl_date+4(2) '/' ls_ireq_v-impl_date(4) INTO lv_impl_date_safe_v.
+    ELSE.
+      lv_impl_date_safe_v = '-'.
+    ENDIF.
+    IF ls_ireq_v-impl_po IS NOT INITIAL OR ( ls_ireq_v-impl_date IS NOT INITIAL AND ls_ireq_v-impl_date <> '00000000' AND lv_len_v >= 8 ).
+      CONCATENATE GV_IREQ_HTML
+        '<div class="mt-3 pt-3 border-t border-slate-200">'
+        '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-2"><i class="fas fa-calendar-check mr-1 text-emerald-500"></i>Rencana Implementasi (Dari R&D)</div>'
+        '<div class="grid grid-cols-2 gap-4 bg-emerald-50/50 p-3 rounded-lg border border-emerald-100/50">'
+        '<div><span class="text-[0.6rem] font-bold text-emerald-600 block uppercase mb-0.5">Target PO</span><span class="text-sm font-semibold text-slate-800">' ls_ireq_v-impl_po '</span></div>'
+        '<div><span class="text-[0.6rem] font-bold text-emerald-600 block uppercase mb-0.5">Estimasi Tanggal</span><span class="text-sm font-semibold text-slate-800">' 
+        lv_impl_date_safe_v '</span></div>'
+        '<div class="col-span-2"><span class="text-[0.6rem] font-bold text-emerald-600 block uppercase mb-0.5">Alasan & Keterangan</span><span class="text-xs font-medium text-slate-700">' ls_ireq_v-impl_reason '</span></div>'
+        '</div>'
+        '</div>'
+        INTO GV_IREQ_HTML.
+    ENDIF.
+
+    " Check for attachments
+    DATA: lt_bom_att TYPE TABLE OF zecm_bom_att,
+          ls_bom_att TYPE zecm_bom_att.
+    SELECT * FROM zecm_bom_att INTO TABLE @lt_bom_att WHERE ecr_no = @ls_ireq_v-ireq_id.
+    IF sy-subrc = 0.
+      CONCATENATE GV_IREQ_HTML
+        '<div class="mt-3 pt-3 border-t border-slate-200">'
+        '<div class="flex items-center justify-between mb-3">'
+        '<span class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide"><i class="fas fa-paperclip mr-1"></i> File Attachment</span>'
+        '</div>'
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">'
+        INTO GV_IREQ_HTML.
+
+      LOOP AT lt_bom_att INTO ls_bom_att.
+        IF ls_bom_att-mime_type CP 'image/*'.
+          DATA: lv_b64 TYPE string.
+          CALL FUNCTION 'SSFC_BASE64_ENCODE'
+            EXPORTING bindata = ls_bom_att-file_data
+            IMPORTING b64data = lv_b64
+            EXCEPTIONS OTHERS = 1.
+            
+          CONCATENATE GV_IREQ_HTML
+            '<div class="bg-white rounded border border-slate-200 '
+            'overflow-hidden flex flex-col">'
+            '<div class="w-full bg-slate-100 flex items-center '
+            'justify-center p-2 flex-1" '
+            'style="min-height: 150px; max-height: 250px;">'
+            '<img src="data:' ls_bom_att-mime_type ';base64,' lv_b64 '" '
+            'class="max-w-full max-h-[230px] object-contain rounded '
+            'shadow-sm border border-slate-200" alt="Attachment" '
+            'onclick="event.stopPropagation(); openLightbox(''data:'
+            ls_bom_att-mime_type
+            ';base64,'
+            lv_b64
+            ''')" style="cursor: zoom-in;">'
+            '</div>'
+            '<div class="p-2 bg-white border-t border-slate-100 '
+            'flex items-center justify-between">'
+            '<span class="text-[0.65rem] font-semibold text-slate-700 '
+            'truncate mr-2" title="' ls_bom_att-file_name '">'
+            '<i class="fas fa-image text-emerald-500 mr-1"></i>'
+            ls_bom_att-file_name
+            '</span>'
+            '<button type="button" '
+            'onclick="event.stopPropagation(); downloadAttachment('''
+            ls_bom_att-att_id
+            ''')" '
+            'class="text-brand-600 hover:text-brand-700" '
+            'title="Download">'
+            '<i class="fas fa-download"></i></button>'
+            '</div></div>'
+            INTO GV_IREQ_HTML.
+        ELSE.
+          CONCATENATE GV_IREQ_HTML
+            '<div class="bg-white rounded border border-slate-200 '
+            'overflow-hidden flex items-center p-3 gap-2">'
+            '<div class="w-8 h-8 rounded bg-emerald-100 flex '
+            'items-center justify-center text-emerald-600 '
+            'text-sm flex-shrink-0">'
+            '<i class="fas fa-file-alt"></i></div>'
+            '<div class="flex-1 min-w-0">'
+            '<p class="text-[0.65rem] font-semibold text-slate-700 '
+            'truncate" title="' ls_bom_att-file_name '">'
+            ls_bom_att-file_name
+            '</p>'
+            '<p class="text-[0.6rem] text-slate-500 truncate">'
+            'File Lampiran.</p></div>'
+            '<button type="button" '
+            'onclick="event.stopPropagation(); downloadAttachment('''
+            ls_bom_att-att_id
+            ''')" '
+            'class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 '
+            'text-emerald-700 rounded text-[0.65rem] font-bold '
+            'transition-colors">'
+            '<i class="fas fa-download"></i></button>'
+            '</div>'
+            INTO GV_IREQ_HTML.
+        ENDIF.
+      ENDLOOP.
+      
+      CONCATENATE GV_IREQ_HTML '</div></div>' INTO GV_IREQ_HTML.
+    ENDIF.
+
+    CONCATENATE GV_IREQ_HTML
+      '</div></td></tr>'
+      INTO GV_IREQ_HTML.
+  ENDLOOP.
+ELSE.
+  GV_IREQ_HTML = '<tr><td colspan="5" class="px-4 py-12 text-center">'
+    && '<div class="flex flex-col items-center">'
+    && '<i class="fas fa-inbox text-3xl text-slate-300 mb-3"></i>'
+    && '<p class="text-sm text-slate-400 font-medium">Tidak ada request masuk</p>'
+    && '<p class="text-xs text-slate-300 mt-1">Request dari user akan muncul di sini</p>'
+    && '</div></td></tr>'.
+ENDIF.
+
+" ================================================================
+" 2. Monthly aggregation (last 6 months)
+" ================================================================
+DATA: lt_monthly TYPE tt_monthly,
+      ls_monthly TYPE ty_monthly.
+
+DATA: BEGIN OF ls_raw,
+        created_date TYPE zecm_req-created_date,
+        status       TYPE zecm_req-status,
+      END OF ls_raw,
+      lt_raw LIKE STANDARD TABLE OF ls_raw.
+
+SELECT created_date, status
+  INTO TABLE @lt_raw
+  FROM zecm_req
+  WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal.
+
+" Add IREQ (Request Masuk) TO RAW DATA
+DATA: BEGIN OF ls_raw_ireq,
+        req_date TYPE zecm_ireq-req_date,
+        status   TYPE zecm_ireq-status,
+      END OF ls_raw_ireq,
+      lt_raw_ireq LIKE STANDARD TABLE OF ls_raw_ireq.
+
+SELECT req_date, status
+  INTO TABLE @lt_raw_ireq
+  FROM zecm_ireq
+  WHERE req_date >= @lv_df_internal AND req_date <= @lv_dt_internal
+    AND status = 'REQ'.
+
+LOOP AT lt_raw_ireq INTO ls_raw_ireq.
+  ls_raw-created_date = ls_raw_ireq-req_date.
+  ls_raw-status       = 'IREQ'. " Fake status to group Request Masuk
+  APPEND ls_raw TO lt_raw.
+ENDLOOP.
+
+DATA: ls_agg TYPE ty_monthly.
+CLEAR lt_monthly.
+
+LOOP AT lt_raw INTO ls_raw.
+  ls_agg-month  = ls_raw-created_date(6).
+  ls_agg-status = ls_raw-status.
+  READ TABLE lt_monthly INTO ls_agg
+    WITH KEY month = ls_agg-month status = ls_agg-status.
+  IF sy-subrc = 0.
+    ls_agg-count = ls_agg-count + 1.
+    MODIFY lt_monthly FROM ls_agg INDEX sy-tabix.
+  ELSE.
+    ls_agg-count = 1.
+    APPEND ls_agg TO lt_monthly.
+  ENDIF.
+ENDLOOP.
+
+" Build JSON arrays for Chart.js
+DATA: lv_month_label TYPE string,
+      lv_prev_month  TYPE c LENGTH 6 VALUE ''.
+
+DATA: lv_m_ireq TYPE i,
+      lv_m_crtd TYPE i,
+      lv_m_inwk TYPE i,
+      lv_m_bmpr TYPE i,
+      lv_m_bmap TYPE i,
+      lv_m_insp TYPE i,
+      lv_m_rejc TYPE i.
+
+DATA: lv_labels TYPE string,
+      lv_d_ireq TYPE string,
+      lv_d_crtd TYPE string,
+      lv_d_inwk TYPE string,
+      lv_d_bmpr TYPE string,
+      lv_d_bmap TYPE string,
+      lv_d_insp TYPE string,
+      lv_d_rejc TYPE string,
+      lv_comma  TYPE string VALUE ''.
+
+DATA: lv_m_ireq_s TYPE string,
+      lv_m_crtd_s TYPE string,
+      lv_m_inwk_s TYPE string,
+      lv_m_bmpr_s TYPE string,
+      lv_m_bmap_s TYPE string,
+      lv_m_insp_s TYPE string,
+      lv_m_rejc_s TYPE string.
+
+CLEAR: lv_labels, lv_d_crtd, lv_d_inwk, lv_d_insp, lv_d_rejc, lv_comma.
+
+LOOP AT lt_monthly INTO ls_monthly.
+  IF ls_monthly-month <> lv_prev_month.
+    IF lv_prev_month IS NOT INITIAL.
+      lv_m_ireq_s = lv_m_ireq.
+      lv_m_crtd_s = lv_m_crtd.
+      lv_m_inwk_s = lv_m_inwk.
+      lv_m_bmpr_s = lv_m_bmpr.
+      lv_m_bmap_s = lv_m_bmap.
+      lv_m_insp_s = lv_m_insp.
+      lv_m_rejc_s = lv_m_rejc.
+      CONCATENATE lv_labels lv_comma '''' lv_month_label '''' INTO lv_labels.
+      CONCATENATE lv_d_ireq lv_comma lv_m_ireq_s INTO lv_d_ireq.
+      CONCATENATE lv_d_crtd lv_comma lv_m_crtd_s INTO lv_d_crtd.
+      CONCATENATE lv_d_inwk lv_comma lv_m_inwk_s INTO lv_d_inwk.
+      CONCATENATE lv_d_bmpr lv_comma lv_m_bmpr_s INTO lv_d_bmpr.
+      CONCATENATE lv_d_bmap lv_comma lv_m_bmap_s INTO lv_d_bmap.
+      CONCATENATE lv_d_insp lv_comma lv_m_insp_s INTO lv_d_insp.
+      CONCATENATE lv_d_rejc lv_comma lv_m_rejc_s INTO lv_d_rejc.
+      lv_comma = ','.
+    ENDIF.
+    CLEAR: lv_m_ireq, lv_m_crtd, lv_m_inwk, lv_m_bmpr, lv_m_bmap, lv_m_insp, lv_m_rejc.
+    lv_prev_month = ls_monthly-month.
+    CASE ls_monthly-month+4(2).
+      WHEN '01'. lv_month_label = 'Jan'.
+      WHEN '02'. lv_month_label = 'Feb'.
+      WHEN '03'. lv_month_label = 'Mar'.
+      WHEN '04'. lv_month_label = 'Apr'.
+      WHEN '05'. lv_month_label = 'Mei'.
+      WHEN '06'. lv_month_label = 'Jun'.
+      WHEN '07'. lv_month_label = 'Jul'.
+      WHEN '08'. lv_month_label = 'Agu'.
+      WHEN '09'. lv_month_label = 'Sep'.
+      WHEN '10'. lv_month_label = 'Okt'.
+      WHEN '11'. lv_month_label = 'Nov'.
+      WHEN '12'. lv_month_label = 'Des'.
+    ENDCASE.
+  ENDIF.
+
+  CASE ls_monthly-status.
+    WHEN 'IREQ'. lv_m_ireq = lv_m_ireq + ls_monthly-count.
+    WHEN 'CRTD'. lv_m_crtd = lv_m_crtd + ls_monthly-count.
+    WHEN 'INWK'. lv_m_inwk = lv_m_inwk + ls_monthly-count.
+    WHEN 'BMPR'. lv_m_bmpr = lv_m_bmpr + ls_monthly-count.
+    WHEN 'BMAP'. lv_m_bmap = lv_m_bmap + ls_monthly-count.
+    WHEN 'INSP'. lv_m_insp = lv_m_insp + ls_monthly-count.
+    WHEN 'REJC'. lv_m_rejc = lv_m_rejc + ls_monthly-count.
+  ENDCASE.
+ENDLOOP.
+
+" Push last month
+IF lv_prev_month IS NOT INITIAL.
+  lv_m_ireq_s = lv_m_ireq.
+  lv_m_crtd_s = lv_m_crtd.
+  lv_m_inwk_s = lv_m_inwk.
+  lv_m_bmpr_s = lv_m_bmpr.
+  lv_m_bmap_s = lv_m_bmap.
+  lv_m_insp_s = lv_m_insp.
+  lv_m_rejc_s = lv_m_rejc.
+  CONCATENATE lv_labels lv_comma '''' lv_month_label '''' INTO lv_labels.
+  CONCATENATE lv_d_ireq lv_comma lv_m_ireq_s INTO lv_d_ireq.
+  CONCATENATE lv_d_crtd lv_comma lv_m_crtd_s INTO lv_d_crtd.
+  CONCATENATE lv_d_inwk lv_comma lv_m_inwk_s INTO lv_d_inwk.
+  CONCATENATE lv_d_bmpr lv_comma lv_m_bmpr_s INTO lv_d_bmpr.
+  CONCATENATE lv_d_bmap lv_comma lv_m_bmap_s INTO lv_d_bmap.
+  CONCATENATE lv_d_insp lv_comma lv_m_insp_s INTO lv_d_insp.
+  CONCATENATE lv_d_rejc lv_comma lv_m_rejc_s INTO lv_d_rejc.
+ENDIF.
+
+GV_MONTHS_LABELS = |[{ lv_labels }]|.
+GV_MONTHS_IREQ   = |[{ lv_d_ireq }]|.
+GV_MONTHS_CRTD   = |[{ lv_d_crtd }]|.
+GV_MONTHS_INWK   = |[{ lv_d_inwk }]|.
+GV_MONTHS_BMPR   = |[{ lv_d_bmpr }]|.
+GV_MONTHS_BMAP   = |[{ lv_d_bmap }]|.
+GV_MONTHS_INSP   = |[{ lv_d_insp }]|.
+GV_MONTHS_REJC   = |[{ lv_d_rejc }]|.
+
+
+" ================================================================
+" 3. Requester dropdown options (from zecm_user where role = DRAFTER)
+" ================================================================
+DATA: ls_drafter_opt TYPE zecm_user,
+      lv_opt_html   TYPE string.
+CLEAR lv_opt_html.
+SELECT zecm_user_id, zecm_full_name FROM zecm_user
+  INTO (@ls_drafter_opt-zecm_user_id, @ls_drafter_opt-zecm_full_name)
+  WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'
+  ORDER BY zecm_full_name ASCENDING.
+  CONCATENATE lv_opt_html '<option value="' ls_drafter_opt-zecm_user_id '">'
+    ls_drafter_opt-zecm_user_id ' - ' ls_drafter_opt-zecm_full_name '</option>'
+    INTO lv_opt_html.
+ENDSELECT.
+GV_REQUESTER_OPTIONS = lv_opt_html.
+
+
+" ================================================================
+" 4. Material History Search
+" ================================================================
+GV_MAT_SEARCH = request->get_form_field( 'mat_search' ).
+
+IF GV_MAT_SEARCH IS NOT INITIAL.
+  DATA: lt_mat_hist TYPE tt_ecr,
+        ls_mat_hist TYPE ty_ecr,
+        lv_kw       TYPE string,
+        lv_kw_upper TYPE string,
+        lv_mat_html TYPE string.
+
+  lv_kw = GV_MAT_SEARCH.
+  TRANSLATE lv_kw TO UPPER CASE.
+  CONCATENATE '%' lv_kw '%' INTO lv_kw.
+
+  SELECT a~ecr_no, a~title, a~matnr_fg, a~descr, a~kategori, a~priority,
+         a~requester, a~drafter, a~dokar, a~dir_number, a~status,
+         a~reject_reason, a~cost_estimate, a~zdept, a~zreason,
+         a~created_date, a~created_time, a~changed_date,
+         c~zecm_full_name AS requester_name,
+         d~zecm_full_name AS drafter_name,
+         b~maktx
+    INTO CORRESPONDING FIELDS OF TABLE @lt_mat_hist
+    FROM zecm_req AS a
+    LEFT OUTER JOIN makt AS b
+      ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+    LEFT OUTER JOIN zecm_user AS c
+      ON a~requester = c~zecm_user_id
+    LEFT OUTER JOIN zecm_user AS d
+      ON a~drafter = d~zecm_user_id
+    WHERE ( a~matnr_fg LIKE @lv_kw OR b~maktx LIKE @lv_kw )
+    ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+
+  " Build HTML cards
+  DATA: lv_s_matnr   TYPE string,
+        lv_s_ecr     TYPE string,
+        lv_s_status  TYPE string,
+        lv_s_badge   TYPE string,
+        lv_s_pri     TYPE string,
+        lv_s_pri_clr TYPE string,
+        lv_s_kat     TYPE string,
+        lv_s_kat_clr TYPE string,
+        lv_s_date    TYPE string,
+        lv_s_cost    TYPE string,
+        lv_s_dms     TYPE string,
+        lv_s_reject  TYPE string,
+        lv_s_dept    TYPE string,
+        lv_s_reason  TYPE string,
+        lv_s_drafter TYPE string,
+        lv_s_req     TYPE string.
+
+  CLEAR lv_mat_html.
+
+  LOOP AT lt_mat_hist INTO ls_mat_hist.
+    " Clean material number
+    ls_mat_hist-matnr_fg_no_zero = ls_mat_hist-matnr_fg.
+    SHIFT ls_mat_hist-matnr_fg_no_zero LEFT DELETING LEADING '0'.
+
+    " ECR number clean
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING  input  = ls_mat_hist-ecr_no
+      IMPORTING  output = ls_mat_hist-ecr_no.
+
+    " DMS detection (any status, simplified)
+    IF ls_mat_hist-dir_number IS NOT INITIAL.
+      DATA: lv_dir_parts_m TYPE STANDARD TABLE OF string,
+            lv_dir_doknr_m TYPE string.
+      CLEAR lv_dir_parts_m.
+      SPLIT ls_mat_hist-dir_number AT '/' INTO TABLE lv_dir_parts_m.
+      READ TABLE lv_dir_parts_m INTO lv_dir_doknr_m INDEX 2.
+      IF lv_dir_doknr_m IS NOT INITIAL.
+        SHIFT lv_dir_doknr_m LEFT DELETING LEADING '0'.
+        ls_mat_hist-dir_number_clean = lv_dir_doknr_m.
+      ELSE.
+        ls_mat_hist-dir_number_clean = ls_mat_hist-dir_number.
+      ENDIF.
+    ENDIF.
+
+    " Status badge color
+    CASE ls_mat_hist-status.
+      WHEN 'CRTD'. lv_s_status = 'Draft'.        lv_s_badge = 'bg-blue-100 text-blue-700'.
+      WHEN 'INWK'. lv_s_status = 'In Work'.      lv_s_badge = 'bg-orange-100 text-orange-700'.
+      WHEN 'BMPR'. lv_s_status = 'BOM Pending'.  lv_s_badge = 'bg-amber-100 text-amber-700'.
+      WHEN 'BMAP'. lv_s_status = 'BOM Approved'. lv_s_badge = 'bg-teal-100 text-teal-700'.
+      WHEN 'INSP'. lv_s_status = 'Inspection'.   lv_s_badge = 'bg-yellow-100 text-yellow-700'.
+      WHEN 'CLSD'. lv_s_status = 'Closed'.       lv_s_badge = 'bg-green-100 text-green-700'.
+      WHEN 'REJC'. lv_s_status = 'Rejected'.     lv_s_badge = 'bg-red-100 text-red-700'.
+      WHEN OTHERS. lv_s_status = ls_mat_hist-status. lv_s_badge = 'bg-slate-100 text-slate-600'.
+    ENDCASE.
+
+    " Priority color
+    CASE ls_mat_hist-priority.
+      WHEN 'CRITICAL'. lv_s_pri_clr = 'background:#FEE2E2;color:#B91C1C'.
+      WHEN 'HIGH'.     lv_s_pri_clr = 'background:#FFEDD5;color:#C2410C'.
+      WHEN 'MEDIUM'.   lv_s_pri_clr = 'background:#FEF9C3;color:#854D0E'.
+      WHEN OTHERS.     lv_s_pri_clr = 'background:#F1F5F9;color:#475569'.
+    ENDCASE.
+
+    " Kategori color
+    CASE ls_mat_hist-kategori.
+      WHEN 'DRW'. lv_s_kat_clr = 'background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7'.
+      WHEN 'DBX'. lv_s_kat_clr = 'background:#DBEAFE;color:#1D4ED8;border:1px solid #93C5FD'.
+      WHEN 'DMT'. lv_s_kat_clr = 'background:#FFEDD5;color:#C2410C;border:1px solid #FED7AA'.
+      WHEN OTHERS. lv_s_kat_clr = 'bg-slate-100 text-slate-600'.
+    ENDCASE.
+
+    " Date format
+    DATA: lv_cd TYPE string.
+    lv_cd = |{ ls_mat_hist-created_date+6(2) }.{ ls_mat_hist-created_date+4(2) }.{ ls_mat_hist-created_date(4) }|.
+
+    " Cost
+    IF ls_mat_hist-cost_estimate IS NOT INITIAL.
+      DATA: lv_cost_str TYPE string.
+      lv_cost_str = ls_mat_hist-cost_estimate.
+      lv_s_cost = |Rp { lv_cost_str }|.
+    ELSE.
+      lv_s_cost = '-'.
+    ENDIF.
+
+    " DMS link HTML (data attribute + JS click)
+    IF ls_mat_hist-dir_number_clean IS NOT INITIAL.
+      CONCATENATE '<div class="dms-link flex items-center gap-1.5'
+        ' cursor-pointer hover:bg-green-50'
+        ' px-2 py-1 rounded transition-colors'
+        ' inline-flex"'
+        ' data-dmsnr="' ls_mat_hist-dir_number_clean '">'
+        '<span class="w-2 h-2 rounded-full'
+        ' bg-green-500"></span>'
+        '<span class="text-xs font-semibold'
+        ' text-green-700">'
+        ls_mat_hist-dir_number_clean
+        '</span></div>'
+        INTO lv_s_dms.
+    ELSE.
+      lv_s_dms = '<span class="text-xs text-slate-400">-</span>'.
+    ENDIF.
+
+    " Reject reason
+    IF ls_mat_hist-reject_reason IS NOT INITIAL AND ls_mat_hist-status = 'REJC'.
+      CONCATENATE '<div class="mt-2 px-3 py-2 bg-red-50'
+        ' border-l-[3px] border-red-400 rounded'
+        ' text-xs text-red-700">'
+        '<strong>Alasan Reject:</strong> '
+        ls_mat_hist-reject_reason '</div>'
+        INTO lv_s_reject.
+    ELSE.
+      CLEAR lv_s_reject.
+    ENDIF.
+
+    " Escape single quotes for HTML attributes
+    DATA: lv_esc_title TYPE string,
+          lv_esc_descr TYPE string.
+    lv_esc_title = ls_mat_hist-title.
+    lv_esc_descr = ls_mat_hist-descr.
+
+    " Build card HTML (blue theme for viewer)
+    CONCATENATE lv_mat_html
+      '<div class="bg-white rounded-xl border-l-4 border-l-blue-500'
+      ' border border-slate-200 shadow-sm overflow-hidden'
+      ' hover:shadow-md transition-shadow mb-4">'
+      '<div class="px-5 py-3 bg-gradient-to-r from-blue-50'
+      ' to-white border-b border-slate-100'
+      ' flex items-center justify-between">'
+      '  <div class="flex items-center gap-2 flex-wrap">'
+      '    <span class="text-sm font-extrabold text-blue-800'
+      ' font-mono"><i class="fas fa-file-circle-exclamation'
+      ' text-blue-500 mr-1"></i>' ls_mat_hist-ecr_no '</span>'
+      '    <span class="px-2.5 py-0.5 rounded-full text-[0.6rem]'
+      ' font-bold" style="' lv_s_badge '">'
+      lv_s_status '</span>'
+      '    <span class="px-2.5 py-0.5 rounded-full text-[0.6rem]'
+      ' font-bold" style="' lv_s_pri_clr '">'
+      ls_mat_hist-priority '</span>'
+      '    <span class="px-2.5 py-0.5 rounded text-[0.6rem]'
+      ' font-bold" style="' lv_s_kat_clr '">'
+      ls_mat_hist-kategori '</span>'
+      '  </div>'
+      '  <span class="text-xs text-slate-500 font-semibold">'
+      '<i class="far fa-calendar mr-1"></i>' lv_cd '</span>'
+      '</div>'
+      '<div class="px-5 py-4">'
+      '<h4 class="text-sm font-bold text-slate-800 mb-3">'
+      lv_esc_title '</h4>'
+      '<div class="grid grid-cols-2 sm:grid-cols-3'
+      ' lg:grid-cols-4 gap-2.5 mb-3">'
+      '  <div class="bg-blue-50 rounded-lg px-3 py-2'
+      ' border border-blue-100">'
+      '    <p class="text-[0.6rem] font-bold text-blue-600'
+      ' uppercase"><i class="fas fa-box mr-1"></i>Material</p>'
+      '    <p class="text-xs font-bold text-slate-800">'
+      ls_mat_hist-matnr_fg_no_zero '</p>'
+      '    <p class="text-[0.65rem] text-blue-700 truncate">'
+      ls_mat_hist-maktx '</p>'
+      '  </div>'
+      '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+      ' border border-slate-100">'
+      '    <p class="text-[0.6rem] font-bold text-slate-500'
+      ' uppercase"><i class="fas fa-user mr-1"></i>Requester</p>'
+      '    <p class="text-xs font-semibold text-slate-800">'
+      ls_mat_hist-requester_name '</p>'
+      '  </div>'
+      '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+      ' border border-slate-100">'
+      '    <p class="text-[0.6rem] font-bold text-slate-500'
+      ' uppercase"><i class="fas fa-user-pen mr-1"></i>Drafter'
+      '</p>'
+      '    <p class="text-xs font-semibold text-slate-800">'
+      ls_mat_hist-drafter_name '</p>'
+      '  </div>'
+      '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+      ' border border-slate-100">'
+      '    <p class="text-[0.6rem] font-bold text-slate-500'
+      ' uppercase"><i class="fas fa-building mr-1"></i>Dept</p>'
+      '    <p class="text-xs font-semibold text-slate-800">'
+      ls_mat_hist-zdept '</p>'
+      '  </div>'
+      '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+      ' border border-slate-100">'
+      '    <p class="text-[0.6rem] font-bold text-slate-500'
+      ' uppercase"><i class="fas fa-circle-question mr-1">'
+      '</i>Alasan</p>'
+      '    <p class="text-xs font-semibold text-slate-800">'
+      ls_mat_hist-zreason '</p>'
+      '  </div>'
+      '  <div class="bg-slate-50 rounded-lg px-3 py-2'
+      ' border border-slate-100">'
+      '    <p class="text-[0.6rem] font-bold text-slate-500'
+      ' uppercase"><i class="fas fa-coins mr-1"></i>Estimasi</p>'
+      '    <p class="text-xs font-semibold text-slate-800">'
+      lv_s_cost '</p>'
+      '  </div>'
+      '  <div class="bg-blue-50 rounded-lg px-3 py-2'
+      ' border border-blue-100">'
+      '    <p class="text-[0.6rem] font-bold text-blue-600'
+      ' uppercase"><i class="fas fa-folder-open mr-1"></i>DMS</p>'
+      '    ' lv_s_dms
+      '  </div>'
+      '</div>'
+      '<div class="bg-slate-50 rounded-lg px-3 py-2.5'
+      ' border border-slate-100 mb-2">'
+      '  <p class="text-[0.6rem] font-bold text-slate-500'
+      ' uppercase mb-1">'
+      '<i class="fas fa-align-left mr-1"></i>Deskripsi</p>'
+      '  <p class="text-xs text-slate-700">'
+      lv_esc_descr '</p>'
+      '</div>'
+      lv_s_reject
+      '</div></div>' INTO lv_mat_html.
+  ENDLOOP.
+
+  GV_MAT_HISTORY_HTML = lv_mat_html.
+ENDIF.
+
+
+" ================================================================
+" 5. ECR Detail + Audit Trail
+" ================================================================
+IF LV_ECR_DETAIL IS NOT INITIAL.
+
+  SELECT SINGLE a~ecr_no, a~title, a~matnr_fg, a~descr, a~kategori, a~priority,
+         a~requester, a~drafter, a~dokar, a~dir_number, a~status,
+         a~reject_reason, a~cost_estimate, a~zdept, a~zreason,
+         a~created_date, a~changed_date,
+         c~zecm_full_name AS requester_name,
+         d~zecm_full_name AS drafter_name,
+         b~maktx
+    INTO CORRESPONDING FIELDS OF @LS_ECR_DETAIL
+    FROM zecm_req AS a
+    LEFT OUTER JOIN makt AS b
+      ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+    LEFT OUTER JOIN zecm_user AS c
+      ON a~requester = c~zecm_user_id
+    LEFT OUTER JOIN zecm_user AS d
+      ON a~drafter = d~zecm_user_id
+    WHERE a~ecr_no = @LV_ECR_DETAIL.
+
+  IF LS_ECR_DETAIL IS NOT INITIAL.
+    LS_ECR_DETAIL-matnr_fg_no_zero = LS_ECR_DETAIL-matnr_fg.
+    SHIFT LS_ECR_DETAIL-matnr_fg_no_zero LEFT DELETING LEADING '0'.
+
+    " DMS detection for detail (IA, AP, FR — viewer sees all)
+    DATA: lv_matnr_detail TYPE matnr,
+          lv_doknr_detail TYPE doknr,
+          lv_dokar_detail TYPE dokar,
+          lv_dokvr_detail TYPE char2,
+          lv_doktl_detail TYPE char3,
+          lv_dokst_detail TYPE char2,
+          lv_objky_detail TYPE char90,
+          lv_matnr_raw_d  TYPE char90,
+          lv_objky_clean_d TYPE char90.
+
+    lv_matnr_detail = LS_ECR_DETAIL-matnr_fg.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING  input  = lv_matnr_detail
+      IMPORTING  output = lv_matnr_detail.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING  input  = lv_matnr_detail
+      IMPORTING  output = lv_matnr_raw_d.
+
+    SELECT doknr, dokar, dokvr, doktl, dokst
+      INTO (@lv_doknr_detail, @lv_dokar_detail, @lv_dokvr_detail, @lv_doktl_detail, @lv_dokst_detail)
+      FROM draw
+      WHERE dokst IN ('IA', 'AP', 'FR')
+        AND dokar IN ('DRW', 'DBX', 'DMT').
+
+      SELECT SINGLE objky INTO @lv_objky_detail
+        FROM drad
+        WHERE dokar = @lv_dokar_detail
+          AND doknr = @lv_doknr_detail
+          AND dokvr = @lv_dokvr_detail
+          AND doktl = @lv_doktl_detail.
+
+      IF sy-subrc = 0.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+          EXPORTING  input  = lv_objky_detail
+          IMPORTING  output = lv_objky_clean_d.
+        IF lv_objky_clean_d = lv_matnr_raw_d.
+          LS_ECR_DETAIL-dms_doknr = lv_doknr_detail.
+          LS_ECR_DETAIL-dms_dokar = lv_dokar_detail.
+          LS_ECR_DETAIL-dms_dokvr = lv_dokvr_detail.
+          LS_ECR_DETAIL-dms_doktl = lv_doktl_detail.
+          LS_ECR_DETAIL-dms_dokst = lv_dokst_detail.
+          EXIT.
+        ENDIF.
+      ENDIF.
+    ENDSELECT.
+
+    IF LS_ECR_DETAIL-dms_doknr IS NOT INITIAL.
+      LS_ECR_DETAIL-dms_found = abap_true.
+      SELECT SINGLE dktxt FROM drat INTO @LS_ECR_DETAIL-dms_dktxt
+        WHERE dokar = @LS_ECR_DETAIL-dms_dokar
+          AND doknr = @LS_ECR_DETAIL-dms_doknr
+          AND dokvr = @LS_ECR_DETAIL-dms_dokvr
+          AND doktl = @LS_ECR_DETAIL-dms_doktl.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING  input  = LS_ECR_DETAIL-dms_doknr
+        IMPORTING  output = LS_ECR_DETAIL-dms_doknr.
+    ENDIF.
+
+    " Clean dir_number
+    IF LS_ECR_DETAIL-dir_number IS NOT INITIAL.
+      DATA: lv_dir_parts_d TYPE STANDARD TABLE OF string,
+            lv_dir_doknr_d TYPE string.
+      SPLIT LS_ECR_DETAIL-dir_number AT '/' INTO TABLE lv_dir_parts_d.
+      READ TABLE lv_dir_parts_d INTO lv_dir_doknr_d INDEX 2.
+      IF lv_dir_doknr_d IS NOT INITIAL.
+        SHIFT lv_dir_doknr_d LEFT DELETING LEADING '0'.
+        LS_ECR_DETAIL-dir_number_clean = lv_dir_doknr_d.
+      ELSE.
+        LS_ECR_DETAIL-dir_number_clean = LS_ECR_DETAIL-dir_number.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  " Audit Trail
+  SELECT log_id, ecr_no, action, old_status, new_status,
+         user_id, e~zecm_full_name AS user_name, action_date, action_time, reason
+         INTO TABLE @LT_LOGS
+         FROM zecm_log
+         LEFT OUTER JOIN zecm_user AS e
+           ON zecm_log~user_id = e~zecm_user_id
+         WHERE ecr_no = @LV_ECR_DETAIL
+        AND is_ireq = ''
+         ORDER BY action_date DESCENDING, action_time DESCENDING.
+
+  LOOP AT LT_LOGS INTO LS_LOG.
+    CASE LS_LOG-old_status.
+      WHEN 'CRTD'. LS_LOG-old_label = 'Draft'.
+      WHEN 'INWK'. LS_LOG-old_label = 'In Work'.
+      WHEN 'INSP'. LS_LOG-old_label = 'Inspection'.
+      WHEN 'CLSD'. LS_LOG-old_label = 'Closed'.
+      WHEN 'REJC'. LS_LOG-old_label = 'Rejected'.
+      WHEN OTHERS. LS_LOG-old_label = LS_LOG-old_status.
+    ENDCASE.
+    CASE LS_LOG-new_status.
+      WHEN 'CRTD'. LS_LOG-new_label = 'Draft'.
+      WHEN 'INWK'. LS_LOG-new_label = 'In Work'.
+      WHEN 'INSP'. LS_LOG-new_label = 'Inspection'.
+      WHEN 'CLSD'. LS_LOG-new_label = 'Closed'.
+      WHEN 'REJC'. LS_LOG-new_label = 'Rejected'.
+      WHEN OTHERS. LS_LOG-new_label = LS_LOG-new_status.
+    ENDCASE.
+    CASE LS_LOG-action.
+      WHEN 'CREA'. LS_LOG-action_label = 'Created'.
+      WHEN 'APPR'. LS_LOG-action_label = 'Approved'.
+      WHEN 'INSP'. LS_LOG-action_label = 'Submitted'.
+      WHEN 'REJT'. LS_LOG-action_label = 'Rejected'.
+      WHEN 'REVS'. LS_LOG-action_label = 'Revised'.
+      WHEN 'CLSD'. LS_LOG-action_label = 'Closed'.
+      WHEN 'CANC'. LS_LOG-action_label = 'Cancelled'.
+      WHEN OTHERS. LS_LOG-action_label = LS_LOG-action.
+    ENDCASE.
+    MODIFY LT_LOGS FROM LS_LOG.
+  ENDLOOP.
+
+ELSE.
+
+  " ================================================================
+  " 6. ECR List (ALL ECRs for viewer)
+  " ================================================================
+  " ECR is ALWAYS Draft (CRTD) regardless of filter
+  SELECT a~ecr_no, a~title, a~matnr_fg, a~descr, a~kategori, a~priority,
+         a~requester, a~drafter, a~dokar, a~dir_number, a~status,
+         a~reject_reason, a~cost_estimate, a~zdept, a~zreason,
+         a~created_date, a~created_time, a~changed_date,
+         c~zecm_full_name AS requester_name,
+         d~zecm_full_name AS drafter_name,
+         b~maktx
+    INTO CORRESPONDING FIELDS OF TABLE @LT_ECR
+    FROM zecm_req AS a
+    LEFT OUTER JOIN makt AS b
+      ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+    LEFT OUTER JOIN zecm_user AS c
+      ON a~requester = c~zecm_user_id
+    LEFT OUTER JOIN zecm_user AS d
+      ON a~drafter = d~zecm_user_id
+    WHERE a~status = 'CRTD'
+    ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+
+  " Process each ECR
+  DATA: lv_matnr_conv_a TYPE matnr,
+        lv_doknr_a TYPE doknr,
+        lv_dokar_a TYPE dokar,
+        lv_dokvr_a TYPE char2,
+        lv_doktl_a TYPE char3,
+        lv_dokst_a TYPE char2,
+        lv_objky_a TYPE char90,
+        lv_matnr_raw_a TYPE char90,
+        lv_objky_clean_a TYPE char90,
+        lv_dir_parts TYPE STANDARD TABLE OF string,
+        lv_dir_doknr TYPE string.
+
+  DATA: lv_target_dokst TYPE char2.
+
+  LOOP AT LT_ECR INTO LS_ECR.
+    " Remove leading zeros from ECR number
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING  input  = LS_ECR-ecr_no
+      IMPORTING  output = LS_ECR-ecr_no.
+
+    " Material no zero
+    LS_ECR-matnr_fg_no_zero = LS_ECR-matnr_fg.
+    SHIFT LS_ECR-matnr_fg_no_zero LEFT DELETING LEADING '0'.
+
+    " Clean dir_number
+    IF LS_ECR-dir_number IS NOT INITIAL.
+      SPLIT LS_ECR-dir_number AT '/' INTO TABLE lv_dir_parts.
+      READ TABLE lv_dir_parts INTO lv_dir_doknr INDEX 2.
+      IF lv_dir_doknr IS NOT INITIAL.
+        SHIFT lv_dir_doknr LEFT DELETING LEADING '0'.
+        LS_ECR-dir_number_clean = lv_dir_doknr.
+      ELSE.
+        LS_ECR-dir_number_clean = LS_ECR-dir_number.
+      ENDIF.
+    ENDIF.
+
+    " Target DMS status based on ECR status
+    " Viewer sees all statuses, so check IA, AP, FR
+    IF LS_ECR-status = 'INWK' OR LS_ECR-status = 'BMAP'.
+      lv_target_dokst = 'IA'.
+    ELSEIF LS_ECR-status = 'INSP'.
+      lv_target_dokst = 'AP'.
+    ELSEIF LS_ECR-status = 'CLSD'.
+      lv_target_dokst = 'FR'.
+    ELSE.
+      CLEAR lv_target_dokst.
+    ENDIF.
+
+    " DMS detection — V04 approach
+    IF lv_target_dokst IS NOT INITIAL.
+      lv_matnr_conv_a = LS_ECR-matnr_fg.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING  input  = lv_matnr_conv_a
+        IMPORTING  output = lv_matnr_conv_a.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING  input  = lv_matnr_conv_a
+        IMPORTING  output = lv_matnr_raw_a.
+
+      CLEAR: lv_doknr_a, lv_dokar_a, lv_dokvr_a, lv_doktl_a, lv_dokst_a.
+
+      SELECT doknr, dokar, dokvr, doktl, dokst
+        INTO (@lv_doknr_a, @lv_dokar_a, @lv_dokvr_a, @lv_doktl_a, @lv_dokst_a)
+        FROM draw
+        WHERE dokst = @lv_target_dokst
+          AND dokar IN ('DRW', 'DBX', 'DMT').
+
+        SELECT SINGLE objky INTO @lv_objky_a
+          FROM drad
+          WHERE dokar = @lv_dokar_a
+            AND doknr = @lv_doknr_a
+            AND dokvr = @lv_dokvr_a
+            AND doktl = @lv_doktl_a.
+
+        IF sy-subrc = 0.
+          CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+            EXPORTING  input  = lv_objky_a
+            IMPORTING  output = lv_objky_clean_a.
+          IF lv_objky_clean_a = lv_matnr_raw_a.
+            LS_ECR-dms_doknr = lv_doknr_a.
+            LS_ECR-dms_dokar = lv_dokar_a.
+            LS_ECR-dms_dokvr = lv_dokvr_a.
+            LS_ECR-dms_doktl = lv_doktl_a.
+            LS_ECR-dms_dokst = lv_dokst_a.
+            EXIT.
+          ENDIF.
+        ENDIF.
+      ENDSELECT.
+
+      IF LS_ECR-dms_doknr IS NOT INITIAL.
+        LS_ECR-dms_found = abap_true.
+        SELECT SINGLE dktxt FROM drat INTO @LS_ECR-dms_dktxt
+          WHERE dokar = @LS_ECR-dms_dokar
+            AND doknr = @LS_ECR-dms_doknr
+            AND dokvr = @LS_ECR-dms_dokvr
+            AND doktl = @LS_ECR-dms_doktl.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+          EXPORTING  input  = LS_ECR-dms_doknr
+          IMPORTING  output = LS_ECR-dms_doknr.
+      ENDIF.
+    ENDIF.
+
+    MODIFY LT_ECR FROM LS_ECR.
+  ENDLOOP.
+
+ENDIF.
+
+" ================================================================
+" ================================================================
+" 7. ECO List (In Work, BOM Pending, BOM Approved, Inspection, Rejected)
+" ================================================================
+CLEAR: GV_ECO_HTML.
+DATA: lt_eco_v       TYPE TABLE OF zecm_req,
+      ls_eco_v       TYPE zecm_req,
+      lv_eco_name_v  TYPE string,
+      lv_sts_color   TYPE string,
+      lv_sts_label   TYPE string.
+
+IF LV_FILTER = 'ALL' OR LV_FILTER = 'CRTD'.
+  " Show all ECOs if filter is ALL (or if they somehow clicked CRTD)
+  SELECT * FROM zecm_req INTO TABLE @lt_eco_v
+    WHERE status IN ('INWK', 'BMPR', 'BMAP', 'INSP', 'REJC')
+    ORDER BY created_date DESCENDING.
+ELSE.
+  " Show specific ECO status
+  SELECT * FROM zecm_req INTO TABLE @lt_eco_v
+    WHERE status = @LV_FILTER
+    ORDER BY created_date DESCENDING.
+ENDIF.
+
+IF sy-subrc = 0.
+  LOOP AT lt_eco_v INTO ls_eco_v.
+    SELECT SINGLE zecm_full_name FROM zecm_user
+      INTO @lv_eco_name_v
+      WHERE zecm_user_id = @ls_eco_v-requester.
+    IF sy-subrc <> 0.
+      CLEAR lv_eco_name_v.
+    ENDIF.
+
+    CLEAR: lv_kat_color, lv_pri_color, lv_sts_color, lv_sts_label.
+    " Kategori Color (inline style agar tidak kena Tailwind purge)
+    CASE ls_eco_v-kategori.
+      WHEN 'DRW'. lv_kat_color = 'background:#DBEAFE;color:#1D4ED8'.
+      WHEN 'DBX'. lv_kat_color = 'background:#FFEDD5;color:#C2410C'.
+      WHEN 'DMT'. lv_kat_color = 'background:#D1FAE5;color:#065F46'.
+      WHEN OTHERS. lv_kat_color = 'background:#F1F5F9;color:#475569'.
+    ENDCASE.
+
+    " Priority Color (inline style)
+    CASE ls_eco_v-priority.
+      WHEN 'CRITICAL'. lv_pri_color = 'background:#FEE2E2;color:#B91C1C'.
+      WHEN 'HIGH'.     lv_pri_color = 'background:#FFEDD5;color:#C2410C'.
+      WHEN 'MEDIUM'.   lv_pri_color = 'background:#FEF9C3;color:#854D0E'.
+      WHEN 'LOW'.      lv_pri_color = 'background:#F1F5F9;color:#475569'.
+      WHEN OTHERS.     lv_pri_color = 'background:#F1F5F9;color:#475569'.
+    ENDCASE.
+
+    " Status Color (inline style)
+    CLEAR lv_sts_label.
+    CASE ls_eco_v-status.
+      WHEN 'INWK'. lv_sts_color = 'background:#FFEDD5;color:#C2410C'. lv_sts_label = 'In Work'.
+      WHEN 'BMPR'. lv_sts_color = 'background:#FEF3C7;color:#B45309'. lv_sts_label = 'BOM Pending'.
+      WHEN 'BMAP'. lv_sts_color = 'background:#CCFBF1;color:#0F766E'. lv_sts_label = 'BOM Approved'.
+      WHEN 'INSP'. lv_sts_color = 'background:#FEF9C3;color:#854D0E'. lv_sts_label = 'Inspection'.
+      WHEN 'REJC'. lv_sts_color = 'background:#FEE2E2;color:#B91C1C'. lv_sts_label = 'Rejected'.
+      WHEN OTHERS. lv_sts_color = 'background:#F1F5F9;color:#475569'. lv_sts_label = ls_eco_v-status.
+    ENDCASE.
+
+    CONCATENATE GV_ECO_HTML '<tr class="hover:bg-slate-50">' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3 font-bold text-brand-600 font-mono">' ls_eco_v-ecr_no '</td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3 text-slate-700 max-w-[200px] truncate">' ls_eco_v-title '</td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3 text-xs font-semibold text-slate-700">' ls_eco_v-matnr_fg '</td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-[0.65rem] font-bold uppercase tracking-wide" style="' lv_kat_color '">' ls_eco_v-kategori '</span></td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-[0.65rem] font-bold uppercase tracking-wide" style="' lv_pri_color '">' ls_eco_v-priority '</span></td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-[0.65rem] font-bold uppercase tracking-wide" style="' lv_sts_color '">' lv_sts_label '</span></td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3 text-xs text-slate-700">' lv_eco_name_v '</td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '<td class="px-4 py-3 text-xs text-slate-500">' ls_eco_v-created_date '</td>' INTO GV_ECO_HTML.
+    CONCATENATE GV_ECO_HTML '</tr>' INTO GV_ECO_HTML.
+  ENDLOOP.
+ELSE.
+  CONCATENATE GV_ECO_HTML '<tr><td colspan="8" class="px-4 py-12 text-center">' INTO GV_ECO_HTML.
+  CONCATENATE GV_ECO_HTML '<div class="flex flex-col items-center">' INTO GV_ECO_HTML.
+  CONCATENATE GV_ECO_HTML '<i class="fas fa-gears text-3xl text-slate-300 mb-3"></i>' INTO GV_ECO_HTML.
+  CONCATENATE GV_ECO_HTML '<p class="text-sm text-slate-400 font-medium">Tidak ada ECO</p>' INTO GV_ECO_HTML.
+  CONCATENATE GV_ECO_HTML '<p class="text-xs text-slate-300 mt-1">ECO yang sedang diproses akan muncul di sini</p>' INTO GV_ECO_HTML.
+  CONCATENATE GV_ECO_HTML '</div></td></tr>' INTO GV_ECO_HTML.
+ENDIF.
+
+" Navigation params
+navigation->set_parameter( name = 'u' value = GV_USER_ID ).
+navigation->set_parameter( name = 'n' value = GV_FULL_NAME ).
+navigation->set_parameter( name = 'r' value = GV_ROLE ).

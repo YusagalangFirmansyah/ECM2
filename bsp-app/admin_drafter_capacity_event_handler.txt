@@ -1,0 +1,2 @@
+* Event handler for admin_drafter_capacity
+* (No postback logic currently needed for this read-only dashboard)

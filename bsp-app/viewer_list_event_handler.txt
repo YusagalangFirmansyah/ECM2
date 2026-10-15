@@ -1,0 +1,36 @@
+* viewer_list Event Handler — V06
+* Viewer role: read-only, no approve/reject/revisi actions
+* Handles file download
+DATA: LV_ACTION TYPE string.
+LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+
+IF LV_ACTION = 'download_att'.
+  DATA: ls_dl_att TYPE zecm_bom_att,
+        lv_dl_att_id TYPE string.
+        
+  lv_dl_att_id = request->get_form_field( 'att_id' ).
+  SELECT SINGLE * FROM zecm_bom_att INTO @ls_dl_att WHERE att_id = @lv_dl_att_id.
+  IF sy-subrc = 0.
+    " Setup response for download
+    DATA: lv_content_type TYPE string.
+    lv_content_type = ls_dl_att-mime_type.
+    
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Type'
+        value = lv_content_type.
+        
+    CONCATENATE 'attachment; filename="' ls_dl_att-file_name '"' INTO DATA(lv_disp).
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Disposition'
+        value = lv_disp.
+        
+    CALL METHOD _m_response->set_data
+      EXPORTING
+        data = ls_dl_att-file_data.
+        
+    navigation->response_complete( ).
+    RETURN.
+  ENDIF.
+ENDIF.

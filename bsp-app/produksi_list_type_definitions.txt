@@ -1,0 +1,49 @@
+TYPES: BEGIN OF TY_REQUEST,
+         ecr_no        TYPE zecm_req-ecr_no,
+         title       TYPE zecm_req-title,
+         matnr_fg    TYPE zecm_req-matnr_fg,
+         kategori    TYPE zecm_req-kategori,
+         priority    TYPE zecm_req-priority,
+         zreason     TYPE zecm_req-zreason,
+         status      TYPE zecm_req-status,
+         admin_note  TYPE zecm_req-bom_notes,
+         assigned_drafter TYPE zecm_req-drafter,
+         zdept       TYPE zecm_req-zdept,
+         descr        TYPE zecm_req-descr,
+         cost_estimate TYPE zecm_req-cost_estimate,
+         created_date TYPE zecm_req-created_date,
+         drafter_name TYPE string,
+         ecr_status  TYPE string,
+       END OF TY_REQUEST.
+
+TYPES: BEGIN OF TY_MATERIAL,
+         matnr TYPE mara-matnr,
+         maktx TYPE makt-maktx,
+         mtart TYPE mara-mtart,
+       END OF TY_MATERIAL.
+
+TYPES: BEGIN OF TY_MAT,
+         matnr TYPE mara-matnr,
+         maktx TYPE makt-maktx,
+         werks TYPE marc-werks,
+         mtart TYPE mara-mtart,
+       END OF TY_MAT.
+TYPES: TT_MAT TYPE STANDARD TABLE OF TY_MAT.
+
+TYPES: BEGIN OF TY_DEDUP,
+         matnr  TYPE string,
+         desc   TYPE string,
+         mtart  TYPE string,
+         plants TYPE string,
+       END OF TY_DEDUP.
+TYPES: TT_DEDUP TYPE STANDARD TABLE OF TY_DEDUP.
+
+TYPES: BEGIN OF TY_AUDIT,
+         action      TYPE zecm_log-action,
+         old_status  TYPE zecm_log-old_status,
+         new_status  TYPE zecm_log-new_status,
+         reason      TYPE zecm_log-reason,
+         user_id     TYPE zecm_log-user_id,
+         action_date TYPE zecm_log-action_date,
+         full_name   TYPE string,
+       END OF TY_AUDIT.

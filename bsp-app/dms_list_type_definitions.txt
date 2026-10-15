@@ -1,0 +1,12 @@
+TYPES: BEGIN OF ty_dms_doc,
+        dokar      TYPE draw-dokar,
+        doknr      TYPE draw-doknr,
+        dokvr      TYPE draw-dokvr,
+        doktl      TYPE draw-doktl,
+        dokst      TYPE draw-dokst,
+        adatum     TYPE draw-adatum,
+        dktxt      TYPE drat-dktxt,
+        linked_matnr TYPE char40,
+       END OF ty_dms_doc.
+
+TYPES: tt_dms_doc TYPE STANDARD TABLE OF ty_dms_doc.

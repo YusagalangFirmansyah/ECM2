@@ -1,0 +1,312 @@
+﻿<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daftar DMS - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0',
+              500: '#10b981', 600: '#059669', 700: '#047857', 800: '#064e3b'
+            }
+          },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+
+  <%@include file="app_header.htm" %>
+
+  <div class="px-8 py-7 max-w-[1200px] mx-auto">
+
+    <!-- Header Banner -->
+    <div class="relative overflow-hidden rounded-xl p-6 mb-6 shadow-sm" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+      <div class="absolute -top-[60px] -right-[30px] w-[200px] h-[200px] rounded-full" style="background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);"></div>
+      <div class="flex items-center justify-between relative z-10">
+        <div>
+          <h1 class="text-xl font-bold text-white mb-1">Daftar DMS</h1>
+          <p class="text-[0.76rem] text-brand-200 font-medium">Crosscheck dokumen DMS untuk validasi auto-detect</p>
+        </div>
+        <% IF gv_role = 'ADMIN' OR gv_role = 'SUPERADMIN'. %>
+          <a href="admin_dashboard.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'REQUESTER'. %>
+          <a href="requester_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'APPROVER'. %>
+          <a href="approver_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'VIEWER'. %>
+          <a href="viewer_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'MASTER_DATA'. %>
+          <a href="master_data_dashboard.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'PRODUKSI'. %>
+          <a href="produksi_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'COSTING'. %>
+          <a href="costing_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'COST_ENG'. %>
+          <a href="costing_page.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSEIF gv_role = 'PAYROLL'. %>
+          <a href="payroll_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ELSE. %>
+          <a href="drafter_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+          <% ENDIF. %>
+          class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+          Kembali
+        </a>
+      </div>
+    </div>
+
+    <!-- Filter Section (Client-Side) -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Filter
+        </h3>
+      </div>
+      <div class="px-5 py-4 flex flex-wrap gap-4 items-end">
+        <!-- DOKAR Filter -->
+        <div class="min-w-[140px]">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Tipe Dokumen</label>
+          <select id="filterTipe" onchange="applyFilter()" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-[0.82rem] text-slate-600 bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+            <option value="ALL">Semua Tipe</option>
+            <option value="DRW">DRW (Drawing)</option>
+            <option value="DBX">DBX (Box)</option>
+            <option value="DMT">DMT (Metal)</option>
+          </select>
+        </div>
+        <!-- Status Filter -->
+        <div class="min-w-[140px]">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Status DMS</label>
+          <select id="filterStatus" onchange="applyFilter()" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-[0.82rem] text-slate-600 bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+            <option value="ALL">Semua Status</option>
+            <option value="IA">In Work (IA)</option>
+            <option value="AP">Inspection Req. (AP)</option>
+            <option value="FR">Released (FR)</option>
+          </select>
+        </div>
+        <!-- Material Search -->
+        <div class="flex-1 min-w-[200px]">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Cari Deskripsi</label>
+          <input type="text" id="filterSearch" oninput="applyFilter()" placeholder="Kata kunci deskripsi dokumen" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-[0.82rem] text-slate-600 bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+        </div>
+      </div>
+    </div>
+
+    <!-- DMS Table Section -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-brand-500 mr-2"></span>Dokumen DMS
+        </h3>
+        <span id="pageInfo" class="text-xs text-slate-400"></span>
+      </div>
+
+      <% IF LT_DISPLAY IS INITIAL. %>
+        <div class="py-16 text-center">
+          <svg class="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <p class="text-sm text-slate-400">Tidak ada dokumen ditemukan</p>
+        </div>
+      <% ELSE. %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm" id="dmsTable">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200">
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DMS No</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipe</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Versi</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Material</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Deskripsi</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Update</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <% LOOP AT LT_DISPLAY INTO LS_DOC. %>
+              <tr class="dms-row hover:bg-slate-50 transition-colors cursor-pointer"
+                  data-tipe="<%= LS_DOC-dokar %>"
+                  data-status="<%= LS_DOC-dokst %>"
+                  data-doknr="<%= LS_DOC-doknr %>"
+                  data-desc="<%= LS_DOC-dktxt %>"
+                  onclick="goToDetail('<%= LS_DOC-dokar %>', '<%= LS_DOC-doknr %>', '<%= LS_DOC-dokvr %>', '<%= LS_DOC-doktl %>')">
+                <td class="px-4 py-3 font-bold text-brand-600"><%= LS_DOC-doknr %></td>
+                <td class="px-4 py-3">
+                  <% IF LS_DOC-dokar = 'DRW'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-purple-50 text-purple-700 text-xs font-bold border border-purple-200">DRW</span>
+                  <% ELSEIF LS_DOC-dokar = 'DBX'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 text-xs font-bold border border-cyan-200">DBX</span>
+                  <% ELSEIF LS_DOC-dokar = 'DMT'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-orange-50 text-orange-700 text-xs font-bold border border-orange-200">DMT</span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3 text-xs text-slate-500 font-mono"><%= LS_DOC-dokvr %></td>
+                <td class="px-4 py-3">
+                  <% IF LS_DOC-linked_matnr IS NOT INITIAL. %>
+                    <span class="font-mono text-xs font-semibold text-purple-700"><%= LS_DOC-linked_matnr %></span>
+                  <% ELSE. %>
+                    <span class="text-slate-400 text-xs">-</span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3">
+                  <% IF LS_DOC-dokst = 'IA'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">In Work</span>
+                  <% ELSEIF LS_DOC-dokst = 'AP'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200">Inspection Req.</span>
+                  <% ELSEIF LS_DOC-dokst = 'FR'. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-bold border border-green-200">Released</span>
+                  <% ELSE. %>
+                    <span class="inline-block px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-bold"><%= LS_DOC-dokst %></span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3 text-slate-600 max-w-[250px] truncate" title="<%= LS_DOC-dktxt %>"><%= LS_DOC-dktxt %></td>
+                <td class="px-4 py-3 text-slate-500 text-xs font-mono">
+                  <% IF LS_DOC-adatum IS NOT INITIAL. %>
+                    <%= LS_DOC-adatum+6(2) %>.<%= LS_DOC-adatum+4(2) %>.<%= LS_DOC-adatum(4) %>
+                  <% ELSE. %>
+                    <span class="text-slate-400">-</span>
+                  <% ENDIF. %>
+                </td>
+              </tr>
+              <% ENDLOOP. %>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination (Client-Side JS) -->
+        <div id="paginationBar" class="px-5 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div id="pageRange" class="text-xs text-slate-400"></div>
+          <div id="pageButtons" class="flex items-center gap-1"></div>
+        </div>
+      <% ENDIF. %>
+    </div>
+
+  </div>
+
+  <script>
+    var PAGE_SIZE = 20;
+    var allRows = [];
+    var filteredRows = [];
+    var currentPage = 1;
+    var totalPages = 1;
+
+    (function() {
+      var rows = document.querySelectorAll('.dms-row');
+      for (var i = 0; i < rows.length; i++) allRows.push(rows[i]);
+      
+      // Auto-fill search from URL (matnr)
+      var urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.has('matnr')) {
+        document.getElementById('filterSearch').value = urlParams.get('matnr');
+      }
+      
+      applyFilter();
+    })();
+
+    function applyFilter() {
+      var fTipe = document.getElementById('filterTipe').value;
+      var fStatus = document.getElementById('filterStatus').value;
+      var fSearch = (document.getElementById('filterSearch').value || '').toLowerCase();
+
+      filteredRows = [];
+      for (var i = 0; i < allRows.length; i++) {
+        var row = allRows[i];
+        var matchTipe = (fTipe === 'ALL' || row.getAttribute('data-tipe') === fTipe);
+        var matchStatus = (fStatus === 'ALL' || row.getAttribute('data-status') === fStatus);
+        var desc = (row.getAttribute('data-desc') || '').toLowerCase();
+        var doknr = (row.getAttribute('data-doknr') || '').toLowerCase();
+        var matchSearch = (fSearch === '' || desc.indexOf(fSearch) !== -1 || doknr.indexOf(fSearch) !== -1);
+
+        if (matchTipe && matchStatus && matchSearch) {
+          filteredRows.push(row);
+        } else {
+          row.style.display = 'none';
+        }
+      }
+      totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+      if (currentPage > totalPages) currentPage = totalPages;
+      showPage(currentPage);
+    }
+
+    function showPage(page) {
+      currentPage = page;
+      var start = (page - 1) * PAGE_SIZE;
+      var end = start + PAGE_SIZE;
+
+      for (var i = 0; i < filteredRows.length; i++) {
+        filteredRows[i].style.display = (i >= start && i < end) ? '' : 'none';
+      }
+
+      var rowStart = filteredRows.length > 0 ? start + 1 : 0;
+      var rowEnd = Math.min(end, filteredRows.length);
+      document.getElementById('pageInfo').textContent =
+        'Halaman ' + page + ' dari ' + totalPages + ' (' + filteredRows.length + ' dokumen)';
+      document.getElementById('pageRange').textContent =
+        'Menampilkan ' + rowStart + '-' + rowEnd + ' dari ' + filteredRows.length;
+
+      renderPagination();
+    }
+
+    function renderPagination() {
+      var html = '';
+      if (totalPages <= 1) {
+        document.getElementById('pageButtons').innerHTML = '';
+        return;
+      }
+
+      if (currentPage > 1) {
+        html += '<button onclick="showPage(1)" class="px-2 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50">&laquo;</button>';
+        html += '<button onclick="showPage(' + (currentPage-1) + ')" class="px-2 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50">&lsaquo;</button>';
+      }
+
+      var pStart = Math.max(1, currentPage - 2);
+      var pEnd = Math.min(totalPages, currentPage + 2);
+      for (var p = pStart; p <= pEnd; p++) {
+        if (p === currentPage) {
+          html += '<span class="px-3 py-1.5 text-xs font-bold text-white bg-brand-600 border border-brand-600 rounded">' + p + '</span>';
+        } else {
+          html += '<button onclick="showPage(' + p + ')" class="px-3 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50">' + p + '</button>';
+        }
+      }
+
+      if (currentPage < totalPages) {
+        html += '<button onclick="showPage(' + (currentPage+1) + ')" class="px-2 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50">&rsaquo;</button>';
+        html += '<button onclick="showPage(' + totalPages + ')" class="px-2 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50">&raquo;</button>';
+      }
+
+      document.getElementById('pageButtons').innerHTML = html;
+    }
+  
+    function goToDetail(dokar, doknr, dokvr, doktl) {
+      var u = encodeURIComponent('<%= GV_USER_ID %>');
+      var r = encodeURIComponent('<%= GV_ROLE %>');
+      var n = encodeURIComponent('<%= GV_FULL_NAME %>');
+      
+      window.location.href = 'dms_detail.htm?u=' + u + '&r=' + r + '&n=' + n + 
+                             '&DOKAR=' + encodeURIComponent(dokar.trim()) + 
+                             '&DOKNR=' + encodeURIComponent(doknr.trim()) + 
+                             '&DOKVR=' + encodeURIComponent(dokvr.trim()) + 
+                             '&DOKTL=' + encodeURIComponent(doktl.trim());
+    }
+  </script>
+</body>
+</html>

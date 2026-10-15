@@ -1,0 +1,7 @@
+DATA:
+  GV_USER_ID   TYPE string,
+  GV_FULL_NAME TYPE string,
+  GV_ROLE      TYPE string,
+  GV_MESSAGE   TYPE string,
+  LT_USERS     TYPE tt_zecm_user,
+  LS_USER      TYPE zecm_user.

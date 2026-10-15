@@ -1,0 +1,21 @@
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+GV_MESSAGE   = request->get_form_field( 'msg' ).
+LV_KEYWORD   = request->get_form_field( 'keyword' ).
+LV_PLANT     = request->get_form_field( 'plant' ).
+LV_MTART     = request->get_form_field( 'mtart' ).
+
+IF LV_PLANT IS INITIAL. LV_PLANT = 'ALL'. ENDIF.
+IF LV_MTART IS INITIAL. LV_MTART = 'ALL'. ENDIF.
+
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+IF GV_MESSAGE CS 'Gagal'.
+  GV_ICON = 'error'.
+ELSE.
+  GV_ICON = 'success'.
+ENDIF.

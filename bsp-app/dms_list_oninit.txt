@@ -1,0 +1,110 @@
+﻿* dms_list OnInit (Client-Side Pagination)
+CLEAR: LT_DOCS, LT_DISPLAY.
+
+GV_USER_ID    = request->get_form_field( 'u' ).
+GV_FULL_NAME  = request->get_form_field( 'n' ).
+GV_ROLE       = request->get_form_field( 'r' ).
+
+" Load ALL DMS Documents
+SELECT a~dokar, a~doknr, a~dokvr, a~doktl, a~dokst, a~adatum,
+       b~dktxt
+  INTO TABLE @LT_DOCS
+  FROM draw AS a
+  LEFT JOIN drat AS b
+    ON a~dokar = b~dokar
+   AND a~doknr = b~doknr
+   AND a~dokvr = b~dokvr
+   AND a~doktl = b~doktl
+   AND b~langu = 'E'
+  WHERE a~dokar IN ( 'DRW', 'DBX', 'DMT' )
+    AND a~dokst <> ' '
+    AND a~dokst <> 'H4'
+    AND a~dokst <> 'OB'.
+
+" Deterministic sort
+SORT LT_DOCS BY adatum DESCENDING doknr DESCENDING.
+
+" ── Linked Material: prioritas FERT > HALB > HALM > apapun ──
+" FIX: SELECT SINGLE → SELECT ... UP TO 1 ROWS ... ORDER BY (deterministic)
+DATA: lv_objky TYPE drad-objky,
+      lv_mtart TYPE mara-mtart.
+
+LOOP AT LT_DOCS INTO DATA(LS_TMP).
+  CLEAR: lv_objky, lv_mtart.
+
+  " Coba cari material FERT dulu
+  SELECT c~objky INTO @lv_objky UP TO 1 ROWS
+    FROM drad AS c
+    INNER JOIN mara AS d ON c~objky = d~matnr
+    WHERE c~dokar = @LS_TMP-dokar
+      AND c~doknr = @LS_TMP-doknr
+      AND c~dokvr = @LS_TMP-dokvr
+      AND c~doktl = @LS_TMP-doktl
+      AND c~dokob = 'MARA'
+      AND d~mtart = 'FERT'
+    ORDER BY c~objky ASCENDING.
+  ENDSELECT.
+
+  " Kalau nggak ada FERT, cari HALB
+  IF sy-subrc <> 0.
+    SELECT c~objky INTO @lv_objky UP TO 1 ROWS
+      FROM drad AS c
+      INNER JOIN mara AS d ON c~objky = d~matnr
+      WHERE c~dokar = @LS_TMP-dokar
+        AND c~doknr = @LS_TMP-doknr
+        AND c~dokvr = @LS_TMP-dokvr
+        AND c~doktl = @LS_TMP-doktl
+        AND c~dokob = 'MARA'
+        AND d~mtart = 'HALB'
+      ORDER BY c~objky ASCENDING.
+    ENDSELECT.
+  ENDIF.
+
+  " Kalau nggak ada HALB, cari HALM
+  IF sy-subrc <> 0.
+    SELECT c~objky INTO @lv_objky UP TO 1 ROWS
+      FROM drad AS c
+      INNER JOIN mara AS d ON c~objky = d~matnr
+      WHERE c~dokar = @LS_TMP-dokar
+        AND c~doknr = @LS_TMP-doknr
+        AND c~dokvr = @LS_TMP-dokvr
+        AND c~doktl = @LS_TMP-doktl
+        AND c~dokob = 'MARA'
+        AND d~mtart = 'HALM'
+      ORDER BY c~objky ASCENDING.
+    ENDSELECT.
+  ENDIF.
+
+  " Kalau nggak ada semua, ambil apapun
+  IF sy-subrc <> 0.
+    SELECT objky INTO @lv_objky UP TO 1 ROWS
+      FROM drad
+      WHERE dokar = @LS_TMP-dokar
+        AND doknr = @LS_TMP-doknr
+        AND dokvr = @LS_TMP-dokvr
+        AND doktl = @LS_TMP-doktl
+        AND dokob = 'MARA'
+      ORDER BY objky ASCENDING.
+    ENDSELECT.
+  ENDIF.
+
+  IF lv_objky IS NOT INITIAL.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING  input  = lv_objky
+      IMPORTING  output = LS_TMP-linked_matnr.
+  ENDIF.
+  MODIFY LT_DOCS FROM LS_TMP.
+ENDLOOP.
+
+" Build display table (ALL rows)
+LOOP AT LT_DOCS INTO LS_DOC.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING  input  = LS_DOC-doknr
+    IMPORTING  output = LS_DOC-doknr.
+  APPEND LS_DOC TO LT_DISPLAY.
+ENDLOOP.
+
+" Set Navigation Parameters
+navigation->set_parameter( name = 'u' value = GV_USER_ID ).
+navigation->set_parameter( name = 'n' value = GV_FULL_NAME ).
+navigation->set_parameter( name = 'r' value = GV_ROLE ).

@@ -1,0 +1,69 @@
+* =======================================================================
+* Page Attributes — admin_dashboard.htm
+* V07: Dashboard Admin — All ECR + Material History + Panel Request Masuk
+* =======================================================================
+
+* User info
+GV_USER_ID   TYPE string
+GV_FULL_NAME TYPE string
+GV_ROLE      TYPE string
+
+* Date range filter
+GV_DATE_FROM TYPE string
+GV_DATE_TO   TYPE string
+
+* Summary cards (no CLSD)
+GV_COUNT_CRTD TYPE i
+GV_COUNT_INWK TYPE i
+GV_COUNT_BMPR TYPE i
+GV_COUNT_BMAP TYPE i
+GV_COUNT_INSP TYPE i
+GV_COUNT_REJC TYPE i
+GV_COUNT_IREQ TYPE i   " V07: Pre-ECR Request count
+
+* Monthly chart data (JSON strings for Chart.js, no CLSD)
+GV_MONTHS_LABELS  TYPE string   " ['Jan','Feb','Mar',...]
+GV_MONTHS_IREQ    TYPE string
+GV_MONTHS_CRTD    TYPE string   " [1,2,3,...]
+GV_MONTHS_INWK    TYPE string
+GV_MONTHS_BMPR    TYPE string
+GV_MONTHS_BMAP    TYPE string
+GV_MONTHS_INSP    TYPE string
+GV_MONTHS_REJC    TYPE string
+
+* Kapasitas Drafter chart data
+GV_CAPA_LABELS   TYPE string
+GV_CAPA_INWK     TYPE string
+GV_CAPA_BMPR     TYPE string
+GV_CAPA_BMAP     TYPE string
+GV_CAPA_INSP     TYPE string
+
+* All ECRs (HTML table rows)
+GV_RECENT_HTML  TYPE string
+GV_RECENT_COUNT TYPE string
+GV_ECR_DETAIL   TYPE string
+GV_AUDIT_HTML   TYPE string
+
+* Approval queue (HTML table rows)
+GV_QUEUE_HTML  TYPE string
+
+* Panel Request Masuk (V07)
+GV_IREQ_HTML TYPE string
+
+* Message
+GV_MESSAGE TYPE string
+GV_ICON    TYPE string
+
+* ECR form modal
+GV_DRAFTER_OPTIONS TYPE string
+GV_MAT_KEYWORD     TYPE string
+GV_MAT_RESULTS     TYPE string
+GV_ECR_DETAIL_HTML TYPE string
+
+* Material History Search
+GV_MAT_SEARCH       TYPE string
+GV_MAT_HISTORY_HTML TYPE string
+
+* Requester dropdown options (ECR table filter)
+
+GV_COUNT_REQ  TYPE i   " V11: Count of IREQ waiting for Head R&D

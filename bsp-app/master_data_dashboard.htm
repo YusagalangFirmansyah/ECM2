@@ -1,0 +1,524 @@
+<%@page language="abap"%>
+<%
+  " Build CSS classes for message
+  DATA: lv_msg_class TYPE string,
+        lv_msg_icon  TYPE string,
+        lv_swal_icon TYPE string,
+        lv_swal_title TYPE string,
+        lv_cls_all   TYPE string,
+        lv_cls_p     TYPE string,
+        lv_cls_a     TYPE string,
+        lv_cls_r     TYPE string,
+        lv_ecr_count_i TYPE i.
+
+  IF GV_ICON = 'error'.
+    lv_msg_class = 'bg-red-50 border border-red-200 text-red-800'.
+    lv_msg_icon  = '<i class="fas fa-exclamation-circle"></i>'.
+  ELSEIF GV_ICON = 'success'.
+    lv_msg_class = 'bg-emerald-50 border border-emerald-200 text-emerald-800'.
+    lv_msg_icon  = '<i class="fas fa-check-circle"></i>'.
+  ELSE.
+    lv_msg_class = 'bg-blue-50 border border-blue-200 text-blue-800'.
+    lv_msg_icon  = ''.
+  ENDIF.
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Data — BOM Review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <script>
+    function switchTab(tab) {
+        var btnBom = document.getElementById('tabBom');
+        var btnRout = document.getElementById('tabRouting');
+        var secBom = document.getElementById('sectionBom');
+        var secRout = document.getElementById('sectionRouting');
+
+        if(tab === 'BOM') {
+            btnBom.className = 'px-5 py-2.5 rounded-lg text-sm font-bold bg-brand-50 text-brand-700 transition-colors';
+            btnRout.className = 'px-5 py-2.5 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors';
+            secBom.classList.remove('hidden');
+            secRout.classList.add('hidden');
+        } else {
+            btnRout.className = 'px-5 py-2.5 rounded-lg text-sm font-bold bg-brand-50 text-brand-700 transition-colors';
+            btnBom.className = 'px-5 py-2.5 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors';
+            secRout.classList.remove('hidden');
+            secBom.classList.add('hidden');
+        }
+        // Update URL to preserve tab state on refresh
+        var baseUrl = window.location.pathname + '?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>';
+        if(tab === 'ROUTING') {
+            baseUrl += '&tab=ROUTING';
+        }
+        history.replaceState(null, '', baseUrl);
+    }
+    
+    // Auto switch based on URL param
+    window.onload = function() {
+        if(window.location.href.indexOf('tab=ROUTING') > -1) {
+            switchTab('ROUTING');
+        }
+    };
+
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased font-sans min-h-screen">
+
+    <%@include file="master_data_header.htm"%>
+
+    <main class="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 space-y-6">
+
+        <!-- ===== MESSAGE ===== -->
+        <% IF GV_MESSAGE IS NOT INITIAL. %>
+        <div class="rounded-xl p-4 flex items-center gap-3 <%= lv_msg_class %>">
+            <%= lv_msg_icon %>
+            <span class="text-sm font-semibold"><%= GV_MESSAGE %></span>
+        </div>
+        <% ENDIF. %>
+
+        <!-- ===== SUMMARY CARDS ===== -->
+        
+        <!-- Tabs -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-1 flex mb-2 w-max">
+            <button type="button" id="tabBom" onclick="switchTab('BOM')" class="px-5 py-2.5 rounded-lg text-sm font-bold bg-brand-50 text-brand-700 transition-colors">
+                <i class="fas fa-cubes mr-2"></i> Approval BOM
+            </button>
+            <button type="button" id="tabRouting" onclick="switchTab('ROUTING')" class="px-5 py-2.5 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">
+                <i class="fas fa-route mr-2"></i> Eksekusi Routing
+            </button>
+        </div>
+
+        <div id="sectionBom">
+<div class="grid grid-cols-3 gap-5">
+            <!-- Pending -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF3C7;color:#D97706">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Pending</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_PENDING %></p>
+                    <p class="text-xs text-slate-400">Menunggu review</p>
+                </div>
+            </div>
+
+            <!-- Approved -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#D1FAE5;color:#059669">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Approved</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_APPROVED %></p>
+                    <p class="text-xs text-slate-400">BOM ready</p>
+                </div>
+            </div>
+
+            <!-- Rejected -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEE2E2;color:#DC2626">
+                    <i class="fas fa-times-circle"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Rejected</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_REJECTED %></p>
+                    <p class="text-xs text-slate-400">Perlu revisi</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== FILTER PILLS ===== -->
+        <%
+          " Build filter pill classes
+
+          IF GV_FILTER = 'ALL'.
+            lv_cls_all = 'bg-blue-600 text-white shadow-sm'.
+            lv_cls_p   = 'bg-amber-50 text-amber-700 hover:bg-amber-100'.
+            lv_cls_a   = 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'.
+            lv_cls_r   = 'bg-red-50 text-red-700 hover:bg-red-100'.
+          ELSEIF GV_FILTER = 'P'.
+            lv_cls_all = 'bg-slate-100 text-slate-600 hover:bg-slate-200'.
+            lv_cls_p   = 'bg-amber-500 text-white shadow-sm'.
+            lv_cls_a   = 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'.
+            lv_cls_r   = 'bg-red-50 text-red-700 hover:bg-red-100'.
+          ELSEIF GV_FILTER = 'A'.
+            lv_cls_all = 'bg-slate-100 text-slate-600 hover:bg-slate-200'.
+            lv_cls_p   = 'bg-amber-50 text-amber-700 hover:bg-amber-100'.
+            lv_cls_a   = 'bg-emerald-600 text-white shadow-sm'.
+            lv_cls_r   = 'bg-red-50 text-red-700 hover:bg-red-100'.
+          ELSEIF GV_FILTER = 'R'.
+            lv_cls_all = 'bg-slate-100 text-slate-600 hover:bg-slate-200'.
+            lv_cls_p   = 'bg-amber-50 text-amber-700 hover:bg-amber-100'.
+            lv_cls_a   = 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'.
+            lv_cls_r   = 'bg-red-500 text-white shadow-sm'.
+          ELSE.
+            lv_cls_all = 'bg-blue-600 text-white shadow-sm'.
+            lv_cls_p   = 'bg-amber-50 text-amber-700 hover:bg-amber-100'.
+            lv_cls_a   = 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'.
+            lv_cls_r   = 'bg-red-50 text-red-700 hover:bg-red-100'.
+          ENDIF.
+        %>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-filter text-blue-600"></i>
+                    <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">Filter Status</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="master_data_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=ALL"
+                       class="px-4 py-2 rounded-lg text-xs font-bold transition-all <%= lv_cls_all %>">
+                        Semua
+                    </a>
+                    <a href="master_data_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=P"
+                       class="px-4 py-2 rounded-lg text-xs font-bold transition-all <%= lv_cls_p %>">
+                        <i class="fas fa-clock mr-1"></i> Pending
+                    </a>
+                    <a href="master_data_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=A"
+                       class="px-4 py-2 rounded-lg text-xs font-bold transition-all <%= lv_cls_a %>">
+                        <i class="fas fa-check mr-1"></i> Approved
+                    </a>
+                    <a href="master_data_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&filter=R"
+                       class="px-4 py-2 rounded-lg text-xs font-bold transition-all <%= lv_cls_r %>">
+                        <i class="fas fa-times mr-1"></i> Rejected
+                    </a>
+                </div>
+                <span class="ml-auto text-xs text-slate-400 font-semibold">
+                    <i class="fas fa-list"></i> <%= GV_ECR_COUNT %> item
+                </span>
+            </div>
+        </div>
+
+        <!-- ===== ECR TABLE ===== -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200">
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">ECR No</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Judul / Material</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide text-center">Kategori</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide text-center">Prioritas</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Drafter</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide text-center">BOM Status</th>
+                            <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Tanggal</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <%= GV_ECR_HTML %>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty state -->
+            <%
+              lv_ecr_count_i = GV_ECR_COUNT.
+            %>
+            <% IF lv_ecr_count_i = 0. %>
+            <div class="py-16 text-center">
+                <div class="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-inbox text-2xl text-blue-300"></i>
+                </div>
+                <p class="text-sm font-bold text-slate-400">Belum ada ECO yang perlu review BOM</p>
+                <p class="text-xs text-slate-400 mt-1">ECO akan muncul di sini setelah drafter upload BOM</p>
+            </div>
+            <% ENDIF. %>
+        </div>
+
+    
+        </div> <!-- End of sectionBom -->
+
+        <!-- Section Routing -->
+        <div id="sectionRouting" class="hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-4">
+                <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 class="font-bold text-slate-700"><i class="fas fa-route text-brand-600 mr-2"></i> Antrian Eksekusi Routing</h3>
+                    <p class="text-xs font-semibold text-slate-500">Routing yang telah disetujui Payroll</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50/50 border-b border-slate-100">
+                                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">ID Routing</th>
+                                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Judul & Material</th>
+                                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
+                                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Requester</th>
+                                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Tgl Request</th>
+                                <th class="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <%= GV_ROUTING_HTML %>
+                        </tbody>
+                    </table>
+                    <% IF GV_ROUTING_COUNT = '0'. %>
+                    <div class="py-16 text-center">
+                        <div class="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-check-double text-2xl text-slate-300"></i>
+                        </div>
+                        <p class="text-sm font-bold text-slate-400">Tidak ada antrian Routing</p>
+                        <p class="text-xs text-slate-400 mt-1">Semua eksekusi routing sudah diselesaikan</p>
+                    </div>
+                    <% ENDIF. %>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Attachment data from ABAP -->
+    <script type="text/javascript" id="attDataScript">
+        <%= GV_ATTACH_HTML %>
+    </script>
+
+    
+    <script>
+    function switchTab(tab) {
+        var btnBom = document.getElementById('tabBom');
+        var btnRout = document.getElementById('tabRouting');
+        var secBom = document.getElementById('sectionBom');
+        var secRout = document.getElementById('sectionRouting');
+
+        if(tab === 'BOM') {
+            btnBom.className = 'px-5 py-2.5 rounded-lg text-sm font-bold bg-brand-50 text-brand-700 transition-colors';
+            btnRout.className = 'px-5 py-2.5 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors';
+            secBom.classList.remove('hidden');
+            secRout.classList.add('hidden');
+        } else {
+            btnRout.className = 'px-5 py-2.5 rounded-lg text-sm font-bold bg-brand-50 text-brand-700 transition-colors';
+            btnBom.className = 'px-5 py-2.5 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors';
+            secRout.classList.remove('hidden');
+            secBom.classList.add('hidden');
+        }
+        // Update URL to preserve tab state on refresh
+        var baseUrl = window.location.pathname + '?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>';
+        if(tab === 'ROUTING') {
+            baseUrl += '&tab=ROUTING';
+        }
+        history.replaceState(null, '', baseUrl);
+    }
+    
+    // Auto switch based on URL param
+    window.onload = function() {
+        if(window.location.href.indexOf('tab=ROUTING') > -1) {
+            switchTab('ROUTING');
+        }
+    };
+
+    /* Toggle accordion detail */
+    function toggleDetail(idx) {
+        var el = document.getElementById('detail-' + idx);
+        if (!el) return;
+        if (el.classList.contains('hidden')) {
+            el.classList.remove('hidden');
+            loadAttachments(idx);
+        } else {
+            el.classList.add('hidden');
+        }
+    }
+
+    /* Load attachment HTML into detail */
+    function loadAttachments(idx) {
+        var container = document.getElementById('att-' + idx);
+        if (!container) return;
+
+        // If already rendered by ABAP (not 'Loading...'), do not overwrite!
+        if (container.innerHTML && container.innerHTML.indexOf('Loading...') === -1) {
+            return;
+        }
+
+        var detailRow = document.getElementById('detail-' + idx);
+        if (!detailRow) return;
+        var ecrInput = detailRow.querySelector('input[name="ecr_no"]');
+        if (!ecrInput) { container.innerHTML = '<p class="text-xs text-slate-400">-</p>'; return; }
+        var ecrNo = ecrInput.value || '';
+        var cleanNo = ecrNo.replace(/^0+/, '');
+        var padNo = ('0000000000' + ecrNo).slice(-10);
+
+        var files = null;
+        if (typeof attData !== 'undefined' && attData) {
+            files = attData[ecrNo] || attData[cleanNo] || attData[padNo];
+        }
+
+        if (!files || files.length === 0) {
+            container.innerHTML = '<p class="text-xs text-slate-400"><i class="fas fa-info-circle mr-1"></i>Belum ada attachment</p>';
+            return;
+        }
+
+        var html = '<div class="space-y-2">';
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            html += '<div class="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2">';
+            html += '<div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:#EFF6FF;color:#2563EB"><i class="fas fa-file-pdf"></i></div>';
+            html += '<div class="flex-1 min-w-0">';
+            html += '<p class="text-sm font-semibold text-slate-700 truncate">' + f.name + '</p>';
+            html += '<p class="text-xs text-slate-400">' + f.size + ' &middot; ' + f.by + ' &middot; ' + f.at + '</p>';
+            html += '</div>';
+            html += '<a href="master_data_dashboard.htm?OnInputProcessing=download_attachment&ecr_no=' + encodeURIComponent(ecrNo) + '&att_id=' + f.id + '&u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>"';
+            html += ' class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-all flex items-center gap-1">';
+            html += '<i class="fas fa-download"></i> Download</a>';
+            html += '</div>';
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    /* Show/hide reject form */
+    function showRejectForm(idx) {
+        var el = document.getElementById('reject-form-' + idx);
+        if (el) el.classList.remove('hidden');
+    }
+    function hideRejectForm(idx) {
+        var el = document.getElementById('reject-form-' + idx);
+        if (el) el.classList.add('hidden');
+    }
+
+    /* SweetAlert for success/error messages */
+    <% IF GV_MESSAGE IS NOT INITIAL. %>
+    <%
+      IF GV_ICON = 'success'.
+        lv_swal_icon  = 'success'.
+        lv_swal_title = 'Berhasil!'.
+      ELSEIF GV_ICON = 'error'.
+        lv_swal_icon  = 'error'.
+        lv_swal_title = 'Gagal!'.
+      ELSE.
+        lv_swal_icon  = 'info'.
+        lv_swal_title = 'Info'.
+      ENDIF.
+    %>
+    document.addEventListener('DOMContentLoaded', function() {
+        Swal.fire({
+            icon: '<%= lv_swal_icon %>',
+            title: '<%= lv_swal_title %>',
+            text: '<%= GV_MESSAGE %>',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+        });
+    });
+    <% ENDIF. %>
+    </script>
+
+
+<!-- ========== ROUTING EXECUTION MODAL ========== -->
+<div id="routingModal" class="fixed inset-0 z-[200] hidden bg-black/50 flex items-center justify-center" style="backdrop-filter: blur(2px); display:none;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl m-4 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <h3 class="text-lg font-bold text-slate-700">
+                <i class="fas fa-clipboard-check text-brand-600 mr-2"></i>Eksekusi Routing
+            </h3>
+            <button onclick="closeRoutingModal()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+        </div>
+        <form action="master_data_dashboard.htm" method="post" id="routForm" class="p-6">
+            <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+            <input type="hidden" name="r" value="<%= GV_ROLE %>">
+            <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+            <input type="hidden" name="OnInputProcessing" value="execute_routing">
+            <input type="hidden" name="irouting_id" id="modRoutId" value="">
+
+            <div class="mb-5 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                <h4 class="text-sm font-bold text-blue-800 mb-1" id="modRoutTitle">Judul</h4>
+                <p class="text-xs text-blue-600 mb-3" id="modRoutMat">Material</p>
+                <div class="text-xs text-slate-700 bg-white p-3 rounded border border-blue-100" id="modRoutDesc">Deskripsi</div>
+            </div>
+
+            <div class="mb-5">
+                <p class="text-xs font-bold text-slate-500 uppercase mb-2">Attachment Pendukung:</p>
+                <div id="modRoutAtt" class="space-y-2"></div>
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+                <div class="flex gap-3">
+                    <i class="fas fa-exclamation-triangle text-amber-500 mt-0.5"></i>
+                    <div>
+                        <h4 class="text-sm font-bold text-amber-800 mb-1">Konfirmasi Selesai</h4>
+                        <p class="text-xs text-amber-700">Pastikan Anda telah mengeksekusi perubahan Routing ini di SAP (TCode CA02 dsb) sebelum menekan tombol Selesai. Jika di-close, status request akan menjadi CLSD dan attachment akan dihapus secara permanen.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button type="button" onclick="closeRoutingModal()" class="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-all">Batal</button>
+                <button type="submit" class="flex-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm">Selesaikan Eksekusi (CLSD)</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showRoutingFromRow(el) {
+    var id = el.getAttribute('data-id');
+    var title = el.getAttribute('data-title');
+    var mat = el.getAttribute('data-matnr');
+    var desc = el.getAttribute('data-desc');
+    showRoutingModal(id, title, mat, desc);
+}
+
+function showRoutingModal(id, title, mat, desc) {
+    document.getElementById('modRoutId').value = id;
+    document.getElementById('modRoutTitle').innerText = 'REQ-' + id + ' : ' + title;
+    document.getElementById('modRoutMat').innerText = mat;
+    document.getElementById('modRoutDesc').innerText = desc;
+    
+    // Load routing attachments dynamically
+    var attContainer = document.getElementById('modRoutAtt');
+    attContainer.innerHTML = '<p class="text-xs text-slate-400 italic">Memuat lampiran...</p>';
+    
+    var cleanId = id ? id.replace(/^0+/, '') : '';
+    var padId = id ? ('0000000000' + id).slice(-10) : '';
+    var rFiles = (typeof attData !== 'undefined' && attData) ? (attData[id] || attData[cleanId] || attData[padId]) : null;
+
+    if(rFiles) {
+        var html = '';
+        for(var i=0; i<rFiles.length; i++) {
+            var file = rFiles[i];
+            html += '<div class="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2">';
+            html += '<div class="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 text-blue-600"><i class="fas fa-file"></i></div>';
+            html += '<div class="flex-1 min-w-0">';
+            html += '<p class="text-xs font-bold text-slate-700 truncate">' + file.name + '</p>';
+            html += '<p class="text-[0.65rem] text-slate-400">' + file.size + ' KB</p>';
+            html += '</div>';
+            html += '<form action="master_data_dashboard.htm" method="post" target="_blank" class="m-0">';
+            html += '<input type="hidden" name="OnInputProcessing" value="download_att">';
+            html += '<input type="hidden" name="ireq_id" value="' + file.id + '">';
+            html += '<button type="submit" class="text-blue-600 hover:text-blue-800 text-xs font-bold px-2 py-1 rounded hover:bg-blue-50">Download</button>';
+            html += '</form>';
+            html += '</div>';
+        }
+        attContainer.innerHTML = html;
+    } else {
+        attContainer.innerHTML = '<p class="text-xs text-slate-400 italic">Tidak ada lampiran.</p>';
+    }
+
+    document.getElementById('routingModal').classList.remove('hidden');
+}
+
+function closeRoutingModal() {
+    document.getElementById('routingModal').classList.add('hidden');
+}
+</script>
+
+</body>
+</html>

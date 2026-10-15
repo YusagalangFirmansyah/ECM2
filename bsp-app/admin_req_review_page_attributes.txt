@@ -1,0 +1,39 @@
+* =======================================================================
+* Page Attributes — admin_req_review.htm
+* V07: Admin Review Request — edit, assign drafter, approve/reject
+* =======================================================================
+
+* User info
+GV_USER_ID   TYPE string
+GV_FULL_NAME TYPE string
+GV_ROLE      TYPE string
+
+* Request detail
+GV_IREQ_ID       TYPE string
+GV_REQ_TITLE     TYPE string
+GV_REQ_MATNR     TYPE string
+GV_REQ_MATNR_DESC TYPE string
+GV_REQ_KATEGORI  TYPE string
+GV_REQ_PRIORITY  TYPE string
+GV_REQ_ZDEPT     TYPE string
+GV_REQ_ZREASON   TYPE string
+GV_REQ_DESCRIPTION TYPE string
+GV_REQ_REQUESTER TYPE string
+GV_REQ_REQUESTER_NAME TYPE string
+GV_REQ_DATE      TYPE string
+GV_REQ_STATUS    TYPE string
+GV_REQ_IMPL_PO    TYPE string
+GV_REQ_IMPL_DATE  TYPE string
+GV_REQ_IMPL_REASON TYPE string
+GV_HAS_ATTACHMENT TYPE string
+GV_ATT_FILENAME TYPE string
+GV_ATT_TYPE     TYPE string
+GV_ATT_B64      TYPE string
+GV_ATT_HTML     TYPE string
+
+* Drafter dropdown
+GV_DRAFTER_OPTIONS TYPE string
+
+* Message
+GV_MESSAGE TYPE string
+GV_ICON    TYPE string

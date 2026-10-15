@@ -1,0 +1,171 @@
+" =======================================================================
+" Event Handler — costing_list.htm
+" V10_a: Costing Dashboard
+" =======================================================================
+
+DATA: LV_ACTION      TYPE string,
+      LV_IROUTING_ID TYPE string,
+      LV_REASON      TYPE string,
+      WA_ROUTING     TYPE zecm_req,
+      WA_LOG         TYPE zecm_log,
+      LV_DATE        TYPE d,
+      LV_TIME        TYPE t,
+      LV_URL         TYPE string,
+      LT_AUDIT       TYPE STANDARD TABLE OF zecm_log,
+      LS_AUDIT       TYPE zecm_log.
+
+LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+LV_DATE = sy-datum.
+LV_TIME = sy-uzeit.
+
+IF LV_ACTION = 'load_history_audit'.
+  DATA: LV_AUDIT_ID TYPE string,
+        LV_AUDIT_HTML TYPE string.
+  LV_AUDIT_ID = request->get_form_field( 'ireq_detail' ).
+  IF LV_AUDIT_ID IS NOT INITIAL.
+    SELECT * FROM zecm_log
+      INTO CORRESPONDING FIELDS OF TABLE @LT_AUDIT
+      WHERE ecr_no = @LV_AUDIT_ID
+        AND is_ireq = ''
+      ORDER BY action_date DESCENDING, action_time DESCENDING.
+    CLEAR GV_AUDIT_HTML.
+    DATA: lv_aud_name TYPE string.
+    LOOP AT LT_AUDIT INTO LS_AUDIT.
+      CLEAR lv_aud_name.
+      SELECT SINGLE zecm_full_name FROM zecm_user INTO lv_aud_name WHERE zecm_user_id = LS_AUDIT-user_id.
+      CONCATENATE GV_AUDIT_HTML
+        '<div class="mb-2 flex items-start gap-2">'
+        '<div class="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0"></div>'
+        '<div>'
+        '<span class="text-xs font-bold text-slate-700">' LS_AUDIT-action ' - ' lv_aud_name '</span>'
+        '<span class="text-[0.65rem] text-slate-400 ml-2">' LS_AUDIT-action_date '/' LS_AUDIT-action_time '</span>'
+        '<p class="text-xs text-slate-500 mt-0.5">' LS_AUDIT-reason '</p>'
+        '</div>'
+        '</div>'
+        INTO GV_AUDIT_HTML.
+    ENDLOOP.
+  ENDIF.
+  " Redirect back to the same page with audit data
+  CONCATENATE 'costing_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&audit_id=' LV_AUDIT_ID INTO LV_URL.
+  navigation->goto_page( LV_URL ).
+  RETURN.
+ENDIF.
+
+IF LV_ACTION = 'logout'.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+IF LV_ACTION = 'download_att'.
+  DATA: ls_dl_att TYPE zecm_bom_att,
+        lv_dl_att_id TYPE zecm_bom_att-att_id,
+        lv_dl_att_str TYPE string.
+        
+  lv_dl_att_str = request->get_form_field( 'ireq_id' ). 
+  lv_dl_att_id = lv_dl_att_str.
+  
+  SELECT SINGLE * FROM zecm_bom_att INTO @ls_dl_att WHERE att_id = @lv_dl_att_id.
+  IF sy-subrc = 0.
+    DATA: lv_content_type TYPE string.
+    lv_content_type = ls_dl_att-mime_type.
+    
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Type'
+        value = lv_content_type.
+        
+    CONCATENATE 'attachment; filename="' ls_dl_att-file_name '"' INTO DATA(lv_disp).
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Disposition'
+        value = lv_disp.
+        
+    CALL METHOD _m_response->set_data
+      EXPORTING
+        data = ls_dl_att-file_data.
+        
+    navigation->response_complete( ).
+    RETURN.
+  ENDIF.
+ENDIF.
+
+IF LV_ACTION = 'approve_routing' OR LV_ACTION = 'reject_routing'.
+  DATA: LV_ROUT_NUM TYPE numc10.
+  LV_IROUTING_ID = request->get_form_field( 'irouting_id' ).
+  " Convert to NUMC with leading zeros
+  LV_ROUT_NUM = LV_IROUTING_ID.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING input  = LV_ROUT_NUM
+    IMPORTING output = LV_ROUT_NUM.
+  LV_IROUTING_ID = LV_ROUT_NUM.
+  LV_REASON      = request->get_form_field( 'reject_reason' ).
+
+  IF LV_IROUTING_ID IS INITIAL.
+    GV_MESSAGE = 'ID Request tidak ditemukan.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  SELECT SINGLE * FROM zecm_req INTO WA_ROUTING WHERE ecr_no = LV_IROUTING_ID AND change_scope = 'ROUT'.
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Data Request tidak ditemukan di database.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF WA_ROUTING-status <> 'REQ'.
+    GV_MESSAGE = 'Request sudah diproses oleh user lain.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF LV_ACTION = 'reject_routing' AND LV_REASON IS INITIAL.
+    GV_MESSAGE = 'Alasan penolakan wajib diisi!'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Update status
+  DATA: lv_old_status TYPE string, lv_new_status TYPE string.
+  lv_old_status = WA_ROUTING-status.
+  
+  IF LV_ACTION = 'approve_routing'.
+    WA_ROUTING-status = 'COST'. " Passed Costing, waiting for Payroll
+    lv_new_status = 'COST'.
+    GV_MESSAGE = 'Request ' && LV_IROUTING_ID && ' disetujui (diteruskan ke Payroll).'.
+    GV_ICON = 'success'.
+  ELSE.
+    WA_ROUTING-status = 'REJC'.
+    lv_new_status = 'REJC'.
+    GV_MESSAGE = 'Request ' && LV_IROUTING_ID && ' ditolak.'.
+    GV_ICON = 'success'.
+  ENDIF.
+
+  UPDATE zecm_req FROM WA_ROUTING.
+
+  " Insert Log
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id
+    EXCEPTIONS OTHERS = 1.
+  WA_LOG-ecr_no       = LV_IROUTING_ID.
+  IF LV_ACTION = 'approve_routing'.
+    WA_LOG-action     = 'APPR'.
+    WA_LOG-reason     = 'Disetujui oleh Costing'.
+  ELSE.
+    WA_LOG-action     = 'REJC'.
+    WA_LOG-reason     = LV_REASON.
+  ENDIF.
+  WA_LOG-old_status   = lv_old_status.
+  WA_LOG-new_status   = lv_new_status.
+  WA_LOG-user_id      = GV_USER_ID.
+  WA_LOG-action_date  = LV_DATE.
+  WA_LOG-action_time  = LV_TIME.
+  WA_LOG-is_ireq      = ''.  " Routing logs in ZECM_REQ
+  INSERT zecm_log FROM WA_LOG.
+
+  CONCATENATE 'costing_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE INTO LV_URL.
+  navigation->goto_page( LV_URL ).
+  RETURN.
+ENDIF.

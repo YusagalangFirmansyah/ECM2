@@ -1,0 +1,92 @@
+* dms_detail_event_handler - OnInputProcessing
+DATA: lv_action TYPE string,
+      lv_file_idx_str TYPE string,
+      lv_file_idx TYPE i,
+      ls_doc TYPE bapi_doc_draw2,
+      ls_docx TYPE bapi_doc_drawx2,
+      lt_bapi_files TYPE STANDARD TABLE OF bapi_doc_files2,
+      ls_bapi_file TYPE bapi_doc_files2,
+      ls_return TYPE bapiret2.
+
+CLEAR: MV_ERROR, MV_MSG.
+lv_action = request->get_form_field( 'OnInputProcessing' ).
+IF lv_action = 'delete_file'.
+  " Must load parameters here because OnInputProcessing runs before OnInitialization
+  MV_DOKAR = request->get_form_field( 'DOKAR' ).
+  MV_DOKNR = request->get_form_field( 'DOKNR' ).
+  MV_DOKVR = request->get_form_field( 'DOKVR' ).
+  MV_DOKTL = request->get_form_field( 'DOKTL' ).
+  
+  " Apply Alpha Conversion for DOKNR if needed
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING input  = MV_DOKNR
+    IMPORTING output = MV_DOKNR.
+
+  " 1. Retrieve the file index from request
+  lv_file_idx_str = request->get_form_field( 'file_idx' ).
+  lv_file_idx = lv_file_idx_str.
+
+  " 2. Get current document files exactly as BAPI structure
+  CALL FUNCTION 'BAPI_DOCUMENT_GETDETAIL2'
+    EXPORTING
+      documenttype    = MV_DOKAR
+      documentnumber  = MV_DOKNR
+      documentpart    = MV_DOKTL
+      documentversion = MV_DOKVR
+      getdocfiles     = 'X'
+    IMPORTING
+      documentdata    = ls_doc
+      return          = ls_return
+    TABLES
+      documentfiles   = lt_bapi_files.
+
+  IF ls_return-type <> 'E' AND ls_return-type <> 'A'.
+    " Validasi status dokumen (hanya boleh hapus file di status draft/revisi)
+    IF ls_doc-statusintern <> 'IA' AND ls_doc-statusintern <> 'AA' AND ls_doc-statusintern <> 'ZG'.
+      MV_MSG = 'Gagal: Dokumen sedang di-inspect atau terkunci, file tidak bisa dihapus.'.
+      RETURN.
+    ENDIF.
+
+    " 3. Get the file to delete (index should match since it's the same DIR)
+    READ TABLE lt_bapi_files INTO ls_bapi_file INDEX lv_file_idx.
+    IF sy-subrc = 0.
+      " 4. Prepare BAPI structures
+      CLEAR: ls_doc, ls_docx.
+      
+      ls_doc-documenttype    = MV_DOKAR.
+      ls_doc-documentnumber  = MV_DOKNR.
+      ls_doc-documentpart    = MV_DOKTL.
+      ls_doc-documentversion = MV_DOKVR.
+      
+      " Keep only the file we want to delete in the table
+      CLEAR lt_bapi_files.
+      ls_bapi_file-deletevalue = 'X'.
+      APPEND ls_bapi_file TO lt_bapi_files.
+      
+      CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+        EXPORTING
+          documenttype    = MV_DOKAR
+          documentnumber  = MV_DOKNR
+          documentpart    = MV_DOKTL
+          documentversion = MV_DOKVR
+          documentdata    = ls_doc
+          documentdatax   = ls_docx
+        IMPORTING
+          return          = ls_return
+        TABLES
+          documentfiles   = lt_bapi_files.
+          
+      IF ls_return-type <> 'E' AND ls_return-type <> 'A'.
+        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+        MV_MSG = 'File berhasil dihapus dari SAP DMS.'.
+      ELSE.
+        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        MV_MSG = |Gagal menghapus file: { ls_return-message }|.
+      ENDIF.
+    ELSE.
+      MV_MSG = 'Gagal: File tidak ditemukan di index tersebut.'.
+    ENDIF.
+  ELSE.
+    MV_MSG = |Gagal membaca detail dokumen: { ls_return-message }|.
+  ENDIF.
+ENDIF.

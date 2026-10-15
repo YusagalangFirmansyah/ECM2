@@ -1,0 +1,134 @@
+﻿* dms_detail_download — OnRequest (file streaming)
+DATA: lv_doknr   TYPE doknr,
+      lv_dokar   TYPE dokar,
+      lv_dokvr   TYPE dokvr,
+      lv_doktl   TYPE doktl_d,
+      lv_origtp  TYPE i,
+      ls_draw    TYPE draw,
+      lt_files   TYPE STANDARD TABLE OF cvapi_doc_file,
+      ls_file    TYPE cvapi_doc_file,
+      lo_http    TYPE REF TO if_http_client,
+      lv_url     TYPE string,
+      lv_xstr    TYPE xstring,
+      lv_status  TYPE i,
+      lv_reason  TYPE string,
+      lv_compid  TYPE string,
+      lt_parts   TYPE TABLE OF string,
+      lv_lines   TYPE i,
+      lv_idx_str TYPE string.
+
+lv_doknr   = request->get_form_field( 'DOKNR' ).
+lv_dokar   = request->get_form_field( 'DOKAR' ).
+lv_dokvr   = request->get_form_field( 'DOKVR' ).
+lv_doktl   = request->get_form_field( 'DOKTL' ).
+lv_idx_str = request->get_form_field( 'ORIGTP' ).
+IF lv_idx_str IS INITIAL. lv_idx_str = '1'. ENDIF.
+lv_origtp = lv_idx_str.
+
+CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+  EXPORTING  input  = lv_doknr
+  IMPORTING  output = lv_doknr.
+
+CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
+  EXPORTING
+    pf_batchmode    = 'X'
+    pf_dokar        = lv_dokar
+    pf_doknr        = lv_doknr
+    pf_dokvr        = lv_dokvr
+    pf_doktl        = lv_doktl
+    pf_active_files = space
+    pf_read_kpro    = 'X'
+  IMPORTING
+    psx_draw        = ls_draw
+  TABLES
+    pt_files        = lt_files
+  EXCEPTIONS
+    OTHERS          = 4.
+
+READ TABLE lt_files INTO ls_file INDEX lv_origtp.
+IF sy-subrc <> 0.
+  _M_RESPONSE->set_status( code = 404 reason = 'File not found' ).
+  RETURN.
+ENDIF.
+
+SPLIT ls_file-filename AT '/' INTO TABLE lt_parts.
+DESCRIBE TABLE lt_parts LINES lv_lines.
+READ TABLE lt_parts INDEX lv_lines INTO lv_compid.
+CONDENSE lv_compid.
+
+IF lv_compid IS INITIAL OR ls_file-ph_objid IS INITIAL.
+  _M_RESPONSE->set_status( code = 404 reason = 'CompId or PhObjId empty' ).
+  RETURN.
+ENDIF.
+
+lv_url = |http://kmiserver.kayumebel.com:1090/sapcs| &&
+         |?get&contRep=CS| &&
+         |&docId={ ls_file-ph_objid }| &&
+         |&compId={ lv_compid }| &&
+         |&pVersion=0046|.
+
+CALL METHOD cl_http_client=>create_by_url
+  EXPORTING  url    = lv_url
+  IMPORTING  client = lo_http
+  EXCEPTIONS OTHERS = 4.
+
+IF sy-subrc <> 0.
+  _M_RESPONSE->set_status( code = 500 reason = 'Cannot connect to content server' ).
+  RETURN.
+ENDIF.
+
+lo_http->request->set_method( 'GET' ).
+lo_http->send( EXCEPTIONS OTHERS = 2 ).
+lo_http->receive( EXCEPTIONS OTHERS = 2 ).
+
+lo_http->response->get_status(
+  IMPORTING code = lv_status reason = lv_reason ).
+
+lv_xstr = lo_http->response->get_data( ).
+lo_http->close( ).
+
+IF lv_status <> 200 OR xstrlen( lv_xstr ) = 0.
+  _M_RESPONSE->set_status( code = lv_status reason = lv_reason ).
+  RETURN.
+ENDIF.
+
+DATA: lv_compid_up    TYPE string,
+      lv_content_type TYPE string,
+      lv_disposition  TYPE string.
+
+lv_compid_up = lv_compid.
+TRANSLATE lv_compid_up TO UPPER CASE.
+
+IF lv_compid_up CS '.PDF'.
+  lv_content_type = 'application/pdf'.
+  lv_disposition  = 'inline'. " Tetap inline agar bisa di-preview di tab baru
+ELSEIF lv_compid_up CS '.XLSX'.
+  lv_content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'.
+  lv_disposition  = 'attachment'. " Paksa download
+ELSEIF lv_compid_up CS '.XLS'.
+  lv_content_type = 'application/vnd.ms-excel'.
+  lv_disposition  = 'attachment'.
+ELSEIF lv_compid_up CS '.DWG'.
+  lv_content_type = 'application/acad'.
+  lv_disposition  = 'attachment'.
+ELSEIF lv_compid_up CS '.DXF'.
+  lv_content_type = 'application/dxf'.
+  lv_disposition  = 'attachment'.
+ELSE.
+  lv_content_type = 'application/octet-stream'.
+  lv_disposition  = 'attachment'.
+ENDIF.
+
+_M_RESPONSE->set_header_field(
+  name  = 'Content-Type'
+  value = lv_content_type ).
+
+_M_RESPONSE->set_header_field(
+  name  = 'Content-Disposition'
+  value = |{ lv_disposition }; filename="{ lv_compid }"| ).
+
+_M_RESPONSE->set_header_field(
+  name  = 'Cache-Control'
+  value = 'private, no-cache' ).
+
+_M_RESPONSE->set_data( data = lv_xstr ).

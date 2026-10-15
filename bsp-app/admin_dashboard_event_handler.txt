@@ -1,0 +1,92 @@
+" admin_dashboard Event Handler — V05
+" Logout + Material Search
+
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+
+" Navigate user info
+navigation->set_parameter( name = 'u' value = GV_USER_ID ).
+navigation->set_parameter( name = 'n' value = GV_FULL_NAME ).
+navigation->set_parameter( name = 'r' value = GV_ROLE ).
+
+DATA: lv_action TYPE string.
+lv_action = request->get_form_field( 'OnInputProcessing' ).
+
+" ===== LOGOUT =====
+IF lv_action = 'logout'.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+" ===== SEARCH MATERIAL =====
+IF lv_action = 'search_material'.
+  DATA: LV_MAT_KEYWORD TYPE string.
+  LV_MAT_KEYWORD = request->get_form_field( 'keyword' ).
+
+  IF LV_MAT_KEYWORD IS NOT INITIAL.
+    DATA: lv_q TYPE matnr, lv_qs TYPE string, lv_html TYPE string.
+    DATA: BEGIN OF ls_m,
+            matnr TYPE mara-matnr,
+            maktx TYPE makt-maktx,
+            mtart TYPE mara-mtart,
+          END OF ls_m,
+          lt_m LIKE STANDARD TABLE OF ls_m.
+
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING input  = LV_MAT_KEYWORD
+      IMPORTING output = lv_q.
+    lv_qs = LV_MAT_KEYWORD.
+    TRANSLATE lv_qs TO UPPER CASE.
+    CONCATENATE '%' lv_qs '%' INTO lv_qs.
+
+    SELECT a~matnr, b~maktx, a~mtart
+      INTO TABLE @lt_m
+      FROM mara AS a
+      INNER JOIN makt AS b ON b~matnr = a~matnr AND b~spras = @sy-langu
+      WHERE ( a~matnr = @lv_q
+         OR a~matnr LIKE @lv_qs
+         OR b~maktx LIKE @lv_qs )
+        AND a~mtart IN ( 'FERT', 'HALB', 'HALM' )
+      ORDER BY a~mtart ASCENDING, a~matnr ASCENDING.
+
+    CLEAR lv_html.
+    DATA: lv_mnr TYPE string,
+          lv_mtart_bg TYPE string,
+          lv_mtart_s TYPE string.
+
+    LOOP AT lt_m INTO ls_m.
+      lv_mnr = ls_m-matnr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING input  = lv_mnr
+        IMPORTING output = lv_mnr.
+
+      CLEAR lv_mtart_bg.
+      CASE ls_m-mtart.
+        WHEN 'FERT'. lv_mtart_bg = 'bg-emerald-100 text-emerald-700'. lv_mtart_s = 'Finish Goods'.
+        WHEN 'HALB'. lv_mtart_bg = 'bg-blue-100 text-blue-700'.       lv_mtart_s = 'HALB'.
+        WHEN 'HALM'. lv_mtart_bg = 'bg-orange-100 text-orange-700'.   lv_mtart_s = 'HALM'.
+        WHEN OTHERS. lv_mtart_bg = 'bg-slate-100 text-slate-700'.     lv_mtart_s = ls_m-mtart.
+      ENDCASE.
+
+      CONCATENATE lv_html
+        '<div class="flex items-center justify-between px-3 py-2 hover:bg-emerald-50 cursor-pointer border-b border-slate-100 last:border-0" onclick="selectMat(''' ls_m-matnr ''',''' ls_m-maktx ''' )">'
+        '<div>'
+        '<span class="text-[0.65rem] px-2 py-0.5 rounded font-extrabold tracking-wide ' lv_mtart_bg '">' lv_mtart_s '</span>'
+        ' <span class="text-xs text-slate-700 ml-1">' lv_mnr '</span>'
+        '<div class="text-xs text-slate-600 mt-0.5">' ls_m-maktx '</div>'
+        '</div>'
+        '<span class="text-emerald-600 text-xs font-bold">+ Pilih</span></div>'
+        INTO lv_html.
+    ENDLOOP.
+
+    IF lv_html IS INITIAL.
+      GV_MAT_RESULTS = '<div class="text-center py-3 text-slate-400 text-xs">Tidak ditemukan</div>'.
+    ELSE.
+      GV_MAT_RESULTS = lv_html.
+    ENDIF.
+  ENDIF.
+
+  " DON'T redirect — just fall through to OnInit + Layout
+  RETURN.
+ENDIF.

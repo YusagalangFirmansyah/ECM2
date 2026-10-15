@@ -1,0 +1,497 @@
+﻿<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Request - ECM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'Segoe UI', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0',
+                            300: '#6ee7b7', 400: '#34d399', 500: '#10b981',
+                            600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body class="bg-slate-50">
+
+<% DATA: lv_is_modal TYPE string.
+   lv_is_modal = request->get_form_field( 'is_modal' ). %>
+<% IF lv_is_modal IS INITIAL. %>
+<!-- INCLUDE ADMIN HEADER -->
+<%@include file="admin_header.htm"%>
+
+</main> <!-- Close from header -->
+<% ENDIF. %>
+
+<!-- Alert Message -->
+<% IF GV_MESSAGE IS NOT INITIAL. %>
+<div class="max-w-7xl mx-auto px-4 mt-4">
+    <div class="flex items-center gap-2 px-4 py-3 rounded-lg <% IF GV_ICON = 'error'. %>bg-red-50 text-red-700 border border-red-200<% ELSE. %>bg-emerald-50 text-emerald-700 border border-emerald-200<% ENDIF. %>">
+        <i class="fas fa-<% IF GV_ICON = 'error'. %>exclamation-circle<% ELSE. %>check-circle<% ENDIF. %>"></i>
+        <span class="text-sm font-medium"><%= GV_MESSAGE %></span>
+    </div>
+</div>
+<% ENDIF. %>
+
+<!-- ========== REQUEST REVIEW CONTAINER ========== -->
+<div class="max-w-7xl mx-auto px-4 <% IF lv_is_modal IS INITIAL. %>py-6<% ELSE. %>py-3<% ENDIF. %>">
+    <% IF lv_is_modal IS INITIAL. %>
+    <!-- Header Bar -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <% IF GV_ROLE = 'ADMIN'. %>
+              <a href="admin_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>"
+                 class="text-sm text-slate-500 hover:text-brand-600 transition flex items-center gap-1 mb-2">
+                <i class="fas fa-arrow-left text-xs"></i> Kembali ke Dashboard
+              </a>
+            <% ELSE. %>
+              <a href="approver_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>"
+                 class="text-sm text-slate-500 hover:text-brand-600 transition flex items-center gap-1 mb-2">
+                <i class="fas fa-arrow-left text-xs"></i> Kembali ke Dashboard
+              </a>
+            <% ENDIF. %>
+            <h2 class="text-xl font-bold text-slate-700">
+                <i class="fas fa-clipboard-check text-brand-600 mr-2"></i>Review Request
+            </h2>
+        </div>
+        <span class="px-3 py-1.5 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
+            IREQ: <%= GV_IREQ_ID %>
+        </span>
+    </div>
+    <% ENDIF. %>
+
+    <!-- Request Info Card -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+        <!-- Requester Info -->
+        <div class="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+            <div class="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center">
+                <i class="fas fa-user text-brand-600"></i>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-slate-700"><%= GV_REQ_REQUESTER_NAME %></p>
+                <p class="text-xs text-slate-400"><%= GV_REQ_REQUESTER %> | <%= GV_REQ_DATE %></p>
+            </div>
+        </div>
+
+        <!-- Edit Form -->
+        <form action="admin_req_review.htm" method="post" id="reviewForm">
+            <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+            <input type="hidden" name="r" value="<%= GV_ROLE %>">
+            <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+            <input type="hidden" name="ireq_id" value="<%= GV_IREQ_ID %>">
+            <% IF lv_is_modal IS NOT INITIAL. %>
+            <input type="hidden" name="is_modal" value="<%= lv_is_modal %>">
+            <% ENDIF. %>
+
+            <!-- Judul -->
+            <div class="mb-4">
+                <label class="block text-xs font-bold text-slate-600 mb-1">Judul Perubahan</label>
+                <input type="text" name="title" value="<%= GV_REQ_TITLE %>"
+                    class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+            </div>
+
+            <!-- Material -->
+            <div class="mb-4">
+                <label class="block text-xs font-bold text-slate-600 mb-1">Material</label>
+                <div class="flex items-center gap-3 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span class="text-sm font-mono font-semibold text-slate-700"><%= GV_REQ_MATNR %></span>
+                    <span class="text-xs text-slate-400"><%= GV_REQ_MATNR_DESC %></span>
+                </div>
+                <input type="hidden" name="matnr_fg" value="<%= GV_REQ_MATNR %>">
+            </div>
+
+            <!-- Kategori + Prioritas -->
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Kategori</label>
+                    <select name="kategori"
+                        class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+                        <option value="DRW" <% IF GV_REQ_KATEGORI = 'DRW'. %>selected<% ENDIF. %>>DRW - Drawing Wood</option>
+                        <option value="DBX" <% IF GV_REQ_KATEGORI = 'DBX'. %>selected<% ENDIF. %>>DBX - Drawing Box</option>
+                        <option value="DMT" <% IF GV_REQ_KATEGORI = 'DMT'. %>selected<% ENDIF. %>>DMT - Drawing Metal</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Prioritas</label>
+                    <select name="priority"
+                        class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+                        <option value="LOW" <% IF GV_REQ_PRIORITY = 'LOW'. %>selected<% ENDIF. %>>LOW</option>
+                        <option value="MEDIUM" <% IF GV_REQ_PRIORITY = 'MEDIUM'. %>selected<% ENDIF. %>>MEDIUM</option>
+                        <option value="HIGH" <% IF GV_REQ_PRIORITY = 'HIGH'. %>selected<% ENDIF. %>>HIGH</option>
+                        <option value="CRITICAL" <% IF GV_REQ_PRIORITY = 'CRITICAL'. %>selected<% ENDIF. %>>CRITICAL</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Departemen + Alasan -->
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Departemen</label>
+                    <select name="zdept"
+                        class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand-500 outline-none">
+                        <option value="" <% IF GV_REQ_ZDEPT IS INITIAL. %>selected<% ENDIF. %>>-- Pilih Departemen --</option>
+                        <option value="Produksi" <% IF GV_REQ_ZDEPT = 'Produksi'. %>selected<% ENDIF. %>>Produksi</option>
+                        <option value="QC" <% IF GV_REQ_ZDEPT = 'QC'. %>selected<% ENDIF. %>>Quality Control</option>
+                        <option value="Purchasing" <% IF GV_REQ_ZDEPT = 'Purchasing'. %>selected<% ENDIF. %>>Purchasing</option>
+                        <option value="Sales" <% IF GV_REQ_ZDEPT = 'Sales'. %>selected<% ENDIF. %>>Sales</option>
+                        <option value="Drafter" <% IF GV_REQ_ZDEPT = 'Drafter'. %>selected<% ENDIF. %>>Drafter</option>
+                        <option value="Owner" <% IF GV_REQ_ZDEPT = 'Owner'. %>selected<% ENDIF. %>>Owner</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Alasan</label>
+                    <select name="zreason"
+                        class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand-500 outline-none">
+                        <option value="" <% IF GV_REQ_ZREASON IS INITIAL. %>selected<% ENDIF. %>>-- Pilih Alasan --</option>
+                        <option value="Koreksi Cacat" <% IF GV_REQ_ZREASON = 'Koreksi Cacat'. %>selected<% ENDIF. %>>Koreksi Cacat</option>
+                        <option value="Reduksi Biaya" <% IF GV_REQ_ZREASON = 'Reduksi Biaya'. %>selected<% ENDIF. %>>Reduksi Biaya</option>
+                        <option value="Perbaikan Desain" <% IF GV_REQ_ZREASON = 'Perbaikan Desain'. %>selected<% ENDIF. %>>Perbaikan Desain</option>
+                        <option value="Perubahan Bahan" <% IF GV_REQ_ZREASON = 'Perubahan Bahan'. %>selected<% ENDIF. %>>Perubahan Bahan</option>
+                        <option value="Req. Buyer" <% IF GV_REQ_ZREASON = 'Req. Buyer'. %>selected<% ENDIF. %>>Req. Buyer</option>
+                        <option value="Kepatuhan Standar Industri" <% IF GV_REQ_ZREASON = 'Kepatuhan Standar Industri'. %>selected<% ENDIF. %>>Kepatuhan Standar Industri</option>
+                        <option value="Upload File Baru" <% IF GV_REQ_ZREASON = 'Upload File Baru'. %>selected<% ENDIF. %>>Upload File Baru</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Deskripsi -->
+            <div class="mb-4">
+                <label class="block text-xs font-bold text-slate-600 mb-1">Deskripsi</label>
+                <textarea name="description" rows="12"
+                    class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none"><%= GV_REQ_DESCRIPTION %></textarea>
+            </div>
+            
+            <!-- V14: Implementation Tracking (Read-Only saat IREQ sudah diproses ECO) -->
+            <% IF GV_REQ_IMPL_PO IS NOT INITIAL AND ( GV_REQ_STATUS = 'ECO' OR GV_ROLE <> 'ADMIN' ). %>
+            <div class="mt-6 mb-4 p-5 bg-blue-50 border border-blue-200 rounded-xl shadow-sm">
+                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-blue-100">
+                    <i class="fas fa-calendar-check text-blue-500 text-lg"></i>
+                    <h3 class="font-bold text-blue-800 text-sm">Rencana Implementasi (Target Rilis)</h3>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[0.65rem] font-bold text-blue-500 uppercase tracking-wide mb-1">Target Berjalan</label>
+                        <div class="text-sm font-semibold text-blue-900"><%= GV_REQ_IMPL_PO %></div>
+                    </div>
+                    <div>
+                        <label class="block text-[0.65rem] font-bold text-blue-500 uppercase tracking-wide mb-1">Tanggal Estimasi Jalan</label>
+                        <%
+                           DATA: lv_len_adm TYPE i,
+                                 lv_impl_date_safe_adm TYPE string.
+                           lv_impl_date_safe_adm = '-'.
+                           
+                           " GV_REQ_IMPL_DATE is YYYYMMDD
+                           IF GV_REQ_IMPL_DATE IS NOT INITIAL.
+                             lv_len_adm = strlen( GV_REQ_IMPL_DATE ).
+                             IF lv_len_adm = 8 AND GV_REQ_IMPL_DATE CO '0123456789'.
+                               CONCATENATE GV_REQ_IMPL_DATE+6(2) '/' GV_REQ_IMPL_DATE+4(2) '/' GV_REQ_IMPL_DATE(4) INTO lv_impl_date_safe_adm.
+                             ELSEIF lv_len_adm >= 8.
+                               " Fallback if it's already formatted
+                               lv_impl_date_safe_adm = GV_REQ_IMPL_DATE.
+                             ENDIF.
+                           ENDIF.
+                        %>
+                        <div class="text-sm font-semibold text-blue-900"><%= lv_impl_date_safe_adm %></div>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-[0.65rem] font-bold text-blue-500 uppercase tracking-wide mb-1">Alasan Implementasi</label>
+                        <div class="text-sm text-blue-800 bg-white/60 p-2.5 rounded-lg border border-blue-100"><%= GV_REQ_IMPL_REASON %></div>
+                    </div>
+                </div>
+            </div>
+            <% ENDIF. %>
+
+            <!-- Attachment Bukti Owner -->
+            <% IF GV_HAS_ATTACHMENT = 'X'. %>
+            <div class="mb-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <label class="block text-xs font-bold text-slate-600 mb-3 flex items-center justify-between">
+                    <span><i class="fas fa-paperclip text-slate-500 mr-1"></i>File Attachment</span>
+                    <button type="button" onclick="downloadAttachment('<%= GV_IREQ_ID %>')" class="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1">
+                        <i class="fas fa-download"></i> Download Asli
+                    </button>
+                </label>
+                
+                <div class="bg-white rounded border border-slate-200 overflow-hidden">
+                    <%= GV_ATT_HTML %>
+                </div>
+            </div>
+            <% ENDIF. %>
+
+        <!-- Assign Drafter Dropdown & Rencana Implementasi -->
+        <% IF GV_ROLE = 'ADMIN'. %>
+        <div class="mb-4 p-4 bg-brand-50 rounded-lg border border-brand-100 space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1">
+                    <i class="fas fa-user-check text-brand-600 mr-1"></i>Assign Drafter <span class="text-red-500">*</span>
+                </label>
+                <select name="assigned_drafter" id="assigned_drafter"
+                    <% IF GV_REQ_STATUS = 'REQ'. %>disabled class="w-full px-3 py-2.5 border border-brand-200 rounded-lg text-sm bg-slate-100 text-slate-500 cursor-not-allowed outline-none"<% ELSE. %>class="w-full px-3 py-2.5 border border-brand-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white"<% ENDIF. %>>
+                    <%= GV_DRAFTER_OPTIONS %>
+                </select>
+                <% IF GV_REQ_STATUS = 'REQ'. %>
+                    <p class="text-[0.65rem] text-amber-600 mt-1 italic"><i class="fas fa-info-circle mr-1"></i>Drafter hanya bisa diassign setelah disetujui Head R&D.</p>
+                <% ENDIF. %>
+            </div>
+
+            <!-- V14: Implementation Tracking (Diisi oleh Admin saat Buat ECO) -->
+            <% IF GV_REQ_STATUS <> 'REQ'. %>
+            <div class="pt-3 border-t border-brand-200">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <i class="fas fa-calendar-alt text-brand-600 text-xs"></i>
+                    <span class="text-xs font-bold text-brand-900 uppercase tracking-wide">Rencana Implementasi (Wajib Diisi Admin)</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Target Berjalan (PO) <span class="text-red-500">*</span></label>
+                        <input type="text" name="impl_po" id="impl_po" value="<%= GV_REQ_IMPL_PO %>"
+                            placeholder="Contoh: Next PO / PO 45000123"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tanggal Estimasi Jalan <span class="text-red-500">*</span></label>
+                        <%
+                           DATA: lv_input_date_adm TYPE string.
+                           lv_input_date_adm = ''.
+                           IF GV_REQ_IMPL_DATE IS NOT INITIAL AND strlen( GV_REQ_IMPL_DATE ) = 8.
+                             CONCATENATE GV_REQ_IMPL_DATE(4) '-' GV_REQ_IMPL_DATE+4(2) '-' GV_REQ_IMPL_DATE+6(2) INTO lv_input_date_adm.
+                           ELSE.
+                             lv_input_date_adm = GV_REQ_IMPL_DATE.
+                           ENDIF.
+                        %>
+                        <input type="date" name="impl_date" id="impl_date" value="<%= lv_input_date_adm %>"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Keterangan / Alasan Lapangan <span class="text-red-500">*</span></label>
+                        <textarea name="impl_reason" id="impl_reason" rows="2"
+                            placeholder="Alasan pemilihan PO / tanggal rilis berdasarkan kondisi lapangan..."
+                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white"><%= GV_REQ_IMPL_REASON %></textarea>
+                    </div>
+                </div>
+            </div>
+            <% ENDIF. %>
+        </div>
+        <% ENDIF. %>
+        </form>
+    </div>
+
+        <!-- Action Buttons -->
+    <div class="flex gap-3 justify-end">
+        <!-- Save Edit -->
+        <button type="button" onclick="updateRequest()"
+            class="px-5 py-3 text-sm font-semibold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition flex items-center gap-2">
+            <i class="fas fa-save"></i> Simpan Perubahan
+        </button>
+
+        <% IF GV_REQ_STATUS = 'REQ' OR GV_ROLE = 'ADMIN'. %>
+        <!-- Reject -->
+        <button type="button" onclick="rejectRequest()"
+            class="px-5 py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition flex items-center gap-2">
+            <i class="fas fa-times-circle"></i> Tolak Request
+        </button>
+        <% ENDIF. %>
+
+        <!-- Button Logic Based on Role -->
+        <% IF GV_ROLE = 'APPROVER'. %>
+            <% IF GV_REQ_STATUS = 'REQ'. %>
+                <!-- Approver Button -->
+                <button type="button" onclick="approveRequest()"
+                    class="px-5 py-3 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition shadow-md flex items-center gap-2">
+                    <i class="fas fa-check-circle"></i> Approve Request
+                </button>
+            <% ENDIF. %>
+        <% ELSEIF GV_ROLE = 'ADMIN'. %>
+            <!-- Admin Buttons -->
+            <% IF GV_REQ_STATUS = 'REQ'. %>
+                <button type="button" disabled
+                    class="px-5 py-3 text-sm font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded-lg cursor-not-allowed shadow-md flex items-center gap-2"
+                    title="Masih menunggu persetujuan Head R&D">
+                    <i class="fas fa-clock text-amber-500"></i> Perlu Persetujuan R&D
+                </button>
+            <% ELSE. %>
+                <button type="button" onclick="approveRequest()"
+                    class="px-5 py-3 text-sm font-bold text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition shadow-md flex items-center gap-2">
+                    <i class="fas fa-check-circle"></i> Buat ECO (Tugaskan)
+                </button>
+            <% ENDIF. %>
+        <% ENDIF. %>
+    </div>
+</div>
+
+<script>
+    // Setup initial state or helper vars if needed, avoiding ABAP inside JS functions
+    var currentUserRole = '<%= GV_ROLE %>';
+
+    function updateRequest() {
+        Swal.fire({
+            title: 'Simpan Perubahan?',
+            text: 'Data yang diubah akan disimpan.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Simpan!',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#059669'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                var form = document.getElementById('reviewForm');
+                var actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'OnInputProcessing';
+                actionInput.value = 'update';
+                form.appendChild(actionInput);
+                form.submit();
+            }
+        });
+    }
+
+    function rejectRequest() {
+        Swal.fire({
+            title: 'Tolak Request?',
+            input: 'textarea',
+            inputPlaceholder: 'Masukkan alasan penolakan...',
+            inputValidator: (value) => {
+                if (!value) {
+                    return 'Alasan penolakan wajib diisi!'
+                }
+            },
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Tolak!',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#dc2626'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                var form = document.getElementById('reviewForm');
+                var actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'OnInputProcessing';
+                if (currentUserRole === 'APPROVER') {
+                    actionInput.value = 'reject_ireq';
+                } else {
+                    actionInput.value = 'reject';
+                }
+                form.appendChild(actionInput);
+                
+                var reasonInput = document.createElement('input');
+                reasonInput.type = 'hidden';
+                reasonInput.name = 'reject_reason';
+                reasonInput.value = result.value;
+                form.appendChild(reasonInput);
+                
+                form.submit();
+            }
+        });
+    }
+
+    function approveRequest() {
+        var actionValue = '';
+        var titleText = '';
+        var confirmText = '';
+
+        if (currentUserRole === 'APPROVER') {
+            Swal.fire({
+                title: 'Setujui Request?',
+                text: 'Request ini akan disetujui dan diteruskan ke Admin untuk penugasan Drafter & estimasi rilis.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#10b981',
+                cancelButtonColor: '#94a3b8',
+                confirmButtonText: '<i class="fas fa-check mr-1"></i> Ya, Setujui',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    var form = document.getElementById('reviewForm');
+                    form.insertAdjacentHTML('beforeend', '<input type="hidden" name="OnInputProcessing" value="approve_aprv">');
+                    form.submit();
+                }
+            });
+            return;
+        } else {
+            var drafterSelect = document.getElementById('assigned_drafter');
+            if (drafterSelect && !drafterSelect.value) {
+                Swal.fire({ icon: 'warning', title: 'Pilih Drafter!', text: 'Silakan pilih drafter yang akan ditugaskan.' });
+                return;
+            }
+
+            var poInput = document.getElementById('impl_po');
+            var dateInput = document.getElementById('impl_date');
+            var reasonInput = document.getElementById('impl_reason');
+            if (poInput && dateInput && reasonInput) {
+                if (!poInput.value.trim() || !dateInput.value.trim() || !reasonInput.value.trim()) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Lengkapi Rencana Implementasi!',
+                        text: 'Field Target PO, Tanggal Estimasi Jalan, dan Alasan Lapangan wajib diisi sebelum membuat ECO.'
+                    });
+                    return;
+                }
+            }
+
+            titleText = 'Buat ECO & Tugaskan Drafter?';
+            confirmText = 'Request akan disetujui, ECO baru akan dibuat dengan rencana implementasi yang diinput, dan drafter akan ditugaskan.';
+            actionValue = 'approve';
+        }
+
+        Swal.fire({
+            title: titleText,
+            text: confirmText,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Setujui!',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#059669'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                var form = document.getElementById('reviewForm');
+                var actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'OnInputProcessing';
+                actionInput.value = actionValue;
+                form.appendChild(actionInput);
+                form.submit();
+            }
+        });
+    }
+    function downloadAttachment(attId) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '';
+        form.target = '_blank';
+        
+        var inputAction = document.createElement('input');
+        inputAction.type = 'hidden';
+        inputAction.name = 'OnInputProcessing';
+        inputAction.value = 'download_att';
+        form.appendChild(inputAction);
+        
+        var inputId = document.createElement('input');
+        inputId.type = 'hidden';
+        inputId.name = 'att_id';
+        inputId.value = attId;
+        form.appendChild(inputId);
+        
+        document.body.appendChild(form);
+        form.submit();
+        setTimeout(function() { document.body.removeChild(form); }, 100);
+    }
+</script>
+
+</body>
+</html>

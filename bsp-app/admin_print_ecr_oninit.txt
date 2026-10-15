@@ -1,0 +1,357 @@
+" admin_print_ecr OnInit — V14_i: Cetak Multi-Panel (IREQ, Approval Queue, ECR)
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+GV_DATE_FROM = request->get_form_field( 'date_from' ).
+GV_DATE_TO   = request->get_form_field( 'date_to' ).
+GV_PRINT_TYPE = request->get_form_field( 'type' ).
+
+" Auth check
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+" Default print type: ecr
+IF GV_PRINT_TYPE IS INITIAL.
+  GV_PRINT_TYPE = 'ecr'.
+ENDIF.
+TRANSLATE GV_PRINT_TYPE TO LOWER CASE.
+
+" Default date range: first day of 4 months ago to today
+IF GV_DATE_FROM IS INITIAL.
+  DATA: lv_yr TYPE n LENGTH 4, lv_mo TYPE n LENGTH 2, lv_yy TYPE n LENGTH 4, lv_mm TYPE n LENGTH 2.
+  lv_yy = sy-datum(4). lv_mm = sy-datum+4(2).
+  lv_yr = lv_yy. lv_mo = lv_mm.
+  IF lv_mo > 4.
+    lv_mo = lv_mo - 4.
+  ELSE.
+    lv_yr = lv_yr - 1. lv_mo = lv_mo + 8.
+  ENDIF.
+  CONCATENATE lv_yr lv_mo '01' INTO GV_DATE_FROM.
+ENDIF.
+IF GV_DATE_TO IS INITIAL.
+  GV_DATE_TO = sy-datum.
+ENDIF.
+
+" Convert display dates (YYYY-MM-DD) to SAP internal format (YYYYMMDD)
+REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_FROM WITH ''.
+REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_TO WITH ''.
+
+DATA: lv_df_internal TYPE sy-datum,
+      lv_dt_internal TYPE sy-datum.
+lv_df_internal = GV_DATE_FROM.
+lv_dt_internal = GV_DATE_TO.
+
+DATA: lv_html      TYPE string,
+      lv_count     TYPE i VALUE 0,
+      lv_no_str    TYPE string,
+      lv_date_str  TYPE string,
+      lv_doc_fmt   TYPE string,
+      lv_matnr_fmt TYPE string,
+      lv_matnr_desc TYPE string,
+      lv_req_name  TYPE string,
+      lv_draft_name TYPE string,
+      lv_s_label   TYPE string,
+      lv_p_label   TYPE string.
+
+CLEAR: lv_html, lv_count.
+
+" =======================================================================
+" CABANG 1: LAPORAN REQUEST MASUK (Pre-ECR / IREQ)
+" =======================================================================
+IF GV_PRINT_TYPE = 'ireq'.
+
+  GV_REPORT_TITLE = 'Laporan Request Masuk (Pre-ECR / IREQ)'.
+  GV_TH_HEADER = '<tr>' &&
+    '<th style="text-align:center;width:40px">NO</th>' &&
+    '<th style="width:85px">IREQ ID</th>' &&
+    '<th>JUDUL REQUEST</th>' &&
+    '<th>MATERIAL</th>' &&
+    '<th style="width:65px">KATEGORI</th>' &&
+    '<th style="width:75px">PRIORITAS</th>' &&
+    '<th style="width:95px">DEPARTEMEN</th>' &&
+    '<th style="width:75px">STATUS</th>' &&
+    '<th>REQUESTER</th>' &&
+    '<th style="width:85px;text-align:center">TANGGAL</th>' &&
+    '</tr>'.
+
+  DATA: lt_p_ireq TYPE TABLE OF zecm_ireq,
+        ls_p_ireq TYPE zecm_ireq.
+
+  SELECT * FROM zecm_ireq INTO TABLE @lt_p_ireq
+    WHERE status = 'REQ' OR status = 'APPR'
+    ORDER BY req_date DESCENDING.
+
+  DELETE lt_p_ireq WHERE title CS 'Routing' OR title CS 'alur proses' OR title CS 'routing' OR title CS 'ROUTING'.
+  SORT lt_p_ireq BY status DESCENDING req_date DESCENDING.
+
+  LOOP AT lt_p_ireq INTO ls_p_ireq.
+    lv_count = lv_count + 1.
+    lv_no_str = lv_count.
+
+    " Format IREQ ID
+    lv_doc_fmt = ls_p_ireq-ireq_id.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input  = lv_doc_fmt
+      IMPORTING output = lv_doc_fmt.
+
+    " Format Material & Desc
+    lv_matnr_fmt = ls_p_ireq-matnr_fg.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input  = lv_matnr_fmt
+      IMPORTING output = lv_matnr_fmt.
+
+    DATA: lv_alpha_mat TYPE matnr.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING input  = ls_p_ireq-matnr_fg
+      IMPORTING output = lv_alpha_mat.
+
+    CLEAR lv_matnr_desc.
+    SELECT SINGLE maktx FROM makt INTO @lv_matnr_desc WHERE matnr = @lv_alpha_mat AND spras = @sy-langu.
+
+    " Format Requester Full Name
+    CLEAR lv_req_name.
+    SELECT SINGLE zecm_full_name FROM zecm_user INTO @lv_req_name WHERE zecm_user_id = @ls_p_ireq-requester.
+    IF lv_req_name IS INITIAL.
+      lv_req_name = ls_p_ireq-requester.
+    ENDIF.
+
+    " Format Tanggal
+    CLEAR lv_date_str.
+    IF ls_p_ireq-req_date IS NOT INITIAL.
+      CONCATENATE ls_p_ireq-req_date+6(2) '/' ls_p_ireq-req_date+4(2) '/' ls_p_ireq-req_date(4) INTO lv_date_str.
+    ENDIF.
+
+    " Status Label
+    CLEAR lv_s_label.
+    CASE ls_p_ireq-status.
+      WHEN 'REQ'.  lv_s_label = 'Pending Review'.
+      WHEN 'APPR'. lv_s_label = 'Approved'.
+      WHEN 'REJC'. lv_s_label = 'Rejected'.
+      WHEN 'ECO'.  lv_s_label = 'Assigned ECO'.
+      WHEN OTHERS. lv_s_label = ls_p_ireq-status.
+    ENDCASE.
+
+    " Priority Label
+    CLEAR lv_p_label.
+    CASE ls_p_ireq-priority.
+      WHEN 'CRITICAL'. lv_p_label = 'Critical'.
+      WHEN 'HIGH'.     lv_p_label = 'High'.
+      WHEN 'MEDIUM'.   lv_p_label = 'Medium'.
+      WHEN 'LOW'.      lv_p_label = 'Low'.
+      WHEN OTHERS.     lv_p_label = ls_p_ireq-priority.
+    ENDCASE.
+
+    CONCATENATE lv_html
+      '<tr>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-size:10px">' lv_no_str '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px;font-weight:600">' lv_doc_fmt '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' ls_p_ireq-title '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_matnr_fmt '<br><span style="color:#94a3b8;font-size:9px">' lv_matnr_desc '</span></td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' ls_p_ireq-kategori '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_p_label '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' ls_p_ireq-zdept '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_s_label '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_req_name '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px;text-align:center">' lv_date_str '</td>'
+      '</tr>'
+      INTO lv_html.
+  ENDLOOP.
+
+" =======================================================================
+" CABANG 2: LAPORAN ANTRIAN APPROVAL (CRTD -> INWK)
+" =======================================================================
+ELSEIF GV_PRINT_TYPE = 'approval'.
+
+  GV_REPORT_TITLE = 'Laporan Antrian Approval ECR (Menunggu Persetujuan Admin)'.
+  GV_TH_HEADER = '<tr>' &&
+    '<th style="text-align:center;width:40px">NO</th>' &&
+    '<th style="width:85px">ECR NO</th>' &&
+    '<th>JUDUL ECR</th>' &&
+    '<th>MATERIAL</th>' &&
+    '<th style="width:65px">KATEGORI</th>' &&
+    '<th style="width:75px">PRIORITAS</th>' &&
+    '<th style="width:75px">STATUS</th>' &&
+    '<th>DRAFTER</th>' &&
+    '<th>REQUESTER</th>' &&
+    '<th style="width:85px;text-align:center">TANGGAL</th>' &&
+    '</tr>'.
+
+  DATA: lt_p_queue TYPE tt_print_ecr,
+        ls_p_queue TYPE ty_print_ecr.
+
+  SELECT a~ecr_no, a~title, a~matnr_fg, b~maktx AS matnr_fg_desc,
+         a~kategori, a~priority, a~status, a~requester, a~drafter, a~created_date,
+         c~zecm_full_name AS fullname, d~zecm_full_name AS drafter_name
+    INTO CORRESPONDING FIELDS OF TABLE @lt_p_queue
+    FROM zecm_req AS a
+    LEFT OUTER JOIN makt AS b ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+    LEFT OUTER JOIN zecm_user AS c ON a~requester = c~zecm_user_id
+    LEFT OUTER JOIN zecm_user AS d ON a~drafter = d~zecm_user_id
+    WHERE a~status = 'CRTD'
+    ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+
+  LOOP AT lt_p_queue INTO ls_p_queue.
+    lv_count = lv_count + 1.
+    lv_no_str = lv_count.
+
+    " Format ECR No
+    lv_doc_fmt = ls_p_queue-ecr_no.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input  = lv_doc_fmt
+      IMPORTING output = lv_doc_fmt.
+
+    " Format Material
+    lv_matnr_fmt = ls_p_queue-matnr_fg.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input  = lv_matnr_fmt
+      IMPORTING output = lv_matnr_fmt.
+
+    " Requester name
+    IF ls_p_queue-fullname IS NOT INITIAL.
+      lv_req_name = ls_p_queue-fullname.
+    ELSE.
+      lv_req_name = ls_p_queue-requester.
+    ENDIF.
+
+    " Drafter name
+    IF ls_p_queue-drafter_name IS NOT INITIAL.
+      lv_draft_name = ls_p_queue-drafter_name.
+    ELSE.
+      lv_draft_name = ls_p_queue-drafter.
+    ENDIF.
+
+    " Format Tanggal
+    CLEAR lv_date_str.
+    IF ls_p_queue-created_date IS NOT INITIAL.
+      CONCATENATE ls_p_queue-created_date+6(2) '/' ls_p_queue-created_date+4(2) '/' ls_p_queue-created_date(4) INTO lv_date_str.
+    ENDIF.
+
+    " Priority Label
+    CLEAR lv_p_label.
+    CASE ls_p_queue-priority.
+      WHEN 'CRITICAL'. lv_p_label = 'Critical'.
+      WHEN 'HIGH'.     lv_p_label = 'High'.
+      WHEN 'MEDIUM'.   lv_p_label = 'Medium'.
+      WHEN 'LOW'.      lv_p_label = 'Low'.
+      WHEN OTHERS.     lv_p_label = ls_p_queue-priority.
+    ENDCASE.
+
+    CONCATENATE lv_html
+      '<tr>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-size:10px">' lv_no_str '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px;font-weight:600">' lv_doc_fmt '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' ls_p_queue-title '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_matnr_fmt '<br><span style="color:#94a3b8;font-size:9px">' ls_p_queue-matnr_fg_desc '</span></td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' ls_p_queue-kategori '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_p_label '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">Created</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_draft_name '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_req_name '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px;text-align:center">' lv_date_str '</td>'
+      '</tr>'
+      INTO lv_html.
+  ENDLOOP.
+
+" =======================================================================
+" CABANG 3: LAPORAN DAFTAR ECR (Standar / Semua Status)
+" =======================================================================
+ELSE.
+
+  GV_REPORT_TITLE = 'Laporan Daftar ECR (Engineering Change Request)'.
+  GV_TH_HEADER = '<tr>' &&
+    '<th style="text-align:center;width:40px">NO</th>' &&
+    '<th style="width:85px">ECR NO</th>' &&
+    '<th>JUDUL</th>' &&
+    '<th>MATERIAL</th>' &&
+    '<th style="width:65px">KATEGORI</th>' &&
+    '<th style="width:75px">PRIORITAS</th>' &&
+    '<th style="width:75px">STATUS</th>' &&
+    '<th>REQUESTER</th>' &&
+    '<th style="width:85px;text-align:center">TANGGAL</th>' &&
+    '</tr>'.
+
+  DATA: lt_print TYPE tt_print_ecr,
+        ls_print TYPE ty_print_ecr.
+
+  SELECT a~ecr_no, a~title, a~matnr_fg, b~maktx AS matnr_fg_desc,
+         a~kategori, a~priority, a~status, a~requester, a~created_date,
+         c~zecm_full_name AS fullname
+    INTO CORRESPONDING FIELDS OF TABLE @lt_print
+    FROM zecm_req AS a
+    LEFT OUTER JOIN makt AS b ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+    LEFT OUTER JOIN zecm_user AS c ON a~requester = c~zecm_user_id
+    WHERE a~created_date >= @lv_df_internal AND a~created_date <= @lv_dt_internal
+    ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
+
+  LOOP AT lt_print INTO ls_print.
+    lv_count = lv_count + 1.
+    lv_no_str = lv_count.
+
+    " Format ECR number
+    lv_doc_fmt = ls_print-ecr_no.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input  = lv_doc_fmt
+      IMPORTING output = lv_doc_fmt.
+
+    " Format material
+    lv_matnr_fmt = ls_print-matnr_fg.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input  = lv_matnr_fmt
+      IMPORTING output = lv_matnr_fmt.
+
+    " Format date
+    CLEAR lv_date_str.
+    IF ls_print-created_date IS NOT INITIAL.
+      CONCATENATE ls_print-created_date+6(2) '/' ls_print-created_date+4(2) '/' ls_print-created_date(4) INTO lv_date_str.
+    ENDIF.
+
+    " Status label
+    CLEAR lv_s_label.
+    CASE ls_print-status.
+      WHEN 'CRTD'. lv_s_label = 'Need Approval'.
+      WHEN 'INWK'. lv_s_label = 'In Work'.
+      WHEN 'BMAP'. lv_s_label = 'BOM Ready'.
+      WHEN 'INSP'. lv_s_label = 'Inspection'.
+      WHEN 'CLSD'. lv_s_label = 'Closed'.
+      WHEN 'REJC'. lv_s_label = 'Rejected'.
+      WHEN OTHERS. lv_s_label = ls_print-status.
+    ENDCASE.
+
+    " Priority label
+    CLEAR lv_p_label.
+    CASE ls_print-priority.
+      WHEN 'CRITICAL'. lv_p_label = 'Critical'.
+      WHEN 'HIGH'.     lv_p_label = 'High'.
+      WHEN 'MEDIUM'.   lv_p_label = 'Medium'.
+      WHEN 'LOW'.      lv_p_label = 'Low'.
+      WHEN OTHERS.     lv_p_label = ls_print-priority.
+    ENDCASE.
+
+    " Requester name
+    IF ls_print-fullname IS NOT INITIAL.
+      lv_req_name = ls_print-fullname.
+    ELSE.
+      lv_req_name = ls_print-requester.
+    ENDIF.
+
+    CONCATENATE lv_html
+      '<tr>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-size:10px">' lv_no_str '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px;font-weight:600">' lv_doc_fmt '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' ls_print-title '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_matnr_fmt '<br><span style="color:#94a3b8;font-size:9px">' ls_print-matnr_fg_desc '</span></td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' ls_print-kategori '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_p_label '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_s_label '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px">' lv_req_name '</td>'
+      '<td style="padding:5px 8px;border:1px solid #e2e8f0;font-size:10px;text-align:center">' lv_date_str '</td>'
+      '</tr>'
+      INTO lv_html.
+  ENDLOOP.
+
+ENDIF.
+
+GV_PRINT_HTML = lv_html.
+GV_PRINT_COUNT = lv_count.

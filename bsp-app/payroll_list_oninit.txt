@@ -1,0 +1,216 @@
+" =======================================================================
+" OnInit — payroll_list.htm
+" V10_a: Costing Dashboard — View ZECM_IROUTING status REQ
+" =======================================================================
+
+DATA: LT_ROUTING   TYPE TABLE OF TY_ROUTING,
+      LS_ROUTING   TYPE TY_ROUTING,
+      LT_AUDIT     TYPE TABLE OF TY_AUDIT,
+      LS_AUDIT     TYPE TY_AUDIT,
+      lv_status_color TYPE string,
+      lv_status_label TYPE string,
+      lv_num       TYPE n LENGTH 10,
+      lv_msg       TYPE string,
+      LV_ACTION    TYPE string.
+
+CLEAR: GV_REQUEST_HTML, GV_REQUEST_COUNT, GV_AUDIT_HTML, GV_SELECTED_IREQ, GV_MESSAGE, GV_ICON, GV_ATTACH_HTML.
+GV_REQUEST_COUNT = '0'.
+
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+
+LV_ACTION    = request->get_form_field( 'OnInputProcessing' ).
+lv_msg       = request->get_form_field( 'msg' ).
+IF lv_msg IS NOT INITIAL AND LV_ACTION IS INITIAL.
+  GV_MESSAGE = lv_msg.
+  GV_ICON = 'success'.
+ENDIF.
+
+IF GV_USER_ID IS INITIAL OR GV_ROLE <> 'PAYROLL'.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+" --- Load Routing Requests ---
+SELECT * FROM zecm_req
+  INTO CORRESPONDING FIELDS OF TABLE @LT_ROUTING
+  WHERE change_scope = 'ROUT'
+  ORDER BY created_date DESCENDING, ecr_no DESCENDING.
+
+" Split into pending (COST) and history
+DATA: lt_pending TYPE STANDARD TABLE OF TY_ROUTING,
+      lt_history TYPE STANDARD TABLE OF TY_ROUTING,
+      lv_pending_count TYPE i,
+      lv_history_count TYPE i,
+      lv_h_date_str TYPE c LENGTH 12,
+      lv_h_status_color TYPE string,
+      lv_h_status_label TYPE string,
+      lv_h_matnr_clean TYPE c LENGTH 40.
+
+LOOP AT LT_ROUTING INTO LS_ROUTING.
+  IF LS_ROUTING-status = 'COST'.
+    APPEND LS_ROUTING TO lt_pending.
+  ELSE.
+    APPEND LS_ROUTING TO lt_history.
+  ENDIF.
+ENDLOOP.
+
+DESCRIBE TABLE lt_pending LINES lv_pending_count.
+DESCRIBE TABLE lt_history LINES lv_history_count.
+GV_REQUEST_COUNT = lv_pending_count.
+GV_HISTORY_COUNT = lv_history_count.
+CONCATENATE '' GV_REQUEST_COUNT INTO GV_REQUEST_COUNT.
+CONCATENATE '' GV_HISTORY_COUNT INTO GV_HISTORY_COUNT.
+
+DATA: lv_desc_safe TYPE string.
+
+LOOP AT lt_pending INTO LS_ROUTING.
+  " Status badge
+  lv_status_color = 'bg-yellow-50 text-yellow-600 border-yellow-200'.
+  lv_status_label = 'Menunggu Payroll'.
+  " Status badge
+  lv_status_color = 'bg-yellow-50 text-yellow-600 border-yellow-200'.
+  lv_status_label = 'Menunggu Payroll'.
+
+  " Get Requester name
+  SELECT SINGLE zecm_full_name FROM zecm_user
+    INTO @LS_ROUTING-requester_name
+    WHERE zecm_user_id = @LS_ROUTING-requester.
+
+  " Format date
+  DATA: lv_date_str TYPE string.
+  CONCATENATE LS_ROUTING-created_date+6(2) LS_ROUTING-created_date+4(2) LS_ROUTING-created_date(4) INTO lv_date_str SEPARATED BY '/'.
+
+  " Build table row HTML
+  CONCATENATE GV_REQUEST_HTML
+    '<tr class="hover:bg-slate-50/50 transition-colors cursor-pointer" onclick="showAudit(''' LS_ROUTING-ecr_no ''')">'
+    '<td class="px-4 py-3"><div class="text-xs font-bold text-slate-700">REQ-' LS_ROUTING-ecr_no '</div></td>'
+    '<td class="px-4 py-3">'
+      '<div class="text-xs font-semibold text-slate-700 truncate max-w-[200px]">' LS_ROUTING-title '</div>'
+      '<div class="text-[0.65rem] text-slate-400 mt-0.5">' LS_ROUTING-matnr_fg '</div>'
+    '</td>'
+    '<td class="px-4 py-3"><div class="text-[0.65rem] font-semibold text-slate-600 uppercase">' LS_ROUTING-zdept '</div></td>'
+    '<td class="px-4 py-3"><div class="text-xs text-slate-600">' LS_ROUTING-requester_name '</div></td>'
+    '<td class="px-4 py-3"><span class="px-2.5 py-1 rounded-md text-[0.65rem] font-bold border ' lv_status_color '">' lv_status_label '</span></td>'
+    '<td class="px-4 py-3 text-xs text-slate-500">' lv_date_str '</td>'
+    '<td class="px-4 py-3 text-right">'
+      '<i class="fas fa-chevron-down text-slate-400 text-xs"></i>'
+    '</td>'
+    '</tr>'
+  INTO GV_REQUEST_HTML.
+ENDLOOP.
+
+
+
+" ======================================================================
+" BUILD HISTORY HTML
+" ======================================================================
+DATA: lv_history_html TYPE string.
+
+CLEAR lv_history_html.
+
+LOOP AT lt_history INTO LS_ROUTING.
+  " Status badge
+  CASE LS_ROUTING-status.
+    WHEN 'PAYR'.
+      lv_h_status_color = 'bg-purple-50 text-purple-600 border-purple-200'.
+      lv_h_status_label = 'Menunggu Master Data'.
+    WHEN 'CLSD'.
+      lv_h_status_color = 'bg-green-50 text-green-600 border-green-200'.
+      lv_h_status_label = 'Selesai'.
+    WHEN 'REJC'.
+      lv_h_status_color = 'bg-red-50 text-red-600 border-red-200'.
+      lv_h_status_label = 'Ditolak'.
+    WHEN OTHERS.
+      lv_h_status_color = 'bg-slate-50 text-slate-600 border-slate-200'.
+      lv_h_status_label = LS_ROUTING-status.
+  ENDCASE.
+
+  " Get requester name
+  SELECT SINGLE zecm_full_name FROM zecm_user
+    INTO @LS_ROUTING-requester_name
+    WHERE zecm_user_id = @LS_ROUTING-requester.
+
+  " Format date
+  CONCATENATE LS_ROUTING-created_date+6(2) '.' LS_ROUTING-created_date+4(2) '.' LS_ROUTING-created_date(4) INTO lv_h_date_str.
+
+  " Material clean
+  lv_h_matnr_clean = LS_ROUTING-matnr_fg.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING input  = lv_h_matnr_clean
+    IMPORTING output = lv_h_matnr_clean.
+  CONDENSE lv_h_matnr_clean NO-GAPS.
+
+  CONCATENATE lv_history_html
+    '<tr class="hover:bg-slate-50/50 transition-colors cursor-pointer"'
+    ' onclick="showAudit(''' LS_ROUTING-ecr_no ''')">'
+    '<td class="px-4 py-3"><div class="text-xs font-bold text-slate-700">REQ-'
+    LS_ROUTING-ecr_no '</div></td>'
+    '<td class="px-4 py-3">'
+    '<div class="text-xs font-semibold text-slate-700 truncate max-w-[200px]">'
+    LS_ROUTING-title '</div>'
+    '<div class="text-[0.65rem] text-slate-400 mt-0.5">' lv_h_matnr_clean '</div>'
+    '</td>'
+    '<td class="px-4 py-3"><div class="text-[0.65rem] font-semibold text-slate-600 uppercase">'
+    LS_ROUTING-zdept '</div></td>'
+    '<td class="px-4 py-3"><div class="text-xs text-slate-600">'
+    LS_ROUTING-requester_name '</div></td>'
+    '<td class="px-4 py-3"><span class="px-2 py-1 text-[0.65rem] font-bold border rounded-md '
+    lv_h_status_color '">' lv_h_status_label '</span></td>'
+    '<td class="px-4 py-3 text-xs text-slate-500">' lv_h_date_str '</td>'
+    '</tr>'
+    INTO lv_history_html.
+ENDLOOP.
+
+GV_HISTORY_HTML = lv_history_html.
+
+" --- Load Audit Trail (if clicked) ---
+GV_SELECTED_IREQ = request->get_form_field( 'ireq_detail' ).
+IF GV_SELECTED_IREQ IS NOT INITIAL.
+  SELECT * FROM zecm_log
+    INTO CORRESPONDING FIELDS OF TABLE @LT_AUDIT
+    WHERE ecr_no = @GV_SELECTED_IREQ
+      AND is_ireq = ''
+    ORDER BY action_date DESCENDING, action_time DESCENDING.
+
+  LOOP AT LT_AUDIT INTO LS_AUDIT.
+    SELECT SINGLE zecm_full_name FROM zecm_user INTO @LS_AUDIT-full_name WHERE zecm_user_id = @LS_AUDIT-user_id.
+    CONCATENATE GV_AUDIT_HTML
+      '<div class="mb-4 relative">'
+        '<div class="absolute left-[-1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-slate-300 border-2 border-white"></div>'
+        '<div class="flex justify-between items-start mb-0.5">'
+          '<span class="text-xs font-bold text-slate-700">' LS_AUDIT-action ' - ' LS_AUDIT-full_name '</span>'
+          '<span class="text-[0.65rem] text-slate-400">' LS_AUDIT-action_date '</span>'
+        '</div>'
+        '<p class="text-xs text-slate-500">' LS_AUDIT-reason '</p>'
+      '</div>'
+    INTO GV_AUDIT_HTML.
+  ENDLOOP.
+ENDIF.
+
+" --- Load Attachments for Modal ---
+DATA: lt_all_att TYPE TABLE OF zecm_bom_att,
+      ls_att     TYPE zecm_bom_att,
+      lv_size    TYPE string.
+
+SELECT * FROM zecm_bom_att INTO TABLE lt_all_att.
+
+" Build JS object for modal attachments
+GV_ATTACH_HTML = ''.
+LOOP AT lt_all_att INTO ls_att.
+  " Use ecr_no as routing ID mapping
+  CONCATENATE 'if(!attData["' ls_att-ecr_no '"]) attData["' ls_att-ecr_no '"] = [];' INTO DATA(lv_init_arr) SEPARATED BY space.
+  IF GV_ATTACH_HTML CS lv_init_arr.
+  ELSE.
+    CONCATENATE GV_ATTACH_HTML lv_init_arr INTO GV_ATTACH_HTML SEPARATED BY space.
+  ENDIF.
+
+  DATA: lv_size_f TYPE f, lv_size_i TYPE i.
+  lv_size_f = ls_att-file_size / 1024.
+  lv_size_i = lv_size_f.
+  lv_size = lv_size_i.
+  CONDENSE lv_size.
+
+  CONCATENATE GV_ATTACH_HTML 'attData["' ls_att-ecr_no '"].push({ id: "' ls_att-att_id '", name: "' ls_att-file_name '", size: "' lv_size '"});' INTO GV_ATTACH_HTML SEPARATED BY space.
+ENDLOOP.

@@ -1,0 +1,26 @@
+* Type Definitions — requester_print.htm
+* V14: Cetak Request (Print PDF List & Audit Trail)
+
+TYPES:
+  BEGIN OF ty_print_ireq,
+    ireq_id       TYPE zecm_ireq-ireq_id,
+    title         TYPE zecm_ireq-title,
+    matnr_fg      TYPE zecm_ireq-matnr_fg,
+    matnr_fg_desc TYPE c LENGTH 100,
+    kategori      TYPE zecm_ireq-kategori,
+    priority      TYPE zecm_ireq-priority,
+    status        TYPE zecm_ireq-status,
+    zdept         TYPE zecm_ireq-zdept,
+    zreason       TYPE zecm_ireq-zreason,
+    description   TYPE zecm_ireq-description,
+    req_date      TYPE zecm_ireq-req_date,
+    created_time  TYPE zecm_ireq-created_time,
+    ecr_no        TYPE zecm_ireq-ecr_no,
+    admin_note    TYPE zecm_ireq-admin_note,
+    impl_po       TYPE zecm_ireq-impl_po,
+    impl_date     TYPE zecm_ireq-impl_date,
+    impl_reason   TYPE zecm_ireq-impl_reason,
+  END OF ty_print_ireq,
+
+  tt_print_ireq TYPE STANDARD TABLE OF ty_print_ireq WITH EMPTY KEY.
+

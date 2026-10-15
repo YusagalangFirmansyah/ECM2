@@ -1,0 +1,102 @@
+* =======================================================================
+* Type Definitions — admin_dashboard.htm
+* V06_c: Dashboard Admin — All ECR + Material History
+* =======================================================================
+
+TYPES:
+  BEGIN OF ty_status_count,
+    status TYPE zecm_req-status,
+    count  TYPE i,
+  END OF ty_status_count,
+
+  tt_status_count TYPE STANDARD TABLE OF ty_status_count WITH EMPTY KEY,
+
+  BEGIN OF ty_monthly,
+    month  TYPE c LENGTH 6,      " YYYYMM
+    status TYPE zecm_req-status,
+    count  TYPE i,
+  END OF ty_monthly,
+
+  tt_monthly TYPE STANDARD TABLE OF ty_monthly WITH EMPTY KEY,
+
+  BEGIN OF ty_recent,
+    ecr_no        TYPE zecm_req-ecr_no,
+    title         TYPE zecm_req-title,
+    matnr_fg      TYPE zecm_req-matnr_fg,
+    matnr_fg_desc TYPE c LENGTH 100,
+    matnr_fg_no_zero TYPE c LENGTH 40,
+    kategori      TYPE zecm_req-kategori,
+    priority      TYPE zecm_req-priority,
+    status        TYPE zecm_req-status,
+    requester     TYPE zecm_req-requester,
+    drafter       TYPE zecm_req-drafter,
+    created_date  TYPE zecm_req-created_date,
+    impl_date     TYPE zecm_req-impl_date,
+    fullname      TYPE c LENGTH 100,
+    drafter_name  TYPE c LENGTH 100,
+    change_scope  TYPE zecm_req-change_scope,
+    descr         TYPE zecm_req-descr,
+  END OF ty_recent,
+
+  tt_recent TYPE STANDARD TABLE OF ty_recent WITH EMPTY KEY,
+
+  BEGIN OF ty_queue,
+    ecr_no        TYPE zecm_req-ecr_no,
+    title         TYPE zecm_req-title,
+    matnr_fg      TYPE zecm_req-matnr_fg,
+    matnr_fg_desc TYPE c LENGTH 100,
+    matnr_fg_no_zero TYPE c LENGTH 40,
+    kategori      TYPE zecm_req-kategori,
+    priority      TYPE zecm_req-priority,
+    requester     TYPE zecm_req-requester,
+    created_date  TYPE zecm_req-created_date,
+    fullname      TYPE c LENGTH 100,
+    change_scope  TYPE zecm_req-change_scope,
+    descr         TYPE zecm_req-descr,
+  END OF ty_queue,
+
+  tt_queue TYPE STANDARD TABLE OF ty_queue WITH EMPTY KEY,
+
+  BEGIN OF ty_audit,
+    log_id       TYPE zecm_log-log_id,
+    ecr_no       TYPE zecm_log-ecr_no,
+    action       TYPE zecm_log-action,
+    old_status   TYPE zecm_log-old_status,
+    new_status   TYPE zecm_log-new_status,
+    user_id      TYPE zecm_log-user_id,
+    action_date  TYPE zecm_log-action_date,
+    action_time  TYPE zecm_log-action_time,
+    reason       TYPE zecm_log-reason,
+    username     TYPE c LENGTH 100,
+  END OF ty_audit,
+
+  tt_audit TYPE STANDARD TABLE OF ty_audit WITH EMPTY KEY,
+
+  BEGIN OF ty_ecr,
+    ecr_no        TYPE zecm_req-ecr_no,
+    title         TYPE zecm_req-title,
+    matnr_fg      TYPE zecm_req-matnr_fg,
+    matnr_fg_no_zero TYPE char18,
+    descr         TYPE zecm_req-descr,
+    kategori      TYPE zecm_req-kategori,
+    priority      TYPE zecm_req-priority,
+    requester     TYPE zecm_req-requester,
+    requester_name TYPE zecm_user-zecm_full_name,
+    drafter       TYPE zecm_req-drafter,
+    drafter_name  TYPE zecm_user-zecm_full_name,
+    dokar         TYPE zecm_req-dokar,
+    dir_number    TYPE zecm_req-dir_number,
+    dir_number_clean TYPE char50,
+    status        TYPE zecm_req-status,
+    reject_reason TYPE zecm_req-reject_reason,
+    cost_estimate TYPE zecm_req-cost_estimate,
+    zdept         TYPE zecm_req-zdept,
+    zreason       TYPE zecm_req-zreason,
+    created_date  TYPE zecm_req-created_date,
+    created_time  TYPE zecm_req-created_time,
+    changed_date  TYPE zecm_req-changed_date,
+    change_scope  TYPE zecm_req-change_scope,
+    maktx         TYPE makt-maktx,
+  END OF ty_ecr,
+
+  tt_ecr TYPE STANDARD TABLE OF ty_ecr WITH EMPTY KEY.

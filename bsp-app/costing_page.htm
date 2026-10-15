@@ -1,0 +1,217 @@
+﻿<%@page language="abap" %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Costing Engineering Dashboard | ECM System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { brand: { 50: '#f0fdfa', 100: '#ccfbf1', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e' } },
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+    .glass-nav { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(226, 232, 240, 0.8); }
+    .bg-grid-pattern { background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 24px 24px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col relative overflow-x-hidden">
+  <div class="fixed inset-0 bg-grid-pattern opacity-[0.15] pointer-events-none z-0"></div>
+
+  <!-- Include Header -->
+  <div class="relative z-10">
+    <%@include file="admin_header.htm" %>
+  </div>
+
+  <main class="flex-grow w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
+    
+    <!-- PENCARIAN DMS -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 mb-8 overflow-hidden">
+      <div class="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-5">
+        <h2 class="text-white font-bold flex items-center gap-2">
+          <i class="fas fa-search"></i> Pencarian Data Teknis (DMS)
+        </h2>
+        <p class="text-slate-300 text-sm mt-1">Cari dokumen drawing atau BOM Excel berdasarkan Material Number.</p>
+      </div>
+      <div class="p-6">
+        <form action="costing_page.htm" method="post" class="flex gap-4 max-w-2xl">
+          <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+          <input type="hidden" name="r" value="<%= GV_ROLE %>">
+          <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+          <input type="hidden" name="OnInputProcessing" value="search_dms">
+          
+          <div class="relative flex-grow">
+            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <i class="fas fa-box text-slate-400"></i>
+            </div>
+            <input type="text" name="matnr" placeholder="Masukkan Nomor Material (Contoh: 30013746)..." class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all" required>
+          </div>
+          <button type="submit" class="px-6 py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2">
+            <i class="fas fa-search"></i> Cari DMS
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- PENDING ECR COSTING -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-3">
+          <i class="fas fa-money-check-alt text-brand-600"></i> Costing Engineering Dashboard
+        </h1>
+        <p class="text-sm text-slate-500 mt-1">Evaluasi harga HPP dari perubahan BOM dan Drawing.</p>
+      </div>
+      <div class="px-4 py-2 bg-white rounded-xl shadow-sm border border-slate-200 flex items-center gap-3">
+        <div class="w-2 h-2 rounded-full bg-brand-500 animate-pulse"></div>
+        <span class="text-sm font-bold text-slate-700"><%= GV_REQUEST_COUNT %> ECR Menunggu Costing</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- KIRI: List ECR -->
+      <div class="lg:col-span-4 flex flex-col h-[800px]">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex-grow flex flex-col overflow-hidden">
+          <div class="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-700"><i class="fas fa-list-ul mr-2 text-slate-400"></i> Antrean ECR</h2>
+          </div>
+          <div class="flex-grow overflow-y-auto p-4 space-y-3 bg-slate-50/30">
+            <% IF GV_REQUEST_HTML IS INITIAL. %>
+              <div class="h-full flex flex-col items-center justify-center text-center p-6">
+                <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-slate-300 text-2xl">
+                  <i class="fas fa-check"></i>
+                </div>
+                <h3 class="text-sm font-bold text-slate-700 mb-1">Semua Selesai</h3>
+                <p class="text-xs text-slate-500">Tidak ada ECR baru yang butuh evaluasi harga.</p>
+              </div>
+            <% ELSE. %>
+              <%= GV_REQUEST_HTML %>
+            <% ENDIF. %>
+          </div>
+        </div>
+      </div>
+
+      <!-- KANAN: ECR Detail & Action -->
+      <div class="lg:col-span-8 flex flex-col">
+        <% IF GV_SELECTED_ECR IS INITIAL. %>
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 h-[800px] flex flex-col items-center justify-center text-center p-8">
+            <img src="https://cdn-icons-png.flaticon.com/512/2936/2936773.png" alt="Empty" class="w-32 h-32 opacity-20 mb-6 grayscale">
+            <h2 class="text-xl font-bold text-slate-700 mb-2">Pilih ECR di samping</h2>
+            <p class="text-slate-500 max-w-md">Silakan pilih salah satu Engineering Change Request dari antrean di sebelah kiri untuk melihat detailnya dan melakukan konfirmasi harga.</p>
+          </div>
+        <% ELSE. %>
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 h-[800px] flex flex-col overflow-hidden">
+            
+            <!-- HEADER DETAIL -->
+            <div class="p-6 border-b border-slate-100 flex items-start justify-between bg-gradient-to-r from-slate-50 to-white">
+              <div>
+                <div class="flex items-center gap-3 mb-2">
+                  <span class="text-sm font-bold text-brand-600 bg-brand-50 px-3 py-1 rounded-lg border border-brand-100 uppercase tracking-widest font-mono"><%= GV_SELECTED_ECR %></span>
+                  <span class="px-2.5 py-1 rounded-md text-[0.65rem] font-bold uppercase tracking-wider border bg-blue-50 text-blue-600 border-blue-200">
+                    BOM Approved
+                  </span>
+                </div>
+                <h2 class="text-xl font-bold text-slate-800">Detail Evaluasi Costing</h2>
+              </div>
+              <div class="flex gap-2">
+                <!-- Tombol Pintasan ke DMS Detail ECR ini -->
+                <form action="dms_list.htm" method="post">
+                  <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+                  <input type="hidden" name="r" value="<%= GV_ROLE %>">
+                  <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+                  <input type="hidden" name="matnr" value="<%= GV_SELECTED_ECR %>"> <!-- Search ECR in DMS -->
+                  <button type="submit" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-all shadow-sm border border-slate-200 flex items-center gap-2">
+                    <i class="fas fa-folder-open text-brand-600"></i> Buka Folder DMS ECR
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <!-- KONTEN -->
+            <div class="flex-grow p-6 overflow-y-auto bg-slate-50/30">
+              
+              <!-- Form Action -->
+              <div class="bg-white p-5 rounded-xl border border-emerald-200 shadow-sm mb-6">
+                <h3 class="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                  <i class="fas fa-check-circle text-emerald-500"></i> Konfirmasi Selesai Costing
+                </h3>
+                <p class="text-xs text-slate-500 mb-4">Jika Anda sudah mengevaluasi dan mengupdate harga (HPP) Material / BOM di SAP (MM03 / CK11N), klik tombol di bawah untuk menandai ECR ini sudah selesai dievaluasi Costing.</p>
+                
+                <form action="costing_page.htm" method="post" id="costingForm">
+                  <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+                  <input type="hidden" name="r" value="<%= GV_ROLE %>">
+                  <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+                  <input type="hidden" name="OnInputProcessing" value="update_cost">
+                  <input type="hidden" name="ecr_no" value="<%= GV_SELECTED_ECR %>">
+                  
+                  <div class="mb-4">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Catatan Costing (Opsional)</label>
+                    <textarea name="remarks" rows="2" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all" placeholder="Misal: Harga part 1234 diupdate menjadi Rp..."></textarea>
+                  </div>
+                  
+                  <button type="button" onclick="confirmCosting()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 w-full justify-center">
+                    <i class="fas fa-save"></i> Tandai Costing Selesai (Costed)
+                  </button>
+                </form>
+              </div>
+
+              <!-- History ECR -->
+              <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <h3 class="text-sm font-bold text-slate-700 uppercase tracking-wide mb-5 flex items-center gap-2">
+                  <i class="fas fa-history text-slate-400"></i> Audit Trail & Riwayat ECR
+                </h3>
+                <div class="pl-3 border-l-2 border-slate-100">
+                  <%= GV_AUDIT_HTML %>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        <% ENDIF. %>
+      </div>
+    </div>
+  </main>
+
+  <% IF GV_MESSAGE IS NOT INITIAL. %>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      Swal.fire({
+        icon: '<%= GV_ICON %>',
+        title: '<%= GV_ICON %>' === 'success' ? 'Berhasil!' : 'Perhatian',
+        text: '<%= GV_MESSAGE %>',
+        confirmButtonColor: '#0d9488'
+      });
+    });
+  </script>
+  <% ENDIF. %>
+
+  <script>
+    function confirmCosting() {
+      Swal.fire({
+        title: 'Konfirmasi Costing?',
+        text: "Apakah Anda yakin harga HPP untuk Material di ECR ini sudah selesai Anda update di SAP?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#059669',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Ya, Tandai Selesai!',
+        cancelButtonText: 'Batal'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          document.getElementById('costingForm').submit();
+        }
+      })
+    }
+  </script>
+</body>
+</html>

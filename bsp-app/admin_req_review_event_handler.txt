@@ -1,0 +1,485 @@
+" =======================================================================
+" Event Handler — admin_req_review.htm
+" V07: Handle approve, reject, update request
+" FIX 25 Jul: PERFORM → inline + field names match actual ZECM_LOG table
+" FIX 30 Jul: APPROVE — REMOVED double ALPHA_INPUT (IREQ already has leading zeros)
+" NOTE: ZECM_LOG uses user_id, action_date, reason (NOT created_by/at/note)
+" =======================================================================
+
+DATA: LV_ACTION        TYPE string,
+      LV_IREQ_ID       TYPE string,
+      LV_ASSIGNED_DRAFTER TYPE string,
+      LV_ADMIN_NOTE    TYPE string,
+      LV_ECR_NO        TYPE string,
+      LV_NUMBER        TYPE n LENGTH 10,
+      LV_TITLE         TYPE string,
+      LV_MATNR         TYPE string,
+      LV_MATNR_SAP     TYPE matnr,
+      LV_KATEGORI      TYPE string,
+      LV_PRIORITY      TYPE string,
+      LV_ZDEPT         TYPE string,
+      LV_ZREASON       TYPE string,
+      LV_DESCRIPTION   TYPE string,
+      LV_REDIRECT      TYPE string,
+      WA_IREQ          TYPE zecm_ireq,
+      WA_REQ           TYPE zecm_req,
+      WA_LOG           TYPE zecm_log,
+      WA_DEL_ATT       TYPE zecm_bom_att,
+      LV_TSTAMP        TYPE timestamp,
+      LV_DATE          TYPE d,
+      LV_TIME          TYPE t.
+
+" --- Get user info ---
+IF GV_USER_ID IS INITIAL.
+  GV_USER_ID = request->get_form_field( 'u' ).
+ENDIF.
+IF GV_FULL_NAME IS INITIAL.
+  GV_FULL_NAME = request->get_form_field( 'n' ).
+ENDIF.
+IF GV_ROLE IS INITIAL.
+  GV_ROLE = request->get_form_field( 'r' ).
+ENDIF.
+
+" --- Get form fields ---
+LV_ACTION  = request->get_form_field( 'OnInputProcessing' ).
+LV_IREQ_ID = request->get_form_field( 'ireq_id' ).
+
+" Session check
+IF GV_USER_ID IS INITIAL OR LV_IREQ_ID IS INITIAL.
+  GV_MESSAGE = 'Session expired.'. GV_ICON = 'error'.
+  navigation->goto_page( 'login.htm' ). RETURN.
+ENDIF.
+
+" ======================================================================
+" ACTION: APPROVE — Setujui Request & Buat ECO
+" ======================================================================
+
+" ======================================================================
+" ACTION: APPROVE_APRV — Setujui Request oleh Approver (REQ -> APPR)
+" ======================================================================
+IF LV_ACTION = 'approve_aprv'.
+  " 1. Get existing IREQ
+  SELECT SINGLE * FROM zecm_ireq INTO @WA_IREQ
+    WHERE ireq_id = @LV_IREQ_ID.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Request tidak ditemukan.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Prevent double approve
+  IF WA_IREQ-status <> 'REQ'.
+    GV_MESSAGE = 'Request sudah diproses sebelumnya.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Update IREQ Status: REQ -> APPR
+  WA_IREQ-status = 'APPR'.
+  UPDATE zecm_ireq FROM WA_IREQ.
+
+  IF sy-subrc = 0.
+    " Logging
+    DATA: ls_ireq_log TYPE zecm_log.
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+      IMPORTING number = ls_ireq_log-log_id.
+
+    ls_ireq_log-mandt       = sy-mandt.
+    ls_ireq_log-ecr_no      = LV_IREQ_ID.
+    ls_ireq_log-is_ireq     = 'X'.
+    ls_ireq_log-action      = 'APPR'.
+    ls_ireq_log-old_status  = 'REQ'.
+    ls_ireq_log-new_status  = 'APPR'.
+    ls_ireq_log-user_id     = GV_USER_ID.
+    ls_ireq_log-action_date = sy-datum.
+    ls_ireq_log-action_time = sy-uzeit.
+    ls_ireq_log-reason      = 'Approver menyetujui Pre-Request'.
+
+    INSERT zecm_log FROM ls_ireq_log.
+
+    GV_MESSAGE = 'Request Masuk berhasil di-approve (REQ > APPR).'.
+    GV_ICON    = 'success'.
+  ELSE.
+    GV_MESSAGE = 'Gagal approve Request Masuk.'.
+    GV_ICON    = 'error'.
+  ENDIF.
+
+  RETURN.
+ENDIF.
+
+IF LV_ACTION = 'approve'.
+
+  " Validate: IREQ tidak boleh status REQ (Harus di-approve R&D dulu kalau mau dari admin, tapi flow ini by default dilarang kliknya dari UI)
+  IF WA_IREQ-status = 'REQ'.
+    GV_MESSAGE = 'Request masih dalam peninjauan R&D. Tidak dapat disetujui (Buat ECO).'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Validate: drafter harus dipilih
+  LV_ASSIGNED_DRAFTER = request->get_form_field( 'assigned_drafter' ).
+  IF LV_ASSIGNED_DRAFTER IS INITIAL.
+    GV_MESSAGE = 'Silakan pilih Drafter terlebih dahulu.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " V14: Implementation Tracking diisi oleh Admin saat Buat ECO
+  DATA: lv_impl_po_adm     TYPE zecm_req-impl_po,
+        lv_impl_reason_adm TYPE zecm_req-impl_reason,
+        lv_raw_date_adm    TYPE string.
+
+  lv_impl_po_adm     = request->get_form_field( 'impl_po' ).
+  lv_impl_reason_adm = request->get_form_field( 'impl_reason' ).
+  lv_raw_date_adm    = request->get_form_field( 'impl_date' ).
+  REPLACE ALL OCCURRENCES OF '-' IN lv_raw_date_adm WITH ''.
+
+  IF lv_impl_po_adm IS INITIAL OR lv_raw_date_adm IS INITIAL OR lv_impl_reason_adm IS INITIAL.
+    GV_MESSAGE = 'Target PO, Tanggal Estimasi Jalan, dan Alasan Lapangan wajib diisi.'.
+    GV_ICON = 'warning'.
+    RETURN.
+  ENDIF.
+
+  " 1. Get existing IREQ
+  SELECT SINGLE * FROM zecm_ireq INTO @WA_IREQ
+    WHERE ireq_id = @LV_IREQ_ID.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Request tidak ditemukan.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Prevent double approve (Hanya boleh diproses jika status APPR atau INWK)
+  IF WA_IREQ-status = 'ECO' OR WA_IREQ-status = 'REJ' OR WA_IREQ-status = 'REQ'.
+    GV_MESSAGE = 'Request sudah diproses menjadi ECO atau belum disetujui R&D.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Cek apakah material ini sudah memiliki ECO lain yang masih berjalan
+  DATA: lv_exist_eco TYPE zecm_req.
+  SELECT SINGLE * FROM zecm_req INTO @lv_exist_eco 
+    WHERE matnr_fg = @WA_IREQ-matnr_fg 
+      AND status <> 'CLSD'.
+      
+  IF sy-subrc = 0.
+    GV_MESSAGE = 'Gagal! Material ini sudah masuk proses ECO lain yang belum ditutup.'. 
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " 2. Generate ECR number
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_REQ'
+    IMPORTING
+      number      = LV_NUMBER.
+
+  IF LV_NUMBER IS INITIAL.
+    GV_MESSAGE = 'Gagal generate ECR number.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  LV_ECR_NO = LV_NUMBER.
+  CONDENSE LV_ECR_NO NO-GAPS.
+
+  " 3. Get timestamp
+  GET TIME STAMP FIELD LV_TSTAMP.
+  CONVERT TIME STAMP LV_TSTAMP TIME ZONE sy-zonlo
+    INTO DATE LV_DATE TIME LV_TIME.
+
+  " 3b. matnr_fg from IREQ already has leading zeros (ALPHA_INPUT applied at submit)
+  LV_MATNR_SAP = WA_IREQ-matnr_fg.
+  CONDENSE LV_MATNR_SAP NO-GAPS.
+
+  " 4. INSERT into zecm_req (ECO baru)
+  CLEAR WA_REQ.
+  WA_REQ-ecr_no       = LV_ECR_NO.
+  WA_REQ-matnr_fg     = LV_MATNR_SAP.
+  WA_REQ-kategori     = WA_IREQ-kategori.
+  WA_REQ-priority     = WA_IREQ-priority.
+  WA_REQ-title        = WA_IREQ-title.
+  WA_REQ-descr        = WA_IREQ-description.
+  WA_REQ-zdept        = WA_IREQ-zdept.
+  WA_REQ-zreason      = WA_IREQ-zreason.
+  WA_REQ-status       = 'INWK'.
+  WA_REQ-change_scope = 'DRWG'.
+  
+  " V14: Implementation Tracking disimpan ke ECO baru
+  WA_REQ-impl_po      = lv_impl_po_adm.
+  WA_REQ-impl_date    = lv_raw_date_adm.
+  WA_REQ-impl_reason  = lv_impl_reason_adm.
+
+  WA_REQ-drafter      = LV_ASSIGNED_DRAFTER.
+  WA_REQ-requester    = WA_IREQ-requester.
+  WA_REQ-created_by   = GV_USER_ID.
+  WA_REQ-created_date = LV_DATE.
+  WA_REQ-created_time = LV_TIME.
+  WA_REQ-changed_date = LV_DATE.
+  WA_REQ-changed_time = LV_TIME.
+
+  INSERT zecm_req FROM WA_REQ.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Gagal membuat ECO.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " 5. UPDATE zecm_ireq (simpan juga info implementation tracking ke IREQ)
+  WA_IREQ-status           = 'ECO'.
+  WA_IREQ-ecr_no           = LV_ECR_NO.
+  WA_IREQ-assigned_drafter = LV_ASSIGNED_DRAFTER.
+  WA_IREQ-impl_po          = lv_impl_po_adm.
+  WA_IREQ-impl_date        = lv_raw_date_adm.
+  WA_IREQ-impl_reason      = lv_impl_reason_adm.
+
+  UPDATE zecm_ireq FROM WA_IREQ.
+
+  " 6. INSERT audit logs (4 entries: IREQ + ECR sides)
+  " Log 1: CREA for ECR audit trail (requester activity)
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id
+    EXCEPTIONS OTHERS = 1.
+  WA_LOG-ecr_no       = LV_ECR_NO.
+  WA_LOG-action       = 'CREA'.
+  WA_LOG-old_status   = ''.
+  WA_LOG-new_status   = 'REQ'.
+  WA_LOG-user_id      = WA_IREQ-requester.
+  WA_LOG-action_date  = WA_IREQ-req_date.
+  WA_LOG-action_time  = '000000'.
+  INSERT zecm_log FROM WA_LOG.
+
+  " Log 2: APPR for ECR audit trail (admin approval)
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id
+    EXCEPTIONS OTHERS = 1.
+  WA_LOG-ecr_no       = LV_ECR_NO.
+  WA_LOG-action       = 'APPR'.
+  WA_LOG-old_status   = 'REQ'.
+  WA_LOG-new_status   = 'INWK'.
+  WA_LOG-user_id      = GV_USER_ID.
+  WA_LOG-action_date  = LV_DATE.
+  WA_LOG-action_time  = LV_TIME.
+  INSERT zecm_log FROM WA_LOG.
+
+  " Hapus attachment temporary bukti owner approval (ZECM_BOM_ATT) saat di-approve Admin
+  DELETE FROM zecm_bom_att WHERE ecr_no = GV_IREQ_ID.
+
+  " Log 3: APPR for IREQ audit trail (so requester can see approval)
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id
+    EXCEPTIONS OTHERS = 1.
+  WA_LOG-ecr_no       = LV_IREQ_ID.
+  WA_LOG-action       = 'APPR'.
+  WA_LOG-old_status   = 'APPR'.
+  WA_LOG-new_status   = 'ECO'.
+  WA_LOG-user_id      = GV_USER_ID.
+  WA_LOG-action_date  = LV_DATE.
+  WA_LOG-action_time  = LV_TIME.
+  WA_LOG-is_ireq      = 'X'.
+  INSERT zecm_log FROM WA_LOG.
+
+  " 7. Success redirect
+  GV_MESSAGE = 'Request disetujui! ECO ' && LV_ECR_NO && ' berhasil dibuat.'.
+  GV_ICON = 'success'.
+  IF GV_ROLE = 'APPROVER'.
+    CONCATENATE 'approver_list.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO LV_REDIRECT.
+  ELSE.
+    CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO LV_REDIRECT.
+  ENDIF.
+  navigation->goto_page( LV_REDIRECT ).
+  RETURN.
+
+ENDIF.
+
+" ======================================================================
+" ACTION: REJECT — Tolak Request
+" ======================================================================
+IF LV_ACTION = 'reject'.
+
+  " Validate: alasan harus diisi
+  LV_ADMIN_NOTE = request->get_form_field( 'admin_note' ).
+  IF LV_ADMIN_NOTE IS INITIAL.
+    GV_MESSAGE = 'Alasan penolakan wajib diisi.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " 1. Get existing IREQ
+  SELECT SINGLE * FROM zecm_ireq INTO @WA_IREQ
+    WHERE ireq_id = @LV_IREQ_ID.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Request tidak ditemukan.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Prevent double reject (Boleh menolak jika statusnya APPR atau INWK)
+  IF WA_IREQ-status = 'ECO' OR WA_IREQ-status = 'REJ' OR WA_IREQ-status = 'REJC'.
+    GV_MESSAGE = 'Request sudah ditolak atau sudah diproses menjadi ECO.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " 2. Get timestamp
+  GET TIME STAMP FIELD LV_TSTAMP.
+  CONVERT TIME STAMP LV_TSTAMP TIME ZONE sy-zonlo
+    INTO DATE LV_DATE TIME LV_TIME.
+
+  " 3. UPDATE zecm_ireq
+  WA_IREQ-status     = 'REJC'.
+  WA_IREQ-admin_note = LV_ADMIN_NOTE.
+
+  UPDATE zecm_ireq FROM WA_IREQ.
+
+  " 4. INSERT audit log (ZECM_LOG uses reason — NOT log_note)
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id
+    EXCEPTIONS OTHERS = 1.
+  WA_LOG-ecr_no       = LV_IREQ_ID.
+  WA_LOG-action       = 'REJC'.
+  WA_LOG-old_status   = 'REQ'.
+  WA_LOG-new_status   = 'REJC'.
+  WA_LOG-reason       = LV_ADMIN_NOTE.
+  WA_LOG-user_id      = GV_USER_ID.
+  WA_LOG-action_date  = LV_DATE.
+  WA_LOG-action_time  = LV_TIME.
+  WA_LOG-is_ireq      = 'X'.
+
+  INSERT zecm_log FROM WA_LOG.
+
+  " 5. Success redirect
+  GV_MESSAGE = 'Request ditolak.'.
+  GV_ICON = 'success'.
+  IF GV_ROLE = 'APPROVER'.
+    CONCATENATE 'approver_list.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO LV_REDIRECT.
+  ELSE.
+    CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO LV_REDIRECT.
+  ENDIF.
+  navigation->goto_page( LV_REDIRECT ).
+  RETURN.
+
+ENDIF.
+
+" ======================================================================
+" ACTION: UPDATE — Simpan Perubahan Request
+" ======================================================================
+IF LV_ACTION = 'download_att'.
+  DATA: ls_dl_att TYPE zecm_bom_att,
+        lv_dl_att_id TYPE string.
+        
+  lv_dl_att_id = request->get_form_field( 'att_id' ).
+  SELECT SINGLE * FROM zecm_bom_att INTO @ls_dl_att WHERE att_id = @lv_dl_att_id.
+  IF sy-subrc = 0.
+    " Setup response for download
+    DATA: lv_content_type TYPE string.
+    lv_content_type = ls_dl_att-mime_type.
+    
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Type'
+        value = lv_content_type.
+        
+    CONCATENATE 'attachment; filename="' ls_dl_att-file_name '"' INTO DATA(lv_disp).
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Disposition'
+        value = lv_disp.
+        
+    CALL METHOD _m_response->set_data
+      EXPORTING
+        data = ls_dl_att-file_data.
+        
+    navigation->response_complete( ).
+    RETURN.
+  ENDIF.
+ENDIF.
+
+IF LV_ACTION = 'update'.
+
+  " 1. Get form values
+  LV_TITLE       = request->get_form_field( 'title' ).
+  LV_MATNR       = request->get_form_field( 'matnr_fg' ).
+  LV_KATEGORI    = request->get_form_field( 'kategori' ).
+  LV_PRIORITY    = request->get_form_field( 'priority' ).
+  LV_ZDEPT       = request->get_form_field( 'zdept' ).
+  LV_ZREASON     = request->get_form_field( 'zreason' ).
+  LV_DESCRIPTION = request->get_form_field( 'description' ).
+
+  " 2. Get existing IREQ
+  SELECT SINGLE * FROM zecm_ireq INTO @WA_IREQ
+    WHERE ireq_id = @LV_IREQ_ID.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Request tidak ditemukan.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Only REQ status can be edited
+  IF WA_IREQ-status <> 'REQ'.
+    GV_MESSAGE = 'Request sudah diproses, tidak bisa diedit.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " 3. Get timestamp
+  GET TIME STAMP FIELD LV_TSTAMP.
+  CONVERT TIME STAMP LV_TSTAMP TIME ZONE sy-zonlo
+    INTO DATE LV_DATE TIME LV_TIME.
+
+  " 4. UPDATE zecm_ireq
+  WA_IREQ-title       = LV_TITLE.
+  WA_IREQ-matnr_fg    = LV_MATNR.
+  WA_IREQ-kategori    = LV_KATEGORI.
+  WA_IREQ-priority    = LV_PRIORITY.
+  WA_IREQ-zdept       = LV_ZDEPT.
+  WA_IREQ-zreason     = LV_ZREASON.
+  WA_IREQ-description = LV_DESCRIPTION.
+
+  UPDATE zecm_ireq FROM WA_IREQ.
+
+  " 5. INSERT audit log
+  CLEAR WA_LOG.
+  
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id
+    EXCEPTIONS OTHERS = 1.
+  WA_LOG-ecr_no       = LV_IREQ_ID.
+  WA_LOG-action       = 'UPDT'.
+  WA_LOG-old_status   = 'REQ'.
+  WA_LOG-new_status   = 'REQ'.
+  WA_LOG-user_id      = GV_USER_ID.
+  WA_LOG-action_date  = LV_DATE.
+  WA_LOG-action_time  = LV_TIME.
+  WA_LOG-is_ireq      = 'X'.
+
+  INSERT zecm_log FROM WA_LOG.
+
+  " 6. Success redirect
+  GV_MESSAGE = 'Request berhasil diupdate.'.
+  GV_ICON = 'success'.
+  IF GV_ROLE = 'APPROVER'.
+    CONCATENATE 'approver_list.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO LV_REDIRECT.
+  ELSE.
+    CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO LV_REDIRECT.
+  ENDIF.
+  navigation->goto_page( LV_REDIRECT ).
+  RETURN.
+
+ENDIF.

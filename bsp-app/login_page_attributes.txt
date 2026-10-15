@@ -1,0 +1,2 @@
+DATA:
+  GV_MESSAGE TYPE string.

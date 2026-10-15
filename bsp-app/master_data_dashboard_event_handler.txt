@@ -1,0 +1,341 @@
+" =======================================================================
+" Event Handler — master_data_dashboard.htm
+" V08_e: Master Data Dashboard — BOM Gate Review
+" Handles: bom_approve, bom_reject, download_attachment
+" =======================================================================
+
+DATA: LV_ACTION      TYPE string,
+      LV_ECR_NO      TYPE string,
+      LV_REJECT_REASON TYPE string,
+      LV_URL         TYPE string,
+      LV_ATT_ID      TYPE string,
+      LV_REDIRECT    TYPE string,
+      WA_REQ         TYPE zecm_req,
+      WA_LOG         TYPE zecm_log,
+      LV_TSTAMP      TYPE timestamp,
+      LV_DATE        TYPE d,
+      LV_TIME        TYPE t,
+      ls_att         TYPE zecm_bom_att,
+      lv_file_data   TYPE xstring,
+      lv_mime        TYPE string,
+      lv_filename    TYPE string.
+
+" --- Get user info ---
+IF GV_USER_ID IS INITIAL.
+  GV_USER_ID = request->get_form_field( 'u' ).
+ENDIF.
+IF GV_FULL_NAME IS INITIAL.
+  GV_FULL_NAME = request->get_form_field( 'n' ).
+ENDIF.
+IF GV_ROLE IS INITIAL.
+  GV_ROLE = request->get_form_field( 'r' ).
+ENDIF.
+
+" --- Get action ---
+LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+LV_ECR_NO = request->get_form_field( 'ecr_no' ).
+
+" Session check
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ). RETURN.
+ENDIF.
+
+" Auth check
+IF GV_ROLE <> 'MASTER_DATA'.
+  navigation->goto_page( 'login.htm' ). RETURN.
+ENDIF.
+
+" Get timestamp
+GET TIME STAMP FIELD LV_TSTAMP.
+CONVERT TIME STAMP LV_TSTAMP TIME ZONE sy-zonlo
+  INTO DATE LV_DATE TIME LV_TIME.
+
+" ======================================================================
+" ACTION: BOM_APPROVE — Approve BOM, enable DMS upload for drafter
+" ======================================================================
+IF LV_ACTION = 'bom_approve'.
+
+  IF LV_ECR_NO IS INITIAL.
+    GV_MESSAGE = 'ECR number tidak valid.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 1. Get existing ECO
+  SELECT SINGLE * FROM zecm_req INTO @WA_REQ
+    WHERE ecr_no = @LV_ECR_NO.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'ECO tidak ditemukan.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " Must be pending
+  IF WA_REQ-bom_check <> 'P'.
+    GV_MESSAGE = 'BOM status bukan Pending.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 2. UPDATE BOM_CHECK to Approved and status to BMAP
+  UPDATE zecm_req SET bom_check = 'A',
+                      status = 'BMAP',
+                      changed_date = @sy-datum,
+                      changed_time = @sy-uzeit
+    WHERE ecr_no = @LV_ECR_NO.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Gagal approve BOM.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 3. INSERT audit log
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id.
+  WA_LOG-mandt       = sy-mandt.
+  WA_LOG-ecr_no      = LV_ECR_NO.
+  WA_LOG-action      = 'BOM_APPROVED'.
+  WA_LOG-old_status  = 'BMPR'.
+  WA_LOG-new_status  = 'BMAP'.
+  WA_LOG-user_id     = GV_USER_ID.
+  WA_LOG-action_date = LV_DATE.
+  WA_LOG-action_time = LV_TIME.
+  WA_LOG-reason      = 'BOM approved by Master Data'.
+  INSERT zecm_log FROM WA_LOG.
+
+  " 4. DELETE attachments (cleanup after approve)
+  DELETE FROM zecm_bom_att WHERE ecr_no = LV_ECR_NO.
+
+  " 5. Success
+  CONCATENATE 'BOM untuk ECO' LV_ECR_NO 'berhasil di-approve!' INTO GV_MESSAGE SEPARATED BY ' '.
+  GV_ICON = 'success'.
+
+ENDIF.
+
+" ======================================================================
+" ACTION: BOM_REJECT — Reject BOM, drafter must re-upload
+" ======================================================================
+IF LV_ACTION = 'bom_reject'.
+
+  IF LV_ECR_NO IS INITIAL.
+    GV_MESSAGE = 'ECR number tidak valid.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " Get reject reason
+  LV_REJECT_REASON = request->get_form_field( 'reject_reason' ).
+  IF LV_REJECT_REASON IS INITIAL.
+    GV_MESSAGE = 'Alasan reject wajib diisi.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 1. Get existing ECO
+  SELECT SINGLE * FROM zecm_req INTO @WA_REQ
+    WHERE ecr_no = @LV_ECR_NO.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'ECO tidak ditemukan.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " Must be pending
+  IF WA_REQ-bom_check <> 'P'.
+    GV_MESSAGE = 'BOM status bukan Pending.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 2. UPDATE BOM_CHECK to Rejected and status back to INWK
+  UPDATE zecm_req SET bom_check = 'R',
+                      status = 'INWK',
+                      changed_date = @sy-datum,
+                      changed_time = @sy-uzeit
+    WHERE ecr_no = @LV_ECR_NO.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Gagal reject BOM.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 3. INSERT audit log
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id.
+  WA_LOG-mandt       = sy-mandt.
+  WA_LOG-ecr_no      = LV_ECR_NO.
+  WA_LOG-action      = 'BOM_REJECTED'.
+  WA_LOG-old_status  = 'BMPR'.
+  WA_LOG-new_status  = 'INWK'.
+  WA_LOG-user_id     = GV_USER_ID.
+  WA_LOG-action_date = LV_DATE.
+  WA_LOG-action_time = LV_TIME.
+  WA_LOG-reason      = LV_REJECT_REASON.
+  INSERT zecm_log FROM WA_LOG.
+
+  " 4. Keep attachments (drafter needs to see what was rejected)
+
+  " 5. Success
+  CONCATENATE 'BOM untuk ECO' LV_ECR_NO 'ditolak.' INTO GV_MESSAGE SEPARATED BY ' '.
+  GV_ICON = 'success'.
+
+ENDIF.
+
+" ======================================================================
+" ======================================================================
+" ACTION: BOM_UNDO_APPROVE — Batal Approve, balik ke Pending
+" ======================================================================
+IF LV_ACTION = 'bom_undo_approve'.
+
+  IF LV_ECR_NO IS INITIAL.
+    GV_MESSAGE = 'ECR number tidak valid.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 1. Get existing ECO
+  SELECT SINGLE * FROM zecm_req INTO @WA_REQ
+    WHERE ecr_no = @LV_ECR_NO.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'ECO tidak ditemukan.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " Must be Approved and not yet submitted to inspection
+  IF WA_REQ-bom_check <> 'A' OR WA_REQ-status <> 'BMAP'.
+    GV_MESSAGE = 'Hanya BOM berstatus Approved yang bisa dibatalkan.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 2. UPDATE BOM_CHECK to Pending and status back to BMPR
+  UPDATE zecm_req SET bom_check = 'P',
+                      status = 'BMPR',
+                      changed_date = @sy-datum,
+                      changed_time = @sy-uzeit
+    WHERE ecr_no = @LV_ECR_NO.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Gagal membatalkan approval.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " 3. INSERT audit log
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id.
+  WA_LOG-mandt       = sy-mandt.
+  WA_LOG-ecr_no      = LV_ECR_NO.
+  WA_LOG-action      = 'BOM_UND_APPR'.
+  WA_LOG-old_status  = 'BMAP'.
+  WA_LOG-new_status  = 'BMPR'.
+  WA_LOG-user_id     = GV_USER_ID.
+  WA_LOG-action_date = LV_DATE.
+  WA_LOG-action_time = LV_TIME.
+  WA_LOG-reason      = 'Approval BOM dibatalkan oleh Master Data'.
+  INSERT zecm_log FROM WA_LOG.
+
+  " Note: We don't restore attachments because they were deleted during approval.
+  " But the status goes back to BMPR, meaning Drafter will see it as "Menunggu Review".
+  " Drafter shouldn't need to re-upload if it was just a mistaken approval.
+
+  " 4. Success
+  CONCATENATE 'Approval BOM untuk ECO' LV_ECR_NO 'berhasil dibatalkan.' INTO GV_MESSAGE SEPARATED BY ' '.
+  GV_ICON = 'success'.
+
+ENDIF.
+
+" ACTION: DOWNLOAD_ATTACHMENT — Serve file from ZECM_BOM_ATT
+" ======================================================================
+IF LV_ACTION = 'download_attachment'.
+
+  LV_ATT_ID = request->get_form_field( 'att_id' ).
+
+  IF LV_ECR_NO IS INITIAL OR LV_ATT_ID IS INITIAL.
+    GV_MESSAGE = 'Parameter tidak lengkap.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+
+  SELECT SINGLE * FROM zecm_bom_att INTO @ls_att
+    WHERE ecr_no = @LV_ECR_NO AND att_id = @LV_ATT_ID.
+
+  IF sy-subrc <> 0.
+    DATA: lv_dl_alpha TYPE zecm_bom_att-ecr_no.
+    lv_dl_alpha = LV_ECR_NO.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING input  = lv_dl_alpha
+      IMPORTING output = lv_dl_alpha.
+    SELECT SINGLE * FROM zecm_bom_att INTO @ls_att
+      WHERE ecr_no = @lv_dl_alpha AND att_id = @LV_ATT_ID.
+  ENDIF.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'File tidak ditemukan.'. GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " Serve binary
+  lv_file_data = ls_att-file_data.
+  lv_mime = ls_att-mime_type.
+  lv_filename = ls_att-file_name.
+
+  _m_response->set_header_field( name = 'Content-Type' value = lv_mime ).
+  CONCATENATE 'attachment; filename="' lv_filename '"' INTO lv_filename.
+  _m_response->set_header_field( name = 'Content-Disposition' value = lv_filename ).
+  _m_response->set_data( lv_file_data ).
+  RETURN.
+
+ENDIF.
+
+
+" ================================================================
+" CLOSE ROUTING REQUEST (CLSD) — already in ZECM_REQ
+" ================================================================
+IF LV_ACTION = 'execute_routing'.
+  DATA: LV_IROUTING_ID TYPE string,
+        WA_ROUTING     TYPE zecm_req,
+        LV_EXEC_NUM    TYPE numc10.
+
+  LV_IROUTING_ID = request->get_form_field( 'irouting_id' ).
+  " Convert to NUMC with leading zeros
+  LV_EXEC_NUM = LV_IROUTING_ID.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING input  = LV_EXEC_NUM
+    IMPORTING output = LV_EXEC_NUM.
+  LV_IROUTING_ID = LV_EXEC_NUM.
+
+  IF LV_IROUTING_ID IS NOT INITIAL.
+    SELECT SINGLE * FROM zecm_req INTO WA_ROUTING
+      WHERE ecr_no = LV_IROUTING_ID AND change_scope = 'ROUT'.
+    IF sy-subrc = 0.
+      IF WA_ROUTING-status = 'PAYR'.
+      " Update status directly in ZECM_REQ
+      WA_ROUTING-status = 'CLSD'.
+      WA_ROUTING-changed_date = sy-datum.
+      WA_ROUTING-changed_time = sy-uzeit.
+      UPDATE zecm_req FROM WA_ROUTING.
+
+      " 1. Catat Audit Log
+      CLEAR WA_LOG.
+      CALL FUNCTION 'NUMBER_GET_NEXT'
+        EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+        IMPORTING number = WA_LOG-log_id
+        EXCEPTIONS OTHERS = 1.
+      WA_LOG-ecr_no       = LV_IROUTING_ID.
+      WA_LOG-action       = 'CLSD'.
+      WA_LOG-old_status   = 'PAYR'.
+      WA_LOG-new_status   = 'CLSD'.
+      WA_LOG-user_id      = GV_USER_ID.
+      WA_LOG-action_date  = sy-datum.
+      WA_LOG-action_time  = sy-uzeit.
+      WA_LOG-reason       = 'Selesai dieksekusi di SAP'.
+      WA_LOG-is_ireq      = ''.
+      INSERT zecm_log FROM WA_LOG.
+
+      " 2. Hapus file lampiran (attachment) dari ZECM_BOM_ATT karena sudah selesai
+      DELETE FROM zecm_bom_att WHERE ecr_no = LV_IROUTING_ID.
+
+      GV_MESSAGE = 'Eksekusi Routing Selesai! Request REQ-' && LV_IROUTING_ID && ' telah di-close.'.
+      GV_ICON = 'success'.
+      ELSEIF WA_ROUTING-status = 'CLSD'.
+        GV_MESSAGE = 'Request REQ-' && LV_IROUTING_ID && ' sudah di-close sebelumnya.'.
+        GV_ICON = 'success'.
+      ELSE.
+        GV_MESSAGE = 'Gagal memproses eksekusi Routing. Status: ' && WA_ROUTING-status.
+        GV_ICON = 'error'.
+      ENDIF.
+    ELSE.
+      GV_MESSAGE = 'Data Request tidak ditemukan.'.
+      GV_ICON = 'error'.
+    ENDIF.
+  ENDIF.
+
+  CONCATENATE 'master_data_dashboard.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&tab=ROUTING' INTO LV_URL.
+  navigation->goto_page( LV_URL ).
+  RETURN.
+ENDIF.

@@ -1,0 +1,7 @@
+﻿DATA: lv_msg TYPE string.
+lv_msg = request->get_form_field( 'msg' ).
+IF lv_msg IS NOT INITIAL.
+  GV_MESSAGE = lv_msg.
+ELSE.
+  CLEAR GV_MESSAGE.
+ENDIF.

@@ -1,0 +1,16 @@
+* Page Attributes — requester_print.htm
+* V07_n: Cetak Request (Print PDF)
+
+GV_USER_ID   TYPE string
+GV_FULL_NAME TYPE string
+GV_ROLE      TYPE string
+
+GV_DATE_FROM TYPE string
+GV_DATE_TO   TYPE string
+
+GV_FILTER_STATUS TYPE string
+
+GV_PRINT_HTML  TYPE string
+GV_PRINT_COUNT TYPE string
+GV_SHOW_AUDIT  TYPE string
+

@@ -1,0 +1,59 @@
+<%@page language="abap"%>
+<!-- Universal Header -->
+<div class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
+  <div class="max-w-[1600px] mx-auto px-8 py-3 flex items-center justify-between">
+    <!-- Logo -->
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #059669, #047857);">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      </div>
+      <div>
+        <div class="text-sm font-bold text-slate-800">ECM System</div>
+        <div class="text-[0.65rem] text-slate-400 font-mono">PT. Kayu Mebel Indonesia</div>
+      </div>
+    </div>
+
+    <!-- Nav Links -->
+    <div class="flex items-center gap-2">
+      <% IF gv_role = 'DRAFTER'. %>
+        <a href="drafter_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+           class="px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg border border-brand-200 hover:bg-brand-100 transition-colors">
+          Task ECR
+        </a>
+        <a href="dms_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+           class="px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg border border-brand-200 hover:bg-brand-100 transition-colors">
+          DMS List
+        </a>
+      <% ELSEIF gv_role = 'APPROVER'. %>
+        <a href="approver_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+           class="px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg border border-brand-200 hover:bg-brand-100 transition-colors">
+          ECR Inspection
+        </a>
+        <a href="dms_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+           class="px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg border border-brand-200 hover:bg-brand-100 transition-colors">
+          DMS List
+        </a>
+      <% ELSEIF gv_role = 'ADMIN'. %>
+        <a href="admin_assign.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+           class="px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg border border-brand-200 hover:bg-brand-100 transition-colors">
+          Assign ECR
+        </a>
+        <a href="admin_ecr_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
+           class="px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg border border-brand-200 hover:bg-brand-100 transition-colors">
+          Monitoring ECR
+        </a>
+      <% ENDIF. %>
+    </div>
+
+    <!-- User Info -->
+    <div class="flex items-center gap-3">
+      <div class="text-right">
+        <div class="text-xs font-semibold text-slate-700"><%= gv_full_name %></div>
+        <div class="text-[0.6rem] text-slate-400 font-mono"><%= gv_role %></div>
+      </div>
+      <div class="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-bold">
+        <% IF gv_full_name IS NOT INITIAL. %><%= gv_full_name(1) %><% ELSE. %>?<% ENDIF. %>
+      </div>
+    </div>
+  </div>
+</div>

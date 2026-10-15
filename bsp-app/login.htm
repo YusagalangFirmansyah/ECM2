@@ -1,0 +1,203 @@
+﻿<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+  function toggleChangePwd() {
+    var form = document.getElementById("form-changepwd");
+    if(form.style.display === "none") {
+      form.style.display = "block";
+    } else {
+      form.style.display = "none";
+    }
+  }
+
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              200: '#a7f3d0',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#064e3b'
+            }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen flex items-center justify-center p-4">
+
+  <div class="flex flex-col md:flex-row w-full max-w-[820px] bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.08)]">
+
+    <!-- Branding Panel -->
+    <div class="w-full md:w-[38%] relative overflow-hidden flex flex-col items-center justify-center text-center p-10 pb-10 md:py-10 md:px-7" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+      <div class="absolute -top-[50px] -right-[40px] w-[160px] h-[160px] rounded-full opacity-70" style="background: radial-gradient(circle, rgba(16,185,129,0.18) 0%, transparent 70%);"></div>
+      <div class="absolute -bottom-[40px] -left-[30px] w-[120px] h-[120px] rounded-full opacity-70" style="background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);"></div>
+      <div class="relative z-10 w-[72px] h-[72px] bg-white rounded-2xl flex items-center justify-center mb-5 shadow-lg" style="transform: rotate(3deg);">
+        <i class="fas fa-cogs text-[28px] text-brand-600" style="transform: rotate(-3deg);"></i>
+      </div>
+      <h2 class="relative z-10 text-2xl font-extrabold text-white mb-1.5">ECM System</h2>
+      <p class="relative z-10 text-[0.72rem] text-brand-200 font-medium leading-relaxed">Engineering Change Management<br>PT. Kayu Mebel Indonesia</p>
+      <div class="relative z-10 flex gap-2 mt-5">
+        <span class="px-3 py-1 bg-white/10 rounded-full text-[0.62rem] font-bold text-brand-200 tracking-wide">DRW</span>
+        <span class="px-3 py-1 bg-white/10 rounded-full text-[0.62rem] font-bold text-brand-200 tracking-wide">DBX</span>
+        <span class="px-3 py-1 bg-white/10 rounded-full text-[0.62rem] font-bold text-brand-200 tracking-wide">DMT</span>
+      </div>
+    </div>
+
+    <!-- Form Panel -->
+    <div class="w-full md:w-[62%] p-10 pb-10 md:py-10 md:px-9 flex flex-col justify-center">
+      <h2 class="text-2xl font-extrabold text-slate-900 mb-1">Selamat Datang</h2>
+      <p class="text-[0.78rem] text-slate-500 font-medium mb-7">Silakan masuk menggunakan akun Anda.</p>
+
+      <form method="post" action="login.htm">
+          <input type="hidden" name="OnInputProcessing" value="login">
+        <input type="hidden" name="ref_url" value="<%= request->get_form_field( 'ref' ) %>">
+
+        <!-- User ID -->
+        <div class="mb-4">
+          <label class="block text-[0.7rem] font-bold text-slate-600 uppercase tracking-wide mb-1.5">User ID</label>
+          <div class="relative flex items-center">
+            <i class="fas fa-user absolute left-3.5 text-slate-400 text-[0.82rem] pointer-events-none"></i>
+            <input type="text" name="user_id" required placeholder="Masukkan User ID"
+              class="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-[10px] text-[0.82rem] font-semibold text-slate-900 bg-slate-50 outline-none transition-all focus:border-brand-600 focus:bg-white focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400 placeholder:font-medium">
+          </div>
+        </div>
+
+        <!-- Password -->
+        <div class="mb-4">
+          <label class="block text-[0.7rem] font-bold text-slate-600 uppercase tracking-wide mb-1.5">Password</label>
+          <div class="relative flex items-center">
+            <i class="fas fa-lock absolute left-3.5 text-slate-400 text-[0.82rem] pointer-events-none"></i>
+            <input type="password" name="password" id="pwd-input" required placeholder="Masukkan password"
+              class="w-full pl-10 pr-10 py-3 border border-slate-200 rounded-[10px] text-[0.82rem] font-semibold text-slate-900 bg-slate-50 outline-none transition-all focus:border-brand-600 focus:bg-white focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400 placeholder:font-medium">
+            <button type="button" class="absolute right-3.5 text-slate-400 text-[0.82rem] cursor-pointer transition-colors hover:text-brand-600 bg-transparent border-none p-1" onclick="togglePassword()">
+              <i class="fas fa-eye" id="eye-icon"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Options -->
+        <div class="flex items-center justify-between mb-6">
+          <label class="flex items-center gap-1.5 text-[0.75rem] text-slate-500 font-medium cursor-pointer">
+            <input type="checkbox" class="w-4 h-4 rounded accent-brand-600 cursor-pointer"> Ingat saya
+          </label>
+          <a href="javascript:void(0)" onclick="toggleChangePwd()" class="text-[0.72rem] font-bold text-brand-600 hover:text-brand-700 transition-colors">Ganti Password</a>
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex gap-2.5 mb-6">
+          <button type="button" onclick="window.history.back()"
+            class="flex-1 py-3 border border-slate-200 rounded-[10px] bg-white text-slate-500 text-[0.78rem] font-bold font-sans cursor-pointer flex items-center justify-center gap-1.5 transition-colors hover:bg-slate-50">
+            <i class="fas fa-arrow-left text-[0.7rem]"></i> Kembali
+          </button>
+          <button type="submit" name="OnInputProcessing" value="login"
+            class="flex-[2] py-3 border-none rounded-[10px] bg-brand-600 text-white text-[0.78rem] font-bold font-sans cursor-pointer flex items-center justify-center gap-2 transition-all hover:bg-brand-700 shadow-sm shadow-brand-600/25">
+            <i class="fas fa-sign-in-alt text-[0.72rem]"></i> Masuk
+          </button>
+        </div>
+      </form>
+
+      <!-- Form Ganti Password -->
+      <form id="form-changepwd" method="post" action="login.htm" style="display:none;" class="mt-4 border-t border-slate-100 pt-4">
+        <h3 class="text-sm font-bold text-slate-800 mb-3">Ganti Password</h3>
+        
+        <div class="mb-3">
+          <label class="block text-[0.65rem] font-bold text-slate-600 uppercase tracking-wide mb-1">User ID</label>
+          <input type="text" name="cp_user_id" required placeholder="User ID Anda"
+            class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-100">
+        </div>
+        
+        <div class="mb-3">
+          <label class="block text-[0.65rem] font-bold text-slate-600 uppercase tracking-wide mb-1">Password Lama</label>
+          <input type="password" name="cp_old_pwd" required placeholder="Password Saat Ini"
+            class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-100">
+        </div>
+        
+        <div class="mb-4">
+          <label class="block text-[0.65rem] font-bold text-slate-600 uppercase tracking-wide mb-1">Password Baru</label>
+          <input type="password" name="cp_new_pwd" required placeholder="Password Baru"
+            class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-100">
+        </div>
+        
+        <div class="flex gap-2">
+          <button type="button" onclick="toggleChangePwd()"
+            class="flex-1 py-2 border border-slate-200 rounded-lg bg-white text-slate-500 text-xs font-bold hover:bg-slate-50">Batal</button>
+          <button type="submit" name="OnInputProcessing" value="change_pwd"
+            class="flex-1 py-2 border-none rounded-lg bg-slate-800 text-white text-xs font-bold hover:bg-slate-900">Ubah Password</button>
+        </div>
+      </form>
+
+      <p class="text-center text-[0.62rem] text-slate-300 font-semibold">&copy; 2026 PT. Kayu Mebel Indonesia &mdash; ECM System v1.0</p>
+    </div>
+  </div>
+
+<script>
+  function togglePassword() {
+    var pwd = document.getElementById("pwd-input");
+    var icon = document.getElementById("eye-icon");
+    if (pwd.type === "password") {
+      pwd.type = "text";
+      icon.classList.remove("fa-eye");
+      icon.classList.add("fa-eye-slash");
+    } else {
+      pwd.type = "password";
+      icon.classList.remove("fa-eye-slash");
+      icon.classList.add("fa-eye");
+    }
+  }
+</script>
+
+<% IF GV_MESSAGE IS NOT INITIAL. %>
+  <script>
+    setTimeout(function() {
+      var msg = '<%= GV_MESSAGE %>';
+      var isError = msg.indexOf("GAGAL") >= 0;
+      Swal.fire({
+        icon: isError ? 'error' : 'success',
+        title: isError ? 'Login Gagal' : 'Login Berhasil',
+        text: msg,
+        confirmButtonColor: '#059669',
+        customClass: {
+          popup: 'rounded-2xl',
+          confirmButton: 'rounded-lg px-6 py-2.5 font-bold'
+        }
+      }).then(function() {
+        if (window.history.replaceState) {
+          window.history.replaceState(null, null, window.location.href);
+        }
+      });
+    }, 50);
+  </script>
+<% ENDIF. %>
+
+</body>
+</html>

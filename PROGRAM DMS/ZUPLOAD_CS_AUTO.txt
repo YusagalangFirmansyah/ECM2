@@ -1,0 +1,2159 @@
+*======================================================================
+* PROGRAM : ZUPLOAD_CS_AUTO
+* DESKRIPSI: Auto Upload File ke SAP DMS Content Server
+*            dan linking ke BOM material
+*
+* KONTEKS BISNIS:
+*   Perusahaan bergerak di bidang wood working / furnitur.
+*   Dokumen produksi dibagi per divisi dalam tipe dokumen SAP DMS:
+*
+*   DRW (Wood Division):
+*     Dokumen untuk produk berbahan kayu.
+*     Original file: Drawing produk (.DRW) dan BOM (.BOM) -> format PDF
+*
+*   DMT (Metal Division):
+*     Dokumen untuk produk berbahan metal/logam.
+*     Original file: Drawing produk (.DRW) dan BOM (.BOM) -> format PDF
+*
+*   DBX (Box Division):
+*     Dokumen untuk produk packaging/box.
+*     Original file: Drawing desain box (.DRW), BOM (.BOM),
+*                    dan Assembly Instruction untuk dicetak
+*                    dan dimasukkan ke dalam box (.ASM, .ASM2, dst)
+*                    -> format PDF
+*
+*   TDS (Technical Data Sheet):
+*     Dokumen technical data sheet untuk material HALB.
+*     Original file: Technical Data Sheet (.TDS) -> format XLSX (tidak dikonversi)
+*     Berbeda dengan DRW/DMT/DBX: file disimpan as-is dalam format Excel.
+*     BOM linking sama dengan DRW/DMT/DBX, breakdown dimulai dari HALB.
+*     Default Appl di Document Type TDS = XLS.
+*     Dalam praktik selalu format baru karena melalui BSP Renamer.
+*
+* FORMAT NAMA FILE:
+*   FORMAT LAMA (backward compatible):
+*     [DOKAR]_[DESCRIPTION].[CONTENT_CODE].pdf    <- DRW/DMT/DBX
+*     [DOKAR]_[DESCRIPTION].[CONTENT_CODE].xlsx   <- TDS
+*
+*   FORMAT BARU (MATNR eksplisit, lebih akurat):
+*     [DOKAR]_[MATNR]_[DESCRIPTION].[CONTENT_CODE].pdf    <- DRW/DMT/DBX
+*     [DOKAR]_[MATNR]_[DESCRIPTION].[CONTENT_CODE].xlsx   <- TDS
+*
+*   Dalam praktik TDS selalu format baru karena melalui BSP Renamer
+*   yang sudah menyertakan MATNR eksplisit di nama file.
+*
+*   Deteksi otomatis: jika token setelah prefix sebelum '_' berikutnya
+*   adalah pure numeric (min 4 digit) -> diperlakukan sebagai MATNR.
+*   Format lama tidak berubah sama sekali (backward compatible).
+*
+*   Contoh format lama:
+*     DRW_Cabinet Base Unit.DRW.pdf
+*     DRW_Cabinet Base Unit.BOM.pdf
+*     DBX_Cabinet Base Unit Box.ASM.pdf
+*     DMT_Hinge Bracket L50.BOM.pdf
+*
+*   Contoh format baru DRW/DMT/DBX:
+*     DRW_19804726_PALAIS 4D LIGHT R24053.DRW.pdf
+*     DRW_19804726_PALAIS 4D LIGHT R24053.BOM.pdf
+*     DBX_20001234_Cabinet Box Large.ASM.pdf
+*     DMT_10005678_Hinge Bracket L50.DRW.pdf
+*
+*   Contoh format TDS:
+*     TDS_H8317XCG001_SHAPED LEG CONSOLE 309 PTG.TDS.xlsx
+*     TDS_19804726_PALAIS 4D LIGHT R24053.TDS.xlsx
+*
+* CONTENT CODE:
+*   .DRW  -> Drawing            (konversi DWG/CAD -> PDF)
+*   .BOM  -> Bill of Material   (konversi Excel -> PDF)
+*   .ASM  -> Assembly Instruction (DBX: dicetak, dimasukkan ke box)
+*   .ASM2, .ASM3, dst -> Assembly Instruction ke-2, ke-3, dst
+*   .TDS  -> Technical Data Sheet (Excel as-is, tidak dikonversi ke PDF)
+*   .SPC  -> Specification      (future)
+*   .QC   -> Quality Certificate (future)
+*   .MAN  -> Manual/Work Instruction (future)
+*   .RPT  -> Report             (future)
+*
+* ATURAN REPLACE:
+*   Nama file IDENTIK dengan yang ada di SAP DMS -> REPLACE file lama
+*   Nama file BERBEDA                            -> ADD sebagai original baru
+*
+*   Mekanisme replace menggunakan lo_objid + ph_objid (KPRO internal key)
+*   yang dibaca via CVAPI_DOC_GETDETAIL -> PT_FILES (struktur CVAPI_DOC_FILE).
+*   Key ini yang dipakai oleh kpro_file_fill (di LCV115F04) untuk match:
+*     lo_objid + ph_objid terisi -> lf_flag='U' -> UPDATE (replace) file itu saja
+*     lo_objid + ph_objid kosong -> lf_flag='I' -> INSERT sebagai original baru
+*   File lain di dokumen yang sama TIDAK tersentuh.
+*
+* BACKWARD COMPATIBILITY (format lama, DRW/DMT/DBX saja):
+*   [DOKAR]_[DESC]_xls.pdf -> diperlakukan sebagai .BOM
+*   [DOKAR]_[DESC].pdf     -> diperlakukan sebagai .DRW
+*   TDS tidak punya format lama - selalu format baru dengan MATNR eksplisit.
+*
+* PENCARIAN DOKUMEN:
+*   Format baru: MATNR diambil langsung dari nama file -> validasi ke MARA
+*   Format lama: lookup via deskripsi produk (MAKT-MAKTX) -> MATNR -> DRAD -> DRAW
+*
+* NAIK VERSI (dari status FR):
+*   Versi lama FR -> ZG (sementara, untuk unlock)
+*   Versi baru dibuat -> AA -> IA (checkin)
+*   Setelah checkin berhasil -> versi lama ZG -> IA -> AP -> FR kembali
+*
+* HANDLING ERROR:
+*   File yang gagal diproses dipindahkan ke subfolder /error/
+*   dengan suffix timestamp agar background job tidak
+*   mengeksekusinya berkali-kali.
+*   Format: [nama_asli].[YYYYMMDD_HHMMSS].err
+*
+* SAP VERSION:
+*   SAP S/4 HANA 1809 (On-Premise) - Support Stack 03
+*   SAP Basis 7.53 SP74
+*
+* AUTHOR  : [nama]
+* DATE    : [tanggal]
+* CHANGE LOG:
+*   v27 - Perbaikan mekanisme replace original file.
+*         Sebelumnya: pf_replace='X' tanpa lo_objid/ph_objid
+*                     -> file terus bertambah atau file lain ikut terhapus.
+*         Sekarang  : lo_objid+ph_objid diambil dari CVAPI_DOC_GETDETAIL
+*                     -> kpro_file_fill match tepat, hanya file target
+*                     yang di-replace, file lain aman.
+*   v28 - Restore versi lama ke FR setelah versi baru berhasil naik.
+*         Tambah move_to_error_folder: file gagal dipindah ke /error/
+*         agar background job tidak mengeksekusi ulang.
+*   v29 - Fix bug: MAKT lookup gagal karena description di-uppercase
+*         sebelum query ke MAKT (yang menyimpan mixed case).
+*         Hapus TRANSLATE lv_work TO UPPER CASE dan
+*         SPLIT lv_work AT ' REV' di FORM parse_filename Step 5.
+*         Description sekarang disimpan as-is (case asli dari nama file).
+*   v30 - STEP 2: MATNR tidak ditemukan -> file DITOLAK (ERROR + error folder).
+*         Sebelumnya: lanjut proses tanpa BOM link -> membuat dokumen yatim.
+*         Sekarang  : strict, file harus match MATNR sebelum diproses.
+*         Tambah fallback lookup: coba ganti '-' -> '/' sebelum menyerah,
+*         karena nama file tidak bisa pakai '/' tapi MAKT menyimpannya
+*         (konvensi: drafter tulis '-', MAKT tulis '/', misal W- -> W/).
+*   v32 - Fix find_best_document: prioritas IA dinaikkan ke prio=1.
+*         Sebelumnya: IA=prio 3, FR=prio 1 -> jika ada versi IA dan FR
+*         sekaligus (misal v01=IA, v00=FR), program salah memilih v00
+*         -> naik versi sia-sia -> BOM file dobel karena ADD-NEW ke
+*         versi baru yang kosong, bukan REPLACE ke versi IA yang ada.
+*         Sekarang  : IA=prio 1 -> versi In Work selalu dipilih duluan
+*         -> REPLACE file langsung tanpa naik versi tidak perlu.
+*   v31 - Fix FORM restore_to_fr: ubah alur ZG->FR menjadi ZG->IA->AP->FR.
+*         Sebelumnya: ZG->FR langsung -> GAGAL karena tidak valid di
+*         status network (error: RE does not follow RJ).
+*         Sekarang  : ZG->IA->AP->FR mengikuti alur yang terbukti valid
+*         di BSP approval app (ZDMS_LIST), menggunakan statusintern
+*         konsisten dengan kode APPROVE di BSP.
+*   v33 - Tambah MATNR opsional di nama file (format baru, backward compatible).
+*         Format baru: [DOKAR]_[MATNR]_[DESCRIPTION].[CODE].pdf
+*         Deteksi: token setelah prefix, sebelum '_' berikutnya, pure numeric
+*         -> diperlakukan sebagai MATNR, skip MAKT lookup.
+*         Format lama tetap berjalan tanpa perubahan apapun.
+*         Motivasi: deskripsi di nama file kadang tidak cocok dengan MAKT
+*         (typo, abbreviasi, karakter khusus) -> MATNR eksplisit lebih akurat.
+*         Perubahan:
+*           1. ty_parsed_file: tambah field matnr TYPE matnr
+*           2. FORM parse_filename: tambah Step 3 deteksi token numeric
+*           3. STEP 2: jika ls_parsed-matnr terisi -> validasi ke MARA
+*                      jika kosong -> fallback MAKT lookup (existing)
+*   v33a- Fix deteksi MATNR format baru: tidak lagi terbatas pure numeric.
+*         Masalah v33: MATNR seperti '01.279205330', '34.85911-435-2SPL',
+*         '23.MH980F01-QHB/FB' gagal terdeteksi karena ada titik/huruf/strip.
+*         Solusi: validasi langsung ke MARA (bukan cek karakter).
+*         Jika token setelah prefix (min 4 char, sebelum '_' pertama) ditemukan
+*         di MARA -> format baru. Jika tidak -> format lama (MAKT lookup).
+*         Fallback '-' -> '/' saat lookup MARA untuk MATNR dengan garis miring
+*         (konvensi sama seperti JALUR B: drafter tulis '-', SAP simpan '/').
+*         Perubahan:
+*           1. FORM parse_filename Step 3: hapus cek pure numeric,
+*              ganti dengan SELECT ke MARA (dengan fallback '-'->'/')
+*           2. STEP 2 JALUR A: tambah fallback '-' -> '/' untuk MATNR
+*              yang mengandung garis miring (misal: 23.MH980F01-QHB/FB)
+*   v33b- Fix lookup MARA dan tambah fallback ke MAKT via description.
+*         Masalah v33a: MATNR '30013196' gagal ditemukan karena
+*         CONVERSION_EXIT_ALPHA_INPUT mengubahnya jadi '000000000030013196'.
+*         Solusi: 5 percobaan lookup secara berurutan:
+*           Coba 1: as-is ke MARA via TYPE matnr (char, trim otomatis)
+*           Coba 2: dengan ALPHA_INPUT (leading zero, untuk numeric standar)
+*           Coba 3: ganti '-'->'/' as-is (untuk MATNR dengan slash)
+*           Coba 4: ganti '-'->'/' + ALPHA_INPUT (kombinasi)
+*           Coba 5: fallback - MARA gagal -> sisa setelah '_' dicoba
+*                   sebagai description ke MAKT (JALUR B).
+*         Perubahan: FORM parse_filename Step 3
+*   v34 - Tambah parameter p_wer2 untuk plant kedua.
+*         Pendekatan minimal: tetap pakai PARAMETERS TYPE werks_d
+*         (tidak pakai SELECT-OPTIONS agar tidak ada perubahan syntax).
+*         Perubahan hanya di 4 titik:
+*           1. Selection screen: tambah p_wer2
+*           2. INITIALIZATION: tambah lbl_wr2
+*           3. Header output: tampilkan p_werks & p_wer2
+*           4. FORM collect_all_bom_materials: WHERE werks filter 2 plant
+*           5. FORM add_bom_header_link: WHERE werks filter 2 plant
+*         Cara pakai:
+*           p_werks='2000', p_wer2=''     -> plant 2000 saja
+*           p_werks='2000', p_wer2='3000' -> plant 2000 DAN 3000
+*           p_werks='',     p_wer2=''     -> semua plant
+*   v35 - Tambah Document Type SSC (System Sheet Color). [RENAMED ke TDS di v36]
+*         TDS berbeda dari DRW/DMT/DBX dalam 2 hal saja:
+*           1. Ekstensi file: .xlsx (bukan .pdf) - tidak dikonversi
+*           2. DAPPL checkin: 'XLS' (bukan 'PDF')
+*         BOM linking diperlakukan SAMA dengan DRW/DMT/DBX.
+*         TDS breakdown dimulai dari HALB sehingga hasilnya lebih
+*         pendek, tapi mekanisme identik.
+*         Format nama file TDS sama dengan DRW/DMT/DBX (lama & baru):
+*           Format lama: TDS_[DESCRIPTION].TDS.xlsx
+*           Format baru: TDS_[MATNR]_[DESCRIPTION].TDS.xlsx
+*         Dalam praktik TDS selalu format baru karena melalui BSP
+*         Renamer yang sudah menyertakan MATNR eksplisit.
+*         Perubahan:
+*           1. Konstanta: tambah gc_pfx_ssc, gc_dok_ssc
+*           2. parse_filename Step 1: validasi ekstensi support .pdf DAN .xlsx
+*              (TDS = .xlsx, DRW/DMT/DBX = .pdf)
+*           3. parse_filename Step 2: tambah deteksi prefix TDS_
+*           4. parse_filename Step 4: tambah .TDS ke CASE content code
+*           5. STEP 7: ls_files_x-dappl = 'XLS' jika lv_dokar = gc_dok_ssc,
+*              selain itu tetap 'PDF'
+*           6. Header output: tambah info TDS
+*   v36 - Rename Document Type SSC -> TDS (Technical Data Sheet).
+*         Keputusan tim: nama TDS lebih deskriptif dan sesuai konvensi.
+*         Perubahan hanya pada nama konstanta dan string:
+*           gc_pfx_ssc -> gc_pfx_tds
+*           gc_dok_ssc -> gc_dok_tds
+*           Semua referensi "SSC" di prefix/content code -> "TDS" [done]
+*         Logic tidak berubah sama sekali.
+*======================================================================
+REPORT zupload_cs_auto. "v36
+
+*----------------------------------------------------------------------
+* Selection Screen
+*----------------------------------------------------------------------
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE blk1.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_dir FOR FIELD p_dir.
+  PARAMETERS: p_dir TYPE c LENGTH 255 LOWER CASE
+              DEFAULT '/mnt/sap_media/engineering' OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_prt FOR FIELD p_doktl.
+  PARAMETERS: p_doktl TYPE draw-doktl DEFAULT '000' OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_stc FOR FIELD p_stcat.
+  PARAMETERS: p_stcat TYPE c LENGTH 4 DEFAULT 'ZDMS' OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_wrk FOR FIELD p_werks.
+  PARAMETERS: p_werks TYPE werks_d DEFAULT '2000'.
+SELECTION-SCREEN END OF LINE.
+
+*----------------------------------------------------------------------
+* v34: Tambah plant kedua (opsional).
+*      Kosongkan jika hanya butuh 1 plant.
+*      Contoh: p_werks='2000' p_wer2='3000' -> filter plant 2000 & 3000
+*----------------------------------------------------------------------
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_wr2 FOR FIELD p_wer2.
+  PARAMETERS: p_wer2 TYPE werks_d.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_usg FOR FIELD p_stlan.
+  PARAMETERS: p_stlan TYPE stlan DEFAULT '1' OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_mlv FOR FIELD p_maxlv.
+  PARAMETERS: p_maxlv TYPE i DEFAULT 25 OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(30) lbl_tst FOR FIELD p_test.
+  PARAMETERS: p_test TYPE c AS CHECKBOX DEFAULT space.
+SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+*----------------------------------------------------------------------
+* Konstanta: Mapping Prefix Nama File -> DOKAR SAP DMS
+*----------------------------------------------------------------------
+CONSTANTS:
+  gc_pfx_drw TYPE c LENGTH 4 VALUE 'DRW_',
+  gc_pfx_dbx TYPE c LENGTH 4 VALUE 'DBX_',
+  gc_pfx_dmt TYPE c LENGTH 4 VALUE 'DMT_',
+  gc_pfx_tds TYPE c LENGTH 4 VALUE 'TDS_',   "v35->v36: Technical Data Sheet
+
+  gc_dok_drw TYPE draw-dokar VALUE 'DRW',
+  gc_dok_dbx TYPE draw-dokar VALUE 'DBX',
+  gc_dok_dmt TYPE draw-dokar VALUE 'DMT',
+  gc_dok_tds TYPE draw-dokar VALUE 'TDS'.     "v36: Technical Data Sheet
+
+*----------------------------------------------------------------------
+* Konstanta: Status Eksternal Dokumen SAP DMS
+*----------------------------------------------------------------------
+CONSTANTS:
+  gc_st_aa TYPE draw-dokst VALUE 'AA',
+  gc_st_ia TYPE draw-dokst VALUE 'IA',
+  gc_st_fr TYPE draw-dokst VALUE 'FR',
+  gc_st_zg TYPE draw-dokst VALUE 'ZG'.
+
+*----------------------------------------------------------------------
+* Types
+*----------------------------------------------------------------------
+" Log per file yang diproses
+TYPES: BEGIN OF ty_log,
+         file   TYPE string,
+         doknr  TYPE draw-doknr,
+         dokvr  TYPE draw-dokvr,
+         dokar  TYPE draw-dokar,
+         ctcode TYPE c LENGTH 6,
+         status TYPE c LENGTH 10,
+         msgty  TYPE c LENGTH 1,
+         msgid  TYPE symsgid,
+         msgno  TYPE symsgno,
+         msgv1  TYPE symsgv,
+         msgv2  TYPE symsgv,
+         msgv3  TYPE symsgv,
+         msgv4  TYPE symsgv,
+         msg    TYPE string,
+       END OF ty_log.
+
+" Cache lookup dokumen per material+dokar
+TYPES: BEGIN OF ty_doc_cache,
+         matnr     TYPE matnr,
+         dokar     TYPE draw-dokar,
+         doknr     TYPE draw-doknr,
+         dokvr     TYPE draw-dokvr,
+         dokst     TYPE draw-dokst,
+         processed TYPE c LENGTH 1,
+       END OF ty_doc_cache.
+
+" Hasil parse nama file
+" v33: tambah field matnr untuk format baru [DOKAR]_[MATNR]_[DESC].[CODE].pdf
+TYPES: BEGIN OF ty_parsed_file,
+         raw_name     TYPE string,
+         dokar        TYPE draw-dokar,
+         matnr        TYPE matnr,        " v33: MATNR dari nama file (opsional)
+         description  TYPE string,
+         content_code TYPE c LENGTH 6,
+         is_valid     TYPE abap_bool,
+         skip_reason  TYPE string,
+       END OF ty_parsed_file.
+
+" Original file dari SAP DMS.
+" lo_objid + ph_objid adalah KPRO internal key - dipakai sebagai
+" key match di kpro_file_fill (LCV115F04) untuk replace tepat sasaran.
+" Diambil dari CVAPI_DOC_GETDETAIL -> PT_FILES (struktur CVAPI_DOC_FILE).
+TYPES: BEGIN OF ty_original,
+         dokar    TYPE dms_doc_files-dokar,
+         doknr    TYPE dms_doc_files-doknr,
+         dokvr    TYPE dms_doc_files-dokvr,
+         doktl    TYPE dms_doc_files-doktl,
+         dappl    TYPE dms_doc_files-dappl,
+         filename TYPE dms_doc_files-filename,
+         appnr    TYPE cvapi_doc_file-appnr,
+         lo_objid TYPE cvapi_doc_file-lo_objid,   " KPRO Logical Object ID
+         ph_objid TYPE cvapi_doc_file-ph_objid,   " KPRO Physical Object ID
+       END OF ty_original.
+
+*----------------------------------------------------------------------
+* Global Data
+*----------------------------------------------------------------------
+DATA: gt_log       TYPE STANDARD TABLE OF ty_log,
+      gs_log       TYPE ty_log,
+      gt_doc_cache TYPE STANDARD TABLE OF ty_doc_cache,
+      gs_cache     TYPE ty_doc_cache.
+
+DATA: lt_dir_list TYPE TABLE OF eps2fili,
+      ls_dir_list TYPE eps2fili,
+      lv_eps_dir  TYPE eps2filnam.
+
+DATA: lv_fullpath    TYPE string,
+      lv_filesize    TYPE i,
+      lv_len         TYPE i,
+      lv_clean_dir   TYPE string,
+      lv_clean_name  TYPE string.
+
+DATA: lv_maktx       TYPE makt-maktx,
+      lv_desc_40     TYPE string,
+      lv_matnr       TYPE matnr,
+      lv_size_str    TYPE string,
+      lv_skip_msg    TYPE string,
+      lv_success_msg TYPE string,
+      lv_msg_link    TYPE string,
+      lv_msg_tst     TYPE string.
+
+DATA: lv_desc_sap     TYPE c LENGTH 40,
+      lv_offset       TYPE i,
+      lv_dokar        TYPE draw-dokar,
+      lv_docnum       TYPE draw-doknr,
+      lv_next_ver     TYPE draw-dokvr,
+      lv_curr_dokst   TYPE draw-dokst,
+      lv_is_exist     TYPE c LENGTH 1,
+      lv_dyn_replace  TYPE c LENGTH 1,
+      lv_content_code TYPE c LENGTH 6.
+
+DATA: ls_document TYPE bapi_doc_draw2,
+      ls_return   TYPE bapiret2,
+      ls_message  TYPE messages,
+      ls_files_x  TYPE cvapi_doc_file,
+      ls_content  TYPE drao.
+
+DATA: lt_files_x  TYPE STANDARD TABLE OF cvapi_doc_file,
+      lt_content  TYPE STANDARD TABLE OF drao,
+      lt_objlinks TYPE STANDARD TABLE OF bapi_doc_drad,
+      ls_objlinks TYPE bapi_doc_drad.
+
+DATA: lt_originals  TYPE STANDARD TABLE OF ty_original,
+      lv_file_found TYPE abap_bool,
+      lv_basename   TYPE string,
+      lv_replace_fl TYPE c LENGTH 1.
+
+DATA: lv_stlnr TYPE mast-stlnr,
+      lv_stlal TYPE mast-stlal,
+      lv_objky TYPE drad-objky.
+
+DATA: gv_total   TYPE i,
+      gv_success TYPE i,
+      gv_failed  TYPE i,
+      gv_skipped TYPE i.
+
+" Untuk menyimpan info versi lama saat naik versi dari FR
+DATA: lv_prev_docnum TYPE draw-doknr,
+      lv_prev_dokvr  TYPE draw-dokvr.
+
+" Path folder error
+DATA: lv_error_dir TYPE string.
+
+*----------------------------------------------------------------------
+* AT SELECTION-SCREEN
+*----------------------------------------------------------------------
+AT SELECTION-SCREEN.
+  IF p_maxlv <= 0.
+    MESSAGE 'Maks Level BOM harus lebih dari 0.' TYPE 'E'.
+  ENDIF.
+
+*----------------------------------------------------------------------
+* INITIALIZATION
+*----------------------------------------------------------------------
+INITIALIZATION.
+  blk1    = 'Konfigurasi Auto Upload SAP DMS'.
+  lbl_dir = 'Folder Path (AL11)'.
+  lbl_prt = 'Document Part (DOKTL)'.
+  lbl_stc = 'Storage Category (STCAT)'.
+  lbl_wrk = 'Plant BOM 1 (kosong=semua)'.
+  lbl_wr2 = 'Plant BOM 2 (opsional)'.
+  lbl_usg = 'Target BOM Usage'.
+  lbl_mlv = 'Maks Level BOM'.
+  lbl_tst = 'Test Mode (Simulasi Saja)'.
+
+*----------------------------------------------------------------------
+* START-OF-SELECTION
+*----------------------------------------------------------------------
+START-OF-SELECTION.
+
+  " Normalisasi path: pastikan diakhiri '/'
+  lv_eps_dir = p_dir.
+  TRANSLATE lv_eps_dir TO LOWER CASE.
+  lv_len = strlen( lv_eps_dir ) - 1.
+  IF lv_eps_dir+lv_len(1) <> '/'.
+    CONCATENATE lv_eps_dir '/' INTO lv_eps_dir.
+  ENDIF.
+
+  " Set folder error: subfolder /error/ di dalam folder utama
+  CONCATENATE lv_eps_dir 'error/' INTO lv_error_dir.
+
+  " Header output
+  WRITE: / 'Auto Upload Content Server + Link BOM | Wood Working Factory'.
+  WRITE: / 'Folder   :', lv_eps_dir.
+  WRITE: / 'Error Dir:', lv_error_dir.
+  WRITE: / 'Divisi   : DRW=Wood | DMT=Metal | DBX=Box | TDS=Technical Data Sheet'.
+  WRITE: / 'Format   : [DOKAR]_[MATNR]_[DESC].[CODE].pdf  (baru, DRW/DMT/DBX)'.
+  WRITE: / '         : [DOKAR]_[DESC].[CODE].pdf           (lama, DRW/DMT/DBX)'.
+  WRITE: / '         : [DOKAR]_[MATNR]_[DESC].[CODE].xlsx  (baru, TDS)'.
+  WRITE: / '         : [DOKAR]_[DESC].[CODE].xlsx          (lama, TDS)'.
+  WRITE: / 'Kode     : .DRW=Drawing | .BOM=BOM | .ASM/.ASM2/dst=Assembly'.
+  WRITE: / '         : .TDS=Technical Data Sheet (XLSX, tidak dikonversi ke PDF)'.
+  WRITE: / 'Replace  : lo_objid+ph_objid match -> replace file saja'.
+  WRITE: / 'Naik Ver : FR->ZG (sementara) -> ver baru IA -> ver lama ZG->IA->AP->FR'.
+  WRITE: / 'TDS Link : MARA + BOM header + BOM items (sama dengan DRW/DMT/DBX)'.
+
+  " v34: Tampilkan info plant (bisa 1 atau 2 plant)
+  IF p_werks IS INITIAL AND p_wer2 IS INITIAL.
+    WRITE: / 'Plant BOM: SEMUA'.
+  ELSEIF p_wer2 IS INITIAL.
+    WRITE: / 'Plant BOM:', p_werks.
+  ELSE.
+    WRITE: / 'Plant BOM:', p_werks, '&', p_wer2.
+  ENDIF.
+
+  WRITE: / 'Max Level:', p_maxlv.
+  WRITE: / 'Test Mode:', p_test.
+  ULINE.
+
+  " Baca daftar file dari folder AL11
+  CALL FUNCTION 'EPS2_GET_DIRECTORY_LISTING'
+    EXPORTING iv_dir_name = lv_eps_dir
+    TABLES    dir_list    = lt_dir_list
+    EXCEPTIONS OTHERS     = 8.
+
+  IF sy-subrc <> 0.
+    MESSAGE |Gagal membaca folder { lv_eps_dir }| TYPE 'I' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  "======================================================================
+  " MAIN LOOP: proses tiap file dalam folder
+  "======================================================================
+  LOOP AT lt_dir_list INTO ls_dir_list.
+
+    " Skip subfolder error agar tidak diproses
+    IF ls_dir_list-name CP 'error*' OR ls_dir_list-name = 'error'.
+      CONTINUE.
+    ENDIF.
+
+    "====================================================================
+    " STEP 1: Parse & Validasi Nama File
+    "====================================================================
+    DATA: ls_parsed TYPE ty_parsed_file,
+          lv_fname  TYPE string.
+    CLEAR: ls_parsed, lv_fname.
+
+    lv_fname = ls_dir_list-name.
+
+    PERFORM parse_filename
+      USING    lv_fname
+      CHANGING ls_parsed.
+
+    IF ls_parsed-is_valid = abap_false.
+      gv_skipped = gv_skipped + 1.
+
+      " Pindahkan ke error folder agar tidak diproses ulang
+      DATA: lv_src_skip TYPE string.
+      CONCATENATE lv_eps_dir ls_dir_list-name INTO lv_src_skip.
+      PERFORM move_to_error_folder
+        USING lv_src_skip ls_dir_list-name lv_error_dir.
+
+      PERFORM add_log USING ls_dir_list-name '' '' '' ''
+                            'SKIP' 'I' '' '' '' '' '' ''
+                            ls_parsed-skip_reason.
+      CONTINUE.
+    ENDIF.
+
+    gv_total = gv_total + 1.
+
+    lv_dokar        = ls_parsed-dokar.
+    lv_desc_40      = ls_parsed-description.
+    lv_content_code = ls_parsed-content_code.
+    lv_clean_name   = ls_dir_list-name.
+    lv_clean_dir    = lv_eps_dir.
+    lv_fullpath     = lv_clean_dir && lv_clean_name.
+
+    CLEAR: ls_document, lv_docnum, ls_message, ls_return,
+           lv_is_exist, lv_matnr, lv_maktx, lv_filesize,
+           lv_stlnr, lv_stlal, lv_objky, lv_next_ver,
+           lv_curr_dokst, lv_msg_link, lv_msg_tst,
+           lv_skip_msg, lv_success_msg, lv_dyn_replace,
+           lv_prev_docnum, lv_prev_dokvr.
+
+    REFRESH: lt_files_x, lt_content, lt_objlinks.
+
+    "====================================================================
+    " STEP 2: Lookup MATNR
+    "
+    " v33 - Dua jalur:
+    "
+    " JALUR A (FORMAT BARU): ls_parsed-matnr terisi
+    "   -> MATNR sudah diketahui dari nama file
+    "   -> Konversi ALPHA_INPUT, validasi ke MARA
+    "   -> Lebih akurat, tidak bergantung MAKT
+    "   -> Contoh file: DRW_19804726_PALAIS 4D LIGHT R24053.DRW.pdf
+    "                   TDS_H8317XCG001_SHAPED LEG CONSOLE.TDS.xlsx
+    "
+    " JALUR B (FORMAT LAMA): ls_parsed-matnr kosong
+    "   -> Lookup via MAKT-MAKTX (behavior existing, tidak berubah)
+    "   -> Fallback: ganti '-' -> '/' (konvensi drafter vs MAKT)
+    "   -> Contoh file: DRW_Cabinet Base Unit.DRW.pdf
+    "   -> TDS tidak punya format lama, selalu JALUR A
+    "
+    " Kedua jalur: jika MATNR tidak ditemukan -> file DITOLAK
+    "====================================================================
+    IF ls_parsed-matnr IS NOT INITIAL.
+
+      "--- JALUR A: Format baru, MATNR dari nama file ---
+      " v33b: MATNR sudah divalidasi ke MARA di parse_filename Step 3
+      " (termasuk fallback '-' -> '/'). Di sini tinggal pakai langsung.
+      lv_matnr = ls_parsed-matnr.
+
+    ELSEIF ls_parsed-description IS NOT INITIAL.
+
+      "--- JALUR B: Format lama, lookup via MAKT ---
+      lv_maktx = ls_parsed-description.
+
+      " Coba 1: exact match (case asli dari nama file)
+      SELECT SINGLE matnr INTO lv_matnr
+        FROM makt
+        WHERE maktx = lv_maktx
+          AND spras = sy-langu.
+
+      " Coba 2: ganti '-' -> '/' (konvensi nama file vs MAKT)
+      IF sy-subrc <> 0.
+        DATA: lv_maktx_alt TYPE makt-maktx.
+        lv_maktx_alt = lv_maktx.
+        REPLACE ALL OCCURRENCES OF '-' IN lv_maktx_alt WITH '/'.
+        SELECT SINGLE matnr INTO lv_matnr
+          FROM makt
+          WHERE maktx = lv_maktx_alt
+            AND spras = sy-langu.
+        IF sy-subrc = 0.
+          lv_maktx = lv_maktx_alt.
+        ENDIF.
+      ENDIF.
+
+      " Kedua variasi gagal -> tolak file
+      IF lv_matnr IS INITIAL.
+        gv_failed = gv_failed + 1.
+        lv_skip_msg = |MATNR tidak ditemukan untuk: '{ ls_parsed-description }'. | &&
+                      |File ditolak agar tidak membuat dokumen tanpa BOM link. | &&
+                      |Tip: gunakan format baru [DOKAR]_[MATNR]_[DESC].[CODE].pdf|.
+        PERFORM move_to_error_folder
+          USING lv_fullpath lv_clean_name lv_error_dir.
+        PERFORM add_log USING ls_dir_list-name '' '' lv_dokar lv_content_code
+                              'ERROR' 'E' '' '' '' '' '' ''
+                              lv_skip_msg.
+        CONTINUE.
+      ENDIF.
+
+    ENDIF.
+
+    "====================================================================
+    " STEP 3: Cek cache
+    "====================================================================
+    DATA: ls_hit         TYPE ty_doc_cache,
+          lv_cache_found TYPE abap_bool.
+    CLEAR: ls_hit, lv_cache_found.
+
+    IF lv_matnr IS NOT INITIAL.
+      READ TABLE gt_doc_cache INTO ls_hit
+        WITH KEY matnr = lv_matnr dokar = lv_dokar.
+      IF sy-subrc = 0.
+        lv_cache_found = abap_true.
+        lv_docnum      = ls_hit-doknr.
+        lv_next_ver    = ls_hit-dokvr.
+        lv_curr_dokst  = ls_hit-dokst.
+        lv_is_exist    = 'X'.
+      ENDIF.
+    ENDIF.
+
+    "====================================================================
+    " STEP 4: Lookup dokumen existing di SAP DMS (jika tidak ada cache)
+    "====================================================================
+    IF lv_cache_found = abap_false.
+      PERFORM find_best_document
+        USING    lv_matnr lv_dokar
+        CHANGING lv_docnum lv_next_ver lv_curr_dokst.
+
+      IF lv_matnr IS NOT INITIAL.
+        CLEAR gs_cache.
+        gs_cache-matnr     = lv_matnr.
+        gs_cache-dokar     = lv_dokar.
+        gs_cache-doknr     = lv_docnum.
+        gs_cache-dokvr     = lv_next_ver.
+        gs_cache-dokst     = lv_curr_dokst.
+        gs_cache-processed = space.
+        APPEND gs_cache TO gt_doc_cache.
+      ENDIF.
+    ENDIF.
+
+    "====================================================================
+    " STEP 5: Tentukan alur berdasarkan status dokumen
+    "====================================================================
+    IF lv_docnum IS INITIAL.
+      lv_next_ver = '00'.
+      lv_is_exist = space.
+
+    ELSEIF lv_is_exist = 'X' AND lv_cache_found = abap_true.
+      lv_success_msg =
+        |[{ lv_dokar }][{ lv_content_code }] | &&
+        |Append ke Ver { lv_next_ver } (Cache Hit)|.
+
+    ELSE.
+      CASE lv_curr_dokst.
+
+        WHEN gc_st_fr.
+          IF p_test IS INITIAL.
+
+            " Simpan info versi lama sebelum di-reject ke ZG
+            lv_prev_docnum = lv_docnum.
+            lv_prev_dokvr  = lv_next_ver.
+
+            PERFORM reject_to_zg
+              USING    lv_docnum lv_next_ver lv_dokar
+              CHANGING lv_success_msg.
+
+            IF lv_success_msg CS 'Gagal'.
+              gv_failed = gv_failed + 1.
+              CLEAR: lv_prev_docnum, lv_prev_dokvr.
+              PERFORM move_to_error_folder
+                USING lv_fullpath lv_clean_name lv_error_dir.
+              PERFORM add_log USING ls_dir_list-name lv_docnum
+                                    lv_next_ver lv_dokar lv_content_code
+                                    'ERROR' 'E' '' '' '' '' '' ''
+                                    lv_success_msg.
+              CONTINUE.
+            ENDIF.
+          ENDIF.
+
+          DATA: lv_ver_int TYPE i, lv_ver_char TYPE n LENGTH 2.
+          lv_ver_int  = lv_next_ver + 1.
+          lv_ver_char = lv_ver_int.
+          lv_next_ver = lv_ver_char.
+          lv_is_exist = space.
+
+        WHEN gc_st_zg.
+          IF p_test IS INITIAL.
+            PERFORM transition_to_ia
+              USING    lv_docnum lv_next_ver lv_dokar
+              CHANGING lv_success_msg.
+            IF lv_success_msg CS 'Gagal'.
+              gv_failed = gv_failed + 1.
+              PERFORM move_to_error_folder
+                USING lv_fullpath lv_clean_name lv_error_dir.
+              PERFORM add_log USING ls_dir_list-name lv_docnum
+                                    lv_next_ver lv_dokar lv_content_code
+                                    'ERROR' 'E' '' '' '' '' '' ''
+                                    lv_success_msg.
+              CONTINUE.
+            ENDIF.
+          ENDIF.
+          lv_is_exist = 'X'.
+
+        WHEN OTHERS.
+          lv_is_exist = 'X'.
+
+      ENDCASE.
+    ENDIF.
+
+    "====================================================================
+    " STEP 6: Eksekusi Create Dokumen/Versi Baru atau Append ke Existing
+    "====================================================================
+    IF lv_is_exist = 'X'.
+      lv_success_msg =
+        |[{ lv_dokar }][{ lv_content_code }] | &&
+        |Replace/Add File Ver { lv_next_ver }|.
+
+      IF lv_matnr IS NOT INITIAL.
+        PERFORM ensure_links_for_existing
+          USING    lv_docnum lv_matnr lv_next_ver lv_dokar
+          CHANGING lv_msg_link.
+        IF lv_msg_link IS NOT INITIAL.
+          lv_success_msg = |{ lv_success_msg } ({ lv_msg_link })|.
+        ENDIF.
+      ENDIF.
+
+    ELSE.
+      ls_document-documenttype    = lv_dokar.
+      ls_document-documentpart    = p_doktl.
+      ls_document-documentversion = lv_next_ver.
+      lv_desc_sap = lv_desc_40.
+      ls_document-description     = lv_desc_sap.
+      ls_document-statusextern    = gc_st_aa.
+
+      IF lv_curr_dokst = gc_st_fr.
+        ls_document-documentnumber = lv_docnum.
+        lv_success_msg =
+          |[{ lv_dokar }][{ lv_content_code }] | &&
+          |Naik Ver { lv_next_ver } DIR { lv_docnum }|.
+      ELSE.
+        CLEAR: lv_docnum, ls_document-documentnumber.
+        lv_success_msg =
+          |[{ lv_dokar }][{ lv_content_code }] | &&
+          |Create Baru Ver { lv_next_ver }|.
+      ENDIF.
+
+      IF lv_matnr IS NOT INITIAL.
+        " Link MARA + BOM header + BOM items untuk semua tipe dokumen.
+        " TDS diperlakukan sama dengan DRW/DMT/DBX � breakdown dimulai
+        " dari HALB sehingga hasilnya lebih pendek, tapi mekanismenya identik.
+        CLEAR ls_objlinks.
+        ls_objlinks-objecttype = 'MARA'.
+        ls_objlinks-objectkey  = lv_matnr.
+        APPEND ls_objlinks TO lt_objlinks.
+        PERFORM add_bom_header_link
+          USING lv_matnr lv_dokar CHANGING lt_objlinks.
+        PERFORM add_bom_items_link
+          USING lv_matnr CHANGING lt_objlinks.
+        lv_success_msg = |{ lv_success_msg } + BOM Link|.
+      ENDIF.
+
+      IF p_test IS INITIAL.
+        CALL FUNCTION 'BAPI_DOCUMENT_CREATE2'
+          EXPORTING  documentdata   = ls_document
+          IMPORTING  documentnumber = lv_docnum
+                     return         = ls_return
+          TABLES     objectlinks    = lt_objlinks.
+
+        IF ls_return-type = 'E' OR ls_return-type = 'A'
+           OR lv_docnum IS INITIAL.
+          gv_failed = gv_failed + 1.
+          PERFORM move_to_error_folder
+            USING lv_fullpath lv_clean_name lv_error_dir.
+          PERFORM add_log USING ls_dir_list-name lv_docnum
+                                lv_next_ver lv_dokar lv_content_code
+                                'ERROR' ls_return-type
+                                ls_return-id ls_return-number
+                                ls_return-message_v1 ls_return-message_v2
+                                ls_return-message_v3 ls_return-message_v4
+                                ls_return-message.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+          IF lv_prev_docnum IS NOT INITIAL.
+            DATA: lv_rb_msg TYPE string.
+            PERFORM restore_to_fr
+              USING    lv_prev_docnum lv_prev_dokvr lv_dokar
+              CHANGING lv_rb_msg.
+            WRITE: / '[ROLLBACK]', lv_rb_msg.
+          ENDIF.
+          CONTINUE.
+        ENDIF.
+
+        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+        WAIT UP TO 2 SECONDS.
+
+        PERFORM transition_to_ia
+          USING    lv_docnum lv_next_ver lv_dokar
+          CHANGING lv_success_msg.
+
+        IF lv_success_msg CS 'Gagal'.
+          gv_failed = gv_failed + 1.
+          PERFORM move_to_error_folder
+            USING lv_fullpath lv_clean_name lv_error_dir.
+          PERFORM add_log USING ls_dir_list-name lv_docnum
+                                lv_next_ver lv_dokar lv_content_code
+                                'ERROR' 'E' '' '' '' '' '' ''
+                                lv_success_msg.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+          IF lv_prev_docnum IS NOT INITIAL.
+            CLEAR lv_rb_msg.
+            PERFORM restore_to_fr
+              USING    lv_prev_docnum lv_prev_dokvr lv_dokar
+              CHANGING lv_rb_msg.
+            WRITE: / '[ROLLBACK]', lv_rb_msg.
+          ENDIF.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+
+      IF lv_matnr IS NOT INITIAL.
+        DATA: lv_tabix TYPE sy-tabix.
+        READ TABLE gt_doc_cache WITH KEY matnr = lv_matnr dokar = lv_dokar
+          TRANSPORTING NO FIELDS.
+        IF sy-subrc = 0.
+          lv_tabix = sy-tabix.
+          READ TABLE gt_doc_cache INTO gs_cache INDEX lv_tabix.
+          gs_cache-doknr     = lv_docnum.
+          gs_cache-dokvr     = lv_next_ver.
+          gs_cache-dokst     = gc_st_ia.
+          gs_cache-processed = 'X'.
+          MODIFY gt_doc_cache FROM gs_cache INDEX lv_tabix.
+        ELSE.
+          CLEAR gs_cache.
+          gs_cache-matnr     = lv_matnr.
+          gs_cache-dokar     = lv_dokar.
+          gs_cache-doknr     = lv_docnum.
+          gs_cache-dokvr     = lv_next_ver.
+          gs_cache-dokst     = gc_st_ia.
+          gs_cache-processed = 'X'.
+          APPEND gs_cache TO gt_doc_cache.
+        ENDIF.
+      ENDIF.
+
+    ENDIF.
+
+    "====================================================================
+    " STEP 7: Smart Checkin - Replace via lo_objid + ph_objid
+    "
+    " Mekanisme (berdasarkan source kpro_file_fill di LCV115F04):
+    "
+    "   kpro_file_fill melakukan READ TABLE ptx_files
+    "     WITH KEY lo_objid = pt_files_x-lo_objid
+    "              ph_objid = pt_files_x-ph_objid.
+    "
+    "   Jika FOUND  -> lf_flag='U' -> UPDATE file itu saja
+    "                               File lain di dokumen TIDAK tersentuh
+    "   Jika NOTFOUND -> lf_flag='I' -> INSERT sebagai original baru
+    "
+    " v35: DAPPL disesuaikan per tipe dokumen:
+    "   TDS -> 'XLS' (file Excel as-is, Default Appl di DC10 = XLS)
+    "   Lainnya -> 'PDF'
+    "====================================================================
+    PERFORM build_pt_content
+      USING    lv_fullpath
+      CHANGING lt_content lv_filesize.
+
+    lv_size_str = lv_filesize.
+    CONDENSE lv_size_str.
+
+    IF p_test IS NOT INITIAL.
+      IF lt_content IS INITIAL.
+        PERFORM move_to_error_folder
+          USING lv_fullpath lv_clean_name lv_error_dir.
+        PERFORM add_log USING ls_dir_list-name lv_docnum
+                              lv_next_ver lv_dokar lv_content_code
+                              'ERROR' 'E' '' '' '' '' '' ''
+                              'Test: Gagal baca file dari AL11'.
+        gv_failed = gv_failed + 1.
+      ELSE.
+        lv_msg_tst = |{ lv_success_msg } ({ lv_size_str } bytes) [TEST]|.
+        PERFORM add_log USING ls_dir_list-name lv_docnum
+                              lv_next_ver lv_dokar lv_content_code
+                              'TEST-OK' 'S' '' '' '' '' '' ''
+                              lv_msg_tst.
+        gv_success = gv_success + 1.
+      ENDIF.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      CONTINUE.
+    ENDIF.
+
+    IF lt_content IS INITIAL.
+      gv_failed = gv_failed + 1.
+      PERFORM move_to_error_folder
+        USING lv_fullpath lv_clean_name lv_error_dir.
+      PERFORM add_log USING ls_dir_list-name lv_docnum
+                            lv_next_ver lv_dokar lv_content_code
+                            'ERROR' 'E' '' '' '' '' '' ''
+                            'Gagal baca file (kosong/path salah)'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      CALL FUNCTION 'DEQUEUE_ALL'.
+      IF lv_prev_docnum IS NOT INITIAL.
+        CLEAR lv_rb_msg.
+        PERFORM restore_to_fr
+          USING    lv_prev_docnum lv_prev_dokvr lv_dokar
+          CHANGING lv_rb_msg.
+        WRITE: / '[ROLLBACK]', lv_rb_msg.
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+
+    " Ambil basename
+    PERFORM get_basename
+      USING    lv_clean_name
+      CHANGING lv_basename.
+
+    " Baca list original yang ada di versi dokumen ini
+    REFRESH lt_originals.
+    IF lv_docnum IS NOT INITIAL AND lv_is_exist = 'X'.
+      PERFORM get_doc_originals
+        USING    lv_dokar lv_docnum lv_next_ver
+        CHANGING lt_originals.
+    ENDIF.
+
+    " Cek apakah nama file upload sudah ada, sekaligus ambil lo_objid+ph_objid
+    DATA: lv_file_exists TYPE abap_bool,
+          lv_lo_objid    TYPE cvapi_doc_file-lo_objid,
+          lv_ph_objid    TYPE cvapi_doc_file-ph_objid.
+    CLEAR: lv_file_exists, lv_lo_objid, lv_ph_objid.
+
+    IF lt_originals IS NOT INITIAL.
+      PERFORM check_original_exists
+        USING    lv_basename lt_originals
+        CHANGING lv_file_exists lv_lo_objid lv_ph_objid.
+    ENDIF.
+
+    " Build PT_FILES_X
+    " v35: DAPPL = 'XLS' untuk SSC, 'PDF' untuk semua tipe lain
+    CLEAR: lt_files_x, ls_files_x.
+    ls_files_x-filename    = lv_fullpath.
+    ls_files_x-storage_cat = p_stcat.
+    IF lv_dokar = gc_dok_tds.
+      ls_files_x-dappl = 'XLS'.    "v36: TDS simpan format Excel asli
+    ELSE.
+      ls_files_x-dappl = 'PDF'.
+    ENDIF.
+
+    IF lv_file_exists = abap_true.
+      ls_files_x-lo_objid = lv_lo_objid.
+      ls_files_x-ph_objid = lv_ph_objid.
+      lv_replace_fl  = 'X'.
+      lv_success_msg = |{ lv_success_msg } [REPLACE: { lv_basename }]|.
+    ELSE.
+      CLEAR: ls_files_x-lo_objid, ls_files_x-ph_objid.
+      lv_replace_fl  = space.
+      lv_success_msg = |{ lv_success_msg } [ADD-NEW: { lv_basename }]|.
+    ENDIF.
+
+    APPEND ls_files_x TO lt_files_x.
+
+    CALL FUNCTION 'CVAPI_DOC_CHECKIN'
+      EXPORTING
+        pf_dokar           = lv_dokar
+        pf_doknr           = lv_docnum
+        pf_dokvr           = lv_next_ver
+        pf_doktl           = p_doktl
+        pf_replace         = lv_replace_fl
+        pf_content_provide = 'TBL'
+      IMPORTING
+        psx_message        = ls_message
+      TABLES
+        pt_files_x         = lt_files_x
+        pt_content         = lt_content.
+
+    IF ls_message-msg_type = 'E' OR ls_message-msg_type = 'A'
+       OR ls_message-msg_type = 'X'.
+      gv_failed = gv_failed + 1.
+      lv_skip_msg = |Gagal Checkin: { lv_basename }|.
+      PERFORM move_to_error_folder
+        USING lv_fullpath lv_clean_name lv_error_dir.
+      PERFORM add_log USING ls_dir_list-name lv_docnum
+                            lv_next_ver lv_dokar lv_content_code
+                            'ERROR' ls_message-msg_type
+                            ls_message-msg_id ls_message-msg_no
+                            ls_message-msg_v1 ls_message-msg_v2
+                            ls_message-msg_v3 ls_message-msg_v4
+                            lv_skip_msg.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      CALL FUNCTION 'DEQUEUE_ALL'.
+      IF lv_prev_docnum IS NOT INITIAL.
+        CLEAR lv_rb_msg.
+        PERFORM restore_to_fr
+          USING    lv_prev_docnum lv_prev_dokvr lv_dokar
+          CHANGING lv_rb_msg.
+        WRITE: / '[ROLLBACK]', lv_rb_msg.
+      ENDIF.
+      CONTINUE.
+    ENDIF.
+
+    "====================================================================
+    " STEP 8: Commit -> Dequeue -> Restore FR -> Hapus file -> Log
+    "====================================================================
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+
+    CALL FUNCTION 'BAPI_DOCUMENT_DEQUEUE'
+      EXPORTING
+        documenttype    = lv_dokar
+        documentnumber  = lv_docnum
+        documentpart    = p_doktl
+        documentversion = lv_next_ver.
+
+    CALL FUNCTION 'DEQUEUE_ALL'.
+    WAIT UP TO 2 SECONDS.
+
+    " Restore versi lama ke FR setelah checkin versi baru berhasil.
+    " Alur: ZG -> IA -> AP -> FR
+    IF lv_prev_docnum IS NOT INITIAL AND lv_prev_dokvr IS NOT INITIAL
+       AND p_test IS INITIAL.
+
+      DATA: lv_restore_msg TYPE string.
+      CLEAR lv_restore_msg.
+
+      PERFORM restore_to_fr
+        USING    lv_prev_docnum lv_prev_dokvr lv_dokar
+        CHANGING lv_restore_msg.
+
+      IF lv_restore_msg CS 'Gagal'.
+        lv_success_msg =
+          |{ lv_success_msg } [WARNING: { lv_restore_msg }]|.
+        PERFORM add_log USING ls_dir_list-name lv_prev_docnum
+                              lv_prev_dokvr lv_dokar lv_content_code
+                              'WARN' 'W' '' '' '' '' '' ''
+                              lv_restore_msg.
+      ELSE.
+        lv_success_msg =
+          |{ lv_success_msg } [Ver { lv_prev_dokvr } restored->FR]|.
+      ENDIF.
+
+      CLEAR: lv_prev_docnum, lv_prev_dokvr.
+    ENDIF.
+
+    " Hapus file dari folder sumber setelah semua proses berhasil
+    DELETE DATASET lv_fullpath.
+    IF sy-subrc <> 0.
+      lv_success_msg =
+        |{ lv_success_msg } [WARNING: Gagal hapus file dari folder]|.
+    ENDIF.
+
+    lv_success_msg = |{ lv_success_msg } ({ lv_size_str } bytes)|.
+    gv_success = gv_success + 1.
+    PERFORM add_log USING ls_dir_list-name lv_docnum
+                          lv_next_ver lv_dokar lv_content_code
+                          'SUCCESS' 'S' '' '' '' '' '' ''
+                          lv_success_msg.
+
+  ENDLOOP.
+
+  "======================================================================
+  " OUTPUT SUMMARY
+  "======================================================================
+  ULINE.
+  WRITE: / 'SELESAI.',
+           'Total:', gv_total,
+           '| OK:', gv_success,
+           '| Gagal:', gv_failed,
+           '| Skip:', gv_skipped.
+  ULINE.
+
+  LOOP AT gt_log INTO gs_log.
+    WRITE: / gs_log-status COLOR COL_TOTAL,
+             gs_log-dokar,
+             gs_log-ctcode,
+             gs_log-file,
+             '| DIR:', gs_log-doknr,
+             '| Ver:', gs_log-dokvr,
+             '|', gs_log-msg.
+    IF gs_log-msgid IS NOT INITIAL AND gs_log-status = 'ERROR'.
+      WRITE: ' [', gs_log-msgid NO-GAP, '-', gs_log-msgno NO-GAP, ']',
+             gs_log-msgv1, gs_log-msgv2, gs_log-msgv3, gs_log-msgv4.
+    ENDIF.
+  ENDLOOP.
+
+*======================================================================
+* FORMS
+*======================================================================
+
+"===========================================================
+" FORM: parse_filename
+"
+" v35: Perubahan untuk support SSC:
+"   Step 1: validasi ekstensi support .pdf (DRW/DMT/DBX) DAN .xlsx (TDS)
+"   Step 2: tambah deteksi prefix TDS_ -> gc_dok_tds
+"   Step 4: tambah .TDS ke CASE content code yang valid
+"===========================================================
+FORM parse_filename
+  USING    pv_raw    TYPE string
+  CHANGING ps_result TYPE ty_parsed_file.
+
+  DATA: lv_work      TYPE string,
+        lv_uc        TYPE string,
+        lv_code      TYPE string,
+        lv_code_base TYPE string,
+        lv_i         TYPE i,
+        lv_len       TYPE i,
+        lv_ch        TYPE c LENGTH 1,
+        lv_dot       TYPE i,
+        lv_found_dot TYPE abap_bool.
+
+  CLEAR ps_result.
+  ps_result-raw_name = pv_raw.
+  ps_result-is_valid = abap_false.
+
+  lv_work = pv_raw.
+  lv_uc   = pv_raw.
+  TRANSLATE lv_uc TO UPPER CASE.
+
+  " 1. Validasi ekstensi
+  " v35: support .pdf (DRW/DMT/DBX) dan .xlsx (SSC)
+  " File .xls juga diterima untuk kompatibilitas
+  IF lv_uc CP '*.PDF'.
+    lv_len  = strlen( lv_work ) - 4.    " hapus '.pdf'
+    lv_work = lv_work(lv_len).
+  ELSEIF lv_uc CP '*.XLSX'.
+    lv_len  = strlen( lv_work ) - 5.    " hapus '.xlsx'
+    lv_work = lv_work(lv_len).
+  ELSEIF lv_uc CP '*.XLS'.
+    lv_len  = strlen( lv_work ) - 4.    " hapus '.xls'
+    lv_work = lv_work(lv_len).
+  ELSE.
+    ps_result-skip_reason =
+      |Ekstensi tidak didukung: { pv_raw }. Gunakan .pdf (DRW/DMT/DBX) atau .xlsx (TDS)|.
+    RETURN.
+  ENDIF.
+
+  lv_uc = lv_work.
+  TRANSLATE lv_uc TO UPPER CASE.
+
+  " 2. Deteksi DOKAR dari prefix
+  " v35: tambah SSC_
+  IF lv_uc CP 'DRW_*'.
+    ps_result-dokar = gc_dok_drw.
+  ELSEIF lv_uc CP 'DBX_*'.
+    ps_result-dokar = gc_dok_dbx.
+  ELSEIF lv_uc CP 'DMT_*'.
+    ps_result-dokar = gc_dok_dmt.
+  ELSEIF lv_uc CP 'TDS_*'.
+    ps_result-dokar = gc_dok_tds.
+  ELSE.
+    ps_result-skip_reason =
+      |Prefix tidak dikenal: { pv_raw }. Gunakan DRW_ / DBX_ / DMT_ / TDS_|.
+    RETURN.
+  ENDIF.
+
+  lv_work = lv_work+4.
+
+  " 3. Deteksi MATNR opsional (FORMAT BARU) - validasi via MARA
+  DATA: lv_underscore  TYPE i,
+        lv_token       TYPE string,
+        lv_rest        TYPE string,
+        lv_ci          TYPE i,
+        lv_clen        TYPE i,
+        lv_cchar       TYPE c LENGTH 1,
+        lv_matnr_chk   TYPE matnr,
+        lv_matnr_alt   TYPE matnr,
+        lv_found_matnr TYPE abap_bool.
+
+  CLEAR: lv_underscore, lv_token, lv_rest, lv_found_matnr.
+
+  lv_clen       = strlen( lv_work ).
+  lv_ci         = 0.
+  lv_underscore = -1.
+  WHILE lv_ci < lv_clen.
+    lv_cchar = lv_work+lv_ci(1).
+    IF lv_cchar = '_'.
+      lv_underscore = lv_ci.
+      EXIT.
+    ENDIF.
+    lv_ci = lv_ci + 1.
+  ENDWHILE.
+
+  IF lv_underscore >= 4.
+    lv_token = lv_work(lv_underscore).
+    CONDENSE lv_token.
+
+    DATA: lv_token_c     TYPE matnr,
+          lv_token_slash TYPE string.
+
+    lv_token_c = lv_token.
+
+    " Coba 1: as-is tanpa konversi
+    CLEAR lv_matnr_chk.
+    SELECT SINGLE matnr INTO lv_matnr_chk
+      FROM mara WHERE matnr = lv_token_c.
+
+    IF sy-subrc = 0.
+      lv_found_matnr  = abap_true.
+      ps_result-matnr = lv_matnr_chk.
+    ELSE.
+      " Coba 1b: pad leading zero jika pure numeric
+      DATA: lv_is_num  TYPE abap_bool VALUE abap_true,
+            lv_ci_num  TYPE i,
+            lv_cc_num  TYPE c LENGTH 1,
+            lv_num18   TYPE n LENGTH 18.
+
+      lv_ci_num = 0.
+      WHILE lv_ci_num < strlen( lv_token ).
+        lv_cc_num = lv_token+lv_ci_num(1).
+        IF NOT lv_cc_num CO '0123456789'.
+          lv_is_num = abap_false.
+          EXIT.
+        ENDIF.
+        lv_ci_num = lv_ci_num + 1.
+      ENDWHILE.
+
+      IF lv_is_num = abap_true.
+        CLEAR: lv_matnr_chk, lv_num18.
+        lv_num18     = lv_token.
+        lv_matnr_chk = lv_num18.
+        SELECT SINGLE matnr INTO lv_matnr_chk
+          FROM mara WHERE matnr = lv_matnr_chk.
+        IF sy-subrc = 0.
+          lv_found_matnr  = abap_true.
+          ps_result-matnr = lv_matnr_chk.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    IF lv_found_matnr = abap_false.
+      " Coba 2: ALPHA_INPUT
+      CLEAR lv_matnr_chk.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING input  = lv_token
+        IMPORTING output = lv_matnr_chk.
+      SELECT SINGLE matnr INTO lv_matnr_chk
+        FROM mara WHERE matnr = lv_matnr_chk.
+      IF sy-subrc = 0.
+        lv_found_matnr  = abap_true.
+        ps_result-matnr = lv_matnr_chk.
+      ELSE.
+        " Coba 3: ganti '-' -> '/'
+        lv_token_slash = lv_token.
+        REPLACE ALL OCCURRENCES OF '-' IN lv_token_slash WITH '/'.
+        lv_matnr_alt   = lv_token_slash.
+        SELECT SINGLE matnr INTO lv_matnr_alt
+          FROM mara WHERE matnr = lv_matnr_alt.
+        IF sy-subrc = 0.
+          lv_found_matnr  = abap_true.
+          ps_result-matnr = lv_matnr_alt.
+        ELSE.
+          " Coba 4: ganti '-' -> '/' + ALPHA_INPUT
+          CLEAR lv_matnr_alt.
+          CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+            EXPORTING input  = lv_token_slash
+            IMPORTING output = lv_matnr_alt.
+          SELECT SINGLE matnr INTO lv_matnr_alt
+            FROM mara WHERE matnr = lv_matnr_alt.
+          IF sy-subrc = 0.
+            lv_found_matnr  = abap_true.
+            ps_result-matnr = lv_matnr_alt.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    IF lv_found_matnr = abap_true.
+      " FORMAT BARU: MATNR ditemukan -> sisa = description
+      lv_ci   = lv_underscore + 1.
+      lv_clen = strlen( lv_work ).
+      IF lv_ci < lv_clen.
+        lv_rest = lv_work+lv_ci.
+        lv_work = lv_rest.
+      ELSE.
+        ps_result-skip_reason =
+          |Deskripsi kosong setelah MATNR: { pv_raw }|.
+        RETURN.
+      ENDIF.
+    ELSE.
+      " Coba 5 (fallback): MARA gagal -> sisa setelah '_' coba ke MAKT
+      " Catatan: TDS tidak punya format lama, tapi fallback ini aman
+      " karena STEP 2 akan tolak file TDS yang MATNR-nya tidak ditemukan
+      lv_ci   = lv_underscore + 1.
+      lv_clen = strlen( lv_work ).
+      IF lv_ci < lv_clen.
+        lv_rest = lv_work+lv_ci.
+        lv_work = lv_rest.
+      ENDIF.
+      " ps_result-matnr tetap kosong -> JALUR B (MAKT lookup)
+    ENDIF.
+  ENDIF.
+
+  " 4. Deteksi Content Code dari titik terakhir
+  " v35: tambah .SSC ke CASE yang valid
+  lv_len       = strlen( lv_work ).
+  lv_i         = lv_len - 1.
+  lv_found_dot = abap_false.
+  lv_dot       = 0.
+
+  WHILE lv_i >= 0.
+    lv_ch = lv_work+lv_i(1).
+    IF lv_ch = '.'.
+      lv_dot       = lv_i.
+      lv_found_dot = abap_true.
+      EXIT.
+    ENDIF.
+    lv_i = lv_i - 1.
+  ENDWHILE.
+
+  IF lv_found_dot = abap_true.
+    lv_code = lv_work+lv_dot.
+    TRANSLATE lv_code TO UPPER CASE.
+
+    lv_code_base = lv_code.
+    lv_len = strlen( lv_code_base ).
+    WHILE lv_len > 1.
+      lv_offset = lv_len - 1.
+      lv_ch = lv_code_base+lv_offset(1).
+      IF lv_ch CA '0123456789'.
+        lv_len       = lv_len - 1.
+        lv_code_base = lv_code_base(lv_len).
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDWHILE.
+
+    CASE lv_code_base.
+      WHEN '.DRW' OR '.BOM' OR '.ASM'
+        OR '.TDS'                          "v36: Technical Data Sheet
+        OR '.SPC' OR '.QC'  OR '.MAN' OR '.RPT'.
+        ps_result-content_code = lv_code.
+        lv_work = lv_work(lv_dot).
+      WHEN OTHERS.
+        CLEAR lv_found_dot.
+    ENDCASE.
+  ENDIF.
+
+  " 5. Backward compatibility (DRW/DMT/DBX saja, TDS tidak punya format lama)
+  IF ps_result-content_code IS INITIAL.
+    lv_uc = lv_work.
+    TRANSLATE lv_uc TO UPPER CASE.
+    IF lv_uc CP '*_XLS'.
+      lv_len  = strlen( lv_work ) - 4.
+      lv_work = lv_work(lv_len).
+      ps_result-content_code = '.BOM'.
+    ELSE.
+      ps_result-content_code = '.DRW'.
+    ENDIF.
+  ENDIF.
+
+  " 6. Sisa = DESCRIPTION (as-is, tidak di-uppercase - v29 fix)
+  CONDENSE lv_work.
+
+  IF lv_work IS INITIAL.
+    ps_result-skip_reason =
+      |Deskripsi kosong setelah parsing: { pv_raw }|.
+    RETURN.
+  ENDIF.
+
+  ps_result-description = lv_work.
+  ps_result-is_valid    = abap_true.
+
+ENDFORM.
+
+"===========================================================
+" FORM: find_best_document
+"===========================================================
+FORM find_best_document
+  USING    pv_matnr  TYPE matnr
+           pv_dokar  TYPE draw-dokar
+  CHANGING pv_docnum TYPE draw-doknr
+           pv_dokvr  TYPE draw-dokvr
+           pv_dokst  TYPE draw-dokst.
+
+  TYPES: BEGIN OF ty_candidate,
+           doknr  TYPE draw-doknr,
+           dokvr  TYPE draw-dokvr,
+           dokst  TYPE draw-dokst,
+           adatum TYPE draw-adatum,
+           prio   TYPE i,
+         END OF ty_candidate.
+
+  DATA: lt_cand TYPE STANDARD TABLE OF ty_candidate,
+        ls_cand TYPE ty_candidate,
+        ls_best TYPE ty_candidate,
+        lv_idx  TYPE sy-tabix.
+
+  CLEAR: pv_docnum, pv_dokvr, pv_dokst.
+  REFRESH lt_cand.
+
+  IF pv_matnr IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  SELECT d~doknr d~dokvr d~dokst d~adatum
+    INTO CORRESPONDING FIELDS OF TABLE lt_cand
+    FROM drad AS r
+    INNER JOIN draw AS d
+      ON  d~dokar = r~dokar
+      AND d~doknr = r~doknr
+      AND d~dokvr = r~dokvr
+      AND d~doktl = r~doktl
+    WHERE r~dokob = 'MARA'
+      AND r~objky = pv_matnr
+      AND r~dokar = pv_dokar
+      AND r~doktl = p_doktl.
+
+  IF lt_cand IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  LOOP AT lt_cand INTO ls_cand.
+    lv_idx = sy-tabix.
+    CASE ls_cand-dokst.
+      WHEN gc_st_ia. ls_cand-prio = 1.
+      WHEN gc_st_fr. ls_cand-prio = 2.
+      WHEN gc_st_zg. ls_cand-prio = 3.
+      WHEN gc_st_aa. ls_cand-prio = 4.
+      WHEN OTHERS.   ls_cand-prio = 9.
+    ENDCASE.
+    MODIFY lt_cand FROM ls_cand INDEX lv_idx.
+  ENDLOOP.
+
+  SORT lt_cand BY prio ASCENDING dokvr DESCENDING adatum DESCENDING.
+  READ TABLE lt_cand INTO ls_best INDEX 1.
+
+  pv_docnum = ls_best-doknr.
+  pv_dokvr  = ls_best-dokvr.
+  pv_dokst  = ls_best-dokst.
+
+ENDFORM.
+
+"===========================================================
+" FORM: reject_to_zg
+"===========================================================
+FORM reject_to_zg
+  USING    pv_docnum TYPE draw-doknr
+           pv_dokvr  TYPE draw-dokvr
+           pv_dokar  TYPE draw-dokar
+  CHANGING pv_msg    TYPE string.
+
+  DATA: ls_doc  TYPE bapi_doc_draw2,
+        ls_docx TYPE bapi_doc_drawx2,
+        ls_ret  TYPE bapiret2.
+
+  CLEAR: ls_doc, ls_docx, ls_ret.
+  ls_doc-statusextern  = gc_st_zg.
+  ls_docx-statusextern = 'X'.
+
+  CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+    EXPORTING
+      documenttype    = pv_dokar
+      documentnumber  = pv_docnum
+      documentpart    = p_doktl
+      documentversion = pv_dokvr
+      documentdata    = ls_doc
+      documentdatax   = ls_docx
+    IMPORTING
+      return          = ls_ret.
+
+  IF ls_ret-type = 'E' OR ls_ret-type = 'A'.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    pv_msg = |Gagal FR->ZG: { ls_ret-message }|.
+    RETURN.
+  ENDIF.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  WAIT UP TO 1 SECONDS.
+  pv_msg = |Ver { pv_dokvr } berhasil FR->ZG|.
+
+ENDFORM.
+
+"===========================================================
+" FORM: transition_to_ia
+"===========================================================
+FORM transition_to_ia
+  USING    pv_docnum TYPE draw-doknr
+           pv_dokvr  TYPE draw-dokvr
+           pv_dokar  TYPE draw-dokar
+  CHANGING pv_msg    TYPE string.
+
+  DATA: ls_doc  TYPE bapi_doc_draw2,
+        ls_docx TYPE bapi_doc_drawx2,
+        ls_ret  TYPE bapiret2.
+
+  CLEAR: ls_doc, ls_docx, ls_ret.
+  ls_doc-statusextern  = gc_st_ia.
+  ls_docx-statusextern = 'X'.
+
+  CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+    EXPORTING
+      documenttype    = pv_dokar
+      documentnumber  = pv_docnum
+      documentpart    = p_doktl
+      documentversion = pv_dokvr
+      documentdata    = ls_doc
+      documentdatax   = ls_docx
+    IMPORTING
+      return          = ls_ret.
+
+  IF ls_ret-type = 'E' OR ls_ret-type = 'A'.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    pv_msg = |Gagal AA->IA: { ls_ret-message }|.
+    RETURN.
+  ENDIF.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  WAIT UP TO 1 SECONDS.
+  pv_msg = |Ver { pv_dokvr } berhasil AA->IA, siap checkin|.
+
+ENDFORM.
+
+"===========================================================
+" FORM: restore_to_fr
+" Alur: ZG -> IA -> AP -> FR
+"===========================================================
+FORM restore_to_fr
+  USING    pv_docnum TYPE draw-doknr
+           pv_dokvr  TYPE draw-dokvr
+           pv_dokar  TYPE draw-dokar
+  CHANGING pv_msg    TYPE string.
+
+  DATA: ls_doc  TYPE bapi_doc_draw2,
+        ls_docx TYPE bapi_doc_drawx2,
+        ls_ret  TYPE bapiret2.
+
+  "--- Step 1: ZG -> IA ---
+  CLEAR: ls_doc, ls_docx, ls_ret.
+  ls_doc-statusintern  = 'IA'.
+  ls_docx-statusintern = 'X'.
+  CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+    EXPORTING
+      documenttype    = pv_dokar
+      documentnumber  = pv_docnum
+      documentpart    = p_doktl
+      documentversion = pv_dokvr
+      documentdata    = ls_doc
+      documentdatax   = ls_docx
+    IMPORTING
+      return          = ls_ret.
+  IF ls_ret-type = 'E' OR ls_ret-type = 'A'.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    pv_msg = |Gagal restore ZG->IA Ver { pv_dokvr }: { ls_ret-message }|.
+    RETURN.
+  ENDIF.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  WAIT UP TO 1 SECONDS.
+
+  "--- Step 2: IA -> AP ---
+  CLEAR: ls_doc, ls_docx, ls_ret.
+  ls_doc-statusintern  = 'AP'.
+  ls_docx-statusintern = 'X'.
+  CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+    EXPORTING
+      documenttype    = pv_dokar
+      documentnumber  = pv_docnum
+      documentpart    = p_doktl
+      documentversion = pv_dokvr
+      documentdata    = ls_doc
+      documentdatax   = ls_docx
+    IMPORTING
+      return          = ls_ret.
+  IF ls_ret-type = 'E' OR ls_ret-type = 'A'.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    pv_msg = |Gagal restore IA->AP Ver { pv_dokvr }: { ls_ret-message }|.
+    RETURN.
+  ENDIF.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  WAIT UP TO 1 SECONDS.
+
+  "--- Step 3: AP -> FR ---
+  CLEAR: ls_doc, ls_docx, ls_ret.
+  ls_doc-statusintern  = 'FR'.
+  ls_docx-statusintern = 'X'.
+  CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+    EXPORTING
+      documenttype    = pv_dokar
+      documentnumber  = pv_docnum
+      documentpart    = p_doktl
+      documentversion = pv_dokvr
+      documentdata    = ls_doc
+      documentdatax   = ls_docx
+    IMPORTING
+      return          = ls_ret.
+  IF ls_ret-type = 'E' OR ls_ret-type = 'A'.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    pv_msg = |Gagal restore AP->FR Ver { pv_dokvr }: { ls_ret-message }|.
+    RETURN.
+  ENDIF.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  WAIT UP TO 1 SECONDS.
+  pv_msg = |Ver { pv_dokvr } berhasil ZG->IA->AP->FR (restored)|.
+
+ENDFORM.
+
+"===========================================================
+" FORM: move_to_error_folder
+"===========================================================
+FORM move_to_error_folder
+  USING pv_fullpath  TYPE string
+        pv_filename  TYPE csequence
+        pv_error_dir TYPE string.
+
+  DATA: lv_dest     TYPE string,
+        lv_buf      TYPE x LENGTH 2550,
+        lv_bytes    TYPE i,
+        lv_subrc    TYPE sy-subrc,
+        lv_ts_date  TYPE string,
+        lv_ts_time  TYPE string,
+        lv_fname    TYPE string,
+        lv_fn_str   TYPE string,
+        lv_written  TYPE i.
+
+  lv_fn_str = pv_filename.
+  CONDENSE lv_fn_str.
+
+  DATA: lv_buf_date TYPE c LENGTH 8,
+        lv_buf_time TYPE c LENGTH 6.
+  lv_buf_date = sy-datum.
+  lv_buf_time = sy-uzeit.
+  lv_ts_date  = lv_buf_date.
+  lv_ts_time  = lv_buf_time.
+
+  CONCATENATE lv_fn_str '.' lv_ts_date '_' lv_ts_time '.err'
+    INTO lv_fname.
+  CONCATENATE pv_error_dir lv_fname INTO lv_dest.
+
+  OPEN DATASET pv_fullpath FOR INPUT IN BINARY MODE.
+  IF sy-subrc <> 0.
+    WRITE: / '[WARN] move_to_error: gagal buka sumber:', pv_fullpath.
+    RETURN.
+  ENDIF.
+
+  OPEN DATASET lv_dest FOR OUTPUT IN BINARY MODE.
+  IF sy-subrc <> 0.
+    CLOSE DATASET pv_fullpath.
+    WRITE: / '[WARN] move_to_error: gagal buka tujuan:', lv_dest.
+    WRITE: / '[WARN] Pastikan folder', pv_error_dir, 'sudah ada di server'.
+    RETURN.
+  ENDIF.
+
+  lv_written = 0.
+  DO.
+    CLEAR: lv_buf, lv_bytes.
+    READ DATASET pv_fullpath INTO lv_buf ACTUAL LENGTH lv_bytes.
+    lv_subrc = sy-subrc.
+    IF lv_bytes > 0.
+      TRANSFER lv_buf TO lv_dest LENGTH lv_bytes.
+      lv_written = lv_written + lv_bytes.
+    ENDIF.
+    IF lv_subrc <> 0. EXIT. ENDIF.
+  ENDDO.
+
+  CLOSE DATASET pv_fullpath.
+  CLOSE DATASET lv_dest.
+
+  IF lv_written = 0.
+    WRITE: / '[WARN] move_to_error: file kosong atau gagal copy:', lv_fn_str.
+    RETURN.
+  ENDIF.
+
+  DELETE DATASET pv_fullpath.
+  IF sy-subrc <> 0.
+    WRITE: / '[WARN] move_to_error: gagal hapus sumber:', pv_fullpath.
+    WRITE: / '[WARN] File duplikat mungkin ada di error folder'.
+  ELSE.
+    WRITE: / '[INFO] File dipindah ke error folder:', lv_fname.
+  ENDIF.
+
+ENDFORM.
+
+"===========================================================
+" FORM: get_doc_originals
+"===========================================================
+FORM get_doc_originals
+  USING    pv_dokar TYPE draw-dokar
+           pv_doknr TYPE draw-doknr
+           pv_dokvr TYPE draw-dokvr
+  CHANGING pt_orig  TYPE STANDARD TABLE.
+
+  DATA: lt_files TYPE STANDARD TABLE OF cvapi_doc_file,
+        ls_file  TYPE cvapi_doc_file,
+        ls_orig  TYPE ty_original,
+        ls_draw  TYPE draw.
+
+  REFRESH pt_orig.
+
+  CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
+    EXPORTING
+      pf_batchmode    = 'X'
+      pf_dokar        = pv_dokar
+      pf_doknr        = pv_doknr
+      pf_dokvr        = pv_dokvr
+      pf_doktl        = p_doktl
+      pf_active_files = 'X'
+    IMPORTING
+      psx_draw        = ls_draw
+    TABLES
+      pt_files        = lt_files
+    EXCEPTIONS
+      not_found       = 1
+      no_auth         = 2
+      error           = 3
+      OTHERS          = 4.
+
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+
+  LOOP AT lt_files INTO ls_file.
+    CLEAR ls_orig.
+    ls_orig-dokar    = pv_dokar.
+    ls_orig-doknr    = pv_doknr.
+    ls_orig-dokvr    = pv_dokvr.
+    ls_orig-doktl    = p_doktl.
+    ls_orig-dappl    = ls_file-dappl.
+    ls_orig-filename = ls_file-filename.
+    ls_orig-appnr    = ls_file-appnr.
+    ls_orig-lo_objid = ls_file-lo_objid.
+    ls_orig-ph_objid = ls_file-ph_objid.
+    APPEND ls_orig TO pt_orig.
+  ENDLOOP.
+
+ENDFORM.
+
+"===========================================================
+" FORM: check_original_exists
+"===========================================================
+FORM check_original_exists
+  USING    pv_basename TYPE string
+           pt_orig     TYPE STANDARD TABLE
+  CHANGING pv_exists   TYPE abap_bool
+           pv_lo_objid TYPE cvapi_doc_file-lo_objid
+           pv_ph_objid TYPE cvapi_doc_file-ph_objid.
+
+  DATA: ls_orig      TYPE ty_original,
+        lv_orig_base TYPE string,
+        lv_orig_fn   TYPE string,
+        lv_cmp_in    TYPE string,
+        lv_cmp_orig  TYPE string.
+
+  pv_exists = abap_false.
+  CLEAR: pv_lo_objid, pv_ph_objid.
+
+  lv_cmp_in = pv_basename.
+  TRANSLATE lv_cmp_in TO UPPER CASE.
+
+  LOOP AT pt_orig INTO ls_orig.
+    lv_orig_fn = ls_orig-filename.
+    PERFORM get_basename
+      USING    lv_orig_fn
+      CHANGING lv_orig_base.
+
+    lv_cmp_orig = lv_orig_base.
+    TRANSLATE lv_cmp_orig TO UPPER CASE.
+
+    IF lv_cmp_in = lv_cmp_orig.
+      pv_exists   = abap_true.
+      pv_lo_objid = ls_orig-lo_objid.
+      pv_ph_objid = ls_orig-ph_objid.
+      RETURN.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.
+
+"===========================================================
+" FORM: get_basename
+"===========================================================
+FORM get_basename
+  USING    pv_path TYPE string
+  CHANGING pv_base TYPE string.
+
+  DATA: lt_parts TYPE TABLE OF string.
+
+  SPLIT pv_path AT '/' INTO TABLE lt_parts.
+  DATA lv_lines TYPE i.
+  DESCRIBE TABLE lt_parts LINES lv_lines.
+  READ TABLE lt_parts INDEX lv_lines INTO pv_base.
+
+ENDFORM.
+
+"===========================================================
+" FORM: build_pt_content
+"===========================================================
+FORM build_pt_content
+  USING    p_fullpath TYPE string
+  CHANGING pt_content TYPE STANDARD TABLE
+           pv_size    TYPE i.
+
+  DATA: lv_blockno TYPE i,
+        lv_total   TYPE i,
+        lv_zaehl   TYPE n LENGTH 4,
+        lv_subrc   TYPE sy-subrc,
+        lv_buf     TYPE x LENGTH 2550,
+        lv_bytes   TYPE i,
+        ls_cont    TYPE drao.
+
+  REFRESH pt_content.
+  pv_size = 0.
+
+  OPEN DATASET p_fullpath FOR INPUT IN BINARY MODE.
+  IF sy-subrc <> 0. RETURN. ENDIF.
+  DO.
+    CLEAR lv_bytes.
+    READ DATASET p_fullpath INTO lv_buf ACTUAL LENGTH lv_bytes.
+    lv_subrc = sy-subrc.
+    lv_total = lv_total + lv_bytes.
+    IF lv_subrc <> 0. EXIT. ENDIF.
+  ENDDO.
+  CLOSE DATASET p_fullpath.
+
+  pv_size = lv_total.
+  IF pv_size = 0. RETURN. ENDIF.
+
+  OPEN DATASET p_fullpath FOR INPUT IN BINARY MODE.
+  DO.
+    CLEAR: lv_buf, lv_bytes.
+    READ DATASET p_fullpath INTO lv_buf ACTUAL LENGTH lv_bytes.
+    lv_subrc = sy-subrc.
+    IF lv_bytes > 0.
+      lv_blockno = lv_blockno + 1.
+      lv_zaehl   = lv_blockno.
+      CLEAR ls_cont.
+      ls_cont-zaehl = lv_zaehl.
+      ls_cont-orbkl = lv_bytes.
+      ls_cont-orln  = pv_size.
+      ls_cont-orblk = lv_buf.
+      APPEND ls_cont TO pt_content.
+    ENDIF.
+    IF lv_subrc <> 0. EXIT. ENDIF.
+  ENDDO.
+  CLOSE DATASET p_fullpath.
+
+ENDFORM.
+
+"===========================================================
+" FORM: add_log
+"===========================================================
+FORM add_log USING p_file   TYPE csequence
+                   p_doknr  TYPE draw-doknr
+                   p_dokvr  TYPE draw-dokvr
+                   p_dokar  TYPE draw-dokar
+                   p_ctcode TYPE csequence
+                   p_status TYPE csequence
+                   p_msgty  TYPE csequence
+                   p_msgid  TYPE csequence
+                   p_msgno  TYPE any
+                   p_msgv1  TYPE csequence
+                   p_msgv2  TYPE csequence
+                   p_msgv3  TYPE csequence
+                   p_msgv4  TYPE csequence
+                   p_msg    TYPE csequence.
+  CLEAR gs_log.
+  gs_log-file   = p_file.
+  gs_log-doknr  = p_doknr.
+  gs_log-dokvr  = p_dokvr.
+  gs_log-dokar  = p_dokar.
+  gs_log-ctcode = p_ctcode.
+  gs_log-status = p_status.
+  gs_log-msgty  = p_msgty.
+  gs_log-msgid  = p_msgid.
+  gs_log-msgno  = p_msgno.
+  gs_log-msgv1  = p_msgv1.
+  gs_log-msgv2  = p_msgv2.
+  gs_log-msgv3  = p_msgv3.
+  gs_log-msgv4  = p_msgv4.
+  gs_log-msg    = p_msg.
+  APPEND gs_log TO gt_log.
+ENDFORM.
+
+"===========================================================
+" FORM: collect_all_bom_materials
+"
+" v34: Tambah filter plant kedua (p_wer2).
+"===========================================================
+FORM collect_all_bom_materials
+  USING    pv_matnr TYPE matnr
+           pv_level TYPE i
+  CHANGING pt_matnr TYPE STANDARD TABLE.
+
+  DATA: lt_idnrk  TYPE TABLE OF stpo-idnrk,
+        lt_idnrk2 TYPE TABLE OF stpo-idnrk,
+        lv_idnrk  TYPE stpo-idnrk,
+        lv_exists TYPE abap_bool,
+        lv_child  TYPE matnr,
+        lv_next   TYPE i.
+
+  IF pv_level >= p_maxlv. RETURN. ENDIF.
+
+  " Query plant 1
+  IF p_werks IS NOT INITIAL.
+    SELECT p~idnrk INTO TABLE lt_idnrk
+      FROM mast AS m INNER JOIN stpo AS p ON m~stlnr = p~stlnr
+      WHERE m~matnr = pv_matnr AND m~werks = p_werks
+        AND m~stlan = p_stlan AND p~idnrk <> space.
+  ELSE.
+    SELECT p~idnrk INTO TABLE lt_idnrk
+      FROM mast AS m INNER JOIN stpo AS p ON m~stlnr = p~stlnr
+      WHERE m~matnr = pv_matnr AND m~stlan = p_stlan
+        AND p~idnrk <> space.
+  ENDIF.
+
+  " v34: Query plant 2 jika terisi, gabung ke lt_idnrk
+  IF p_wer2 IS NOT INITIAL.
+    SELECT p~idnrk INTO TABLE lt_idnrk2
+      FROM mast AS m INNER JOIN stpo AS p ON m~stlnr = p~stlnr
+      WHERE m~matnr = pv_matnr AND m~werks = p_wer2
+        AND m~stlan = p_stlan AND p~idnrk <> space.
+    APPEND LINES OF lt_idnrk2 TO lt_idnrk.
+  ENDIF.
+
+  SORT lt_idnrk.
+  DELETE ADJACENT DUPLICATES FROM lt_idnrk.
+
+  LOOP AT lt_idnrk INTO lv_idnrk.
+    lv_exists = abap_false.
+    LOOP AT pt_matnr ASSIGNING FIELD-SYMBOL(<m>).
+      IF <m> = lv_idnrk. lv_exists = abap_true. EXIT. ENDIF.
+    ENDLOOP.
+    IF lv_exists = abap_true. CONTINUE. ENDIF.
+    APPEND lv_idnrk TO pt_matnr.
+    lv_child = lv_idnrk.
+    lv_next  = pv_level + 1.
+    PERFORM collect_all_bom_materials USING lv_child lv_next CHANGING pt_matnr.
+  ENDLOOP.
+
+ENDFORM.
+
+"===========================================================
+" FORM: add_bom_header_link
+"
+" v34: Tambah fallback ke plant kedua (p_wer2).
+"===========================================================
+FORM add_bom_header_link
+  USING    pv_matnr    TYPE matnr
+           pv_dokar    TYPE draw-dokar
+  CHANGING pt_objlinks TYPE STANDARD TABLE.
+
+  DATA: ls_link      TYPE bapi_doc_drad,
+        lv_stlal_sel TYPE mast-stlal.
+
+  CLEAR: lv_stlnr, lv_stlal, lv_objky, lv_stlal_sel.
+
+  IF p_werks IS NOT INITIAL.
+    SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal_sel)
+      FROM mast WHERE matnr = pv_matnr AND werks = p_werks
+        AND stlan = p_stlan AND ( stlal = '1' OR stlal = '01' ).
+    IF sy-subrc <> 0 OR lv_stlnr IS INITIAL.
+      SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal_sel)
+        FROM mast WHERE matnr = pv_matnr AND werks = p_werks
+          AND stlan = p_stlan.
+    ENDIF.
+
+    IF ( lv_stlnr IS INITIAL ) AND ( p_wer2 IS NOT INITIAL ).
+      SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal_sel)
+        FROM mast WHERE matnr = pv_matnr AND werks = p_wer2
+          AND stlan = p_stlan AND ( stlal = '1' OR stlal = '01' ).
+      IF sy-subrc <> 0 OR lv_stlnr IS INITIAL.
+        SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal_sel)
+          FROM mast WHERE matnr = pv_matnr AND werks = p_wer2
+            AND stlan = p_stlan.
+      ENDIF.
+    ENDIF.
+
+  ELSE.
+    SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal_sel)
+      FROM mast WHERE matnr = pv_matnr AND stlan = p_stlan
+        AND ( stlal = '1' OR stlal = '01' ).
+    IF sy-subrc <> 0 OR lv_stlnr IS INITIAL.
+      SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal_sel)
+        FROM mast WHERE matnr = pv_matnr AND stlan = p_stlan.
+    ENDIF.
+  ENDIF.
+
+  IF lv_stlnr IS INITIAL. RETURN. ENDIF.
+
+  CONCATENATE 'M' lv_stlnr INTO lv_objky.
+  CLEAR ls_link.
+  ls_link-objecttype = 'STKO_DOC'.
+  ls_link-objectkey  = lv_objky.
+  APPEND ls_link TO pt_objlinks.
+
+ENDFORM.
+
+"===========================================================
+" FORM: add_bom_items_link
+"===========================================================
+FORM add_bom_items_link
+  USING    pv_matnr    TYPE matnr
+  CHANGING pt_objlinks TYPE STANDARD TABLE.
+
+  DATA: ls_link      TYPE bapi_doc_drad,
+        lt_all_matnr TYPE TABLE OF matnr,
+        lv_m         TYPE matnr.
+
+  PERFORM collect_all_bom_materials USING pv_matnr 0 CHANGING lt_all_matnr.
+
+  LOOP AT lt_all_matnr INTO lv_m.
+    CLEAR ls_link.
+    ls_link-objecttype = 'MARA'.
+    ls_link-objectkey  = lv_m.
+    APPEND ls_link TO pt_objlinks.
+  ENDLOOP.
+
+ENDFORM.
+
+"===========================================================
+" FORM: ensure_links_for_existing
+"
+" v36: BOM link berlaku untuk semua tipe termasuk TDS.
+"===========================================================
+FORM ensure_links_for_existing
+  USING    pv_docnum TYPE draw-doknr
+           pv_matnr  TYPE matnr
+           pv_dokvr  TYPE draw-dokvr
+           pv_dokar  TYPE draw-dokar
+  CHANGING pv_msg    TYPE string.
+
+  DATA: lt_drad       TYPE STANDARD TABLE OF drad,
+        ls_drad       TYPE drad,
+        lt_all        TYPE STANDARD TABLE OF bapi_doc_drad,
+        ls_all        TYPE bapi_doc_drad,
+        lt_new        TYPE STANDARD TABLE OF bapi_doc_drad,
+        ls_new        TYPE bapi_doc_drad,
+        lv_has_mara   TYPE abap_bool,
+        lv_has_stko   TYPE abap_bool,
+        ls_doc_local  TYPE bapi_doc_draw2,
+        ls_docx_local TYPE bapi_doc_drawx2,
+        ls_ret_local  TYPE bapiret2.
+
+  CLEAR pv_msg.
+  REFRESH: lt_drad, lt_all, lt_new.
+  lv_has_mara = abap_false.
+  lv_has_stko = abap_false.
+
+  SELECT * FROM drad INTO TABLE lt_drad
+    WHERE dokar = pv_dokar AND doknr = pv_docnum
+      AND dokvr = pv_dokvr AND doktl = p_doktl.
+
+  LOOP AT lt_drad INTO ls_drad.
+    CLEAR ls_all.
+    ls_all-objecttype = ls_drad-dokob.
+    ls_all-objectkey  = ls_drad-objky.
+    APPEND ls_all TO lt_all.
+    IF ls_drad-dokob = 'MARA' AND ls_drad-objky = pv_matnr.
+      lv_has_mara = abap_true.
+    ENDIF.
+    IF ls_drad-dokob = 'STKO_DOC'.
+      lv_has_stko = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+  IF lv_has_mara = abap_false.
+    CLEAR ls_new.
+    ls_new-objecttype = 'MARA'.
+    ls_new-objectkey  = pv_matnr.
+    APPEND ls_new TO lt_new.
+  ENDIF.
+
+  " Semua tipe dokumen (termasuk TDS) diperlakukan sama.
+  " TDS breakdown dimulai dari HALB sehingga hasilnya lebih pendek,
+  " tapi mekanisme BOM link identik dengan DRW/DMT/DBX.
+  IF lv_has_stko = abap_false.
+    PERFORM add_bom_header_link USING pv_matnr pv_dokar CHANGING lt_new.
+  ENDIF.
+  PERFORM ensure_bom_items_link USING pv_matnr CHANGING lt_all lt_new.
+
+  IF lt_new IS INITIAL.
+    pv_msg = 'Object link sudah lengkap'.
+    RETURN.
+  ENDIF.
+
+  APPEND LINES OF lt_new TO lt_all.
+  CLEAR: ls_doc_local, ls_docx_local, ls_ret_local.
+
+  CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+    EXPORTING
+      documenttype    = pv_dokar
+      documentnumber  = pv_docnum
+      documentpart    = p_doktl
+      documentversion = pv_dokvr
+      documentdata    = ls_doc_local
+      documentdatax   = ls_docx_local
+    IMPORTING
+      return          = ls_ret_local
+    TABLES
+      objectlinks     = lt_all.
+
+  IF ls_ret_local-type = 'E' OR ls_ret_local-type = 'A'.
+    pv_msg = |Gagal update link: { ls_ret_local-message }|.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    RETURN.
+  ENDIF.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  pv_msg = |Link BOM updated s/d { p_maxlv } level|.
+
+ENDFORM.
+
+"===========================================================
+" FORM: ensure_bom_items_link
+"===========================================================
+FORM ensure_bom_items_link
+  USING    pv_matnr TYPE matnr
+  CHANGING pt_all   TYPE STANDARD TABLE
+           pt_new   TYPE STANDARD TABLE.
+
+  DATA: ls_new       TYPE bapi_doc_drad,
+        lt_all_matnr TYPE TABLE OF matnr,
+        lv_m         TYPE matnr,
+        lv_exists    TYPE abap_bool.
+
+  PERFORM collect_all_bom_materials USING pv_matnr 0 CHANGING lt_all_matnr.
+
+  LOOP AT lt_all_matnr INTO lv_m.
+    lv_exists = abap_false.
+    LOOP AT pt_all ASSIGNING FIELD-SYMBOL(<a>).
+      ASSIGN COMPONENT 'OBJECTTYPE' OF STRUCTURE <a> TO FIELD-SYMBOL(<ot>).
+      ASSIGN COMPONENT 'OBJECTKEY'  OF STRUCTURE <a> TO FIELD-SYMBOL(<ok>).
+      IF sy-subrc = 0 AND <ot> = 'MARA' AND <ok> = lv_m.
+        lv_exists = abap_true. EXIT.
+      ENDIF.
+    ENDLOOP.
+    IF lv_exists = abap_false.
+      CLEAR ls_new.
+      ls_new-objecttype = 'MARA'.
+      ls_new-objectkey  = lv_m.
+      APPEND ls_new TO pt_new.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.

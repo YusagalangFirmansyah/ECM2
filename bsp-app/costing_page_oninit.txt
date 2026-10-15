@@ -1,0 +1,133 @@
+﻿" =======================================================================
+" OnInit - costing_page.htm
+" Dashboard Khusus Costing Engineering
+" =======================================================================
+DATA: LT_REQ         TYPE TABLE OF TY_REQ,
+      LS_REQ         TYPE TY_REQ,
+      LT_AUDIT       TYPE TABLE OF TY_AUDIT,
+      LS_AUDIT       TYPE TY_AUDIT,
+      lv_status_color TYPE string,
+      lv_status_label TYPE string.
+
+CLEAR: GV_REQUEST_HTML, GV_REQUEST_COUNT, GV_AUDIT_HTML, GV_SELECTED_ECR, GV_MESSAGE, GV_ICON.
+GV_REQUEST_COUNT = '0'.
+
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+
+DATA: lv_msg TYPE string.
+lv_msg = request->get_form_field( 'msg' ).
+IF lv_msg IS NOT INITIAL.
+  GV_MESSAGE = lv_msg.
+  GV_ICON = request->get_form_field( 'icon' ).
+  IF GV_ICON IS INITIAL. GV_ICON = 'success'. ENDIF.
+ENDIF.
+
+IF GV_USER_ID IS INITIAL OR GV_ROLE <> 'COST_ENG'.
+  " Not logged in or wrong role -> redirect
+  DATA: lv_enc_msg TYPE string,
+        lv_temp_msg TYPE string.
+  lv_temp_msg = 'Akses ditolak. Silakan login sebagai Costing Engineering.'.
+  lv_enc_msg = cl_http_utility=>escape_url( unescaped = lv_temp_msg ).
+  CONCATENATE 'login.htm?msg=' lv_enc_msg INTO DATA(lv_url).
+  navigation->goto_page( lv_url ).
+  RETURN.
+ENDIF.
+
+" --- 1. Load Pending Costing ECRs (Engineering Only) ---
+" Menampilkan ECR Engineering yang sudah BMAP (BOM Approved) atau RILS
+SELECT * FROM zecm_req
+  INTO CORRESPONDING FIELDS OF TABLE @LT_REQ
+  WHERE change_scope <> 'ROUT'
+    AND ( status = 'BMAP' OR status = 'RILS' OR status = 'CSTD' )
+  ORDER BY created_date DESCENDING, ecr_no DESCENDING.
+
+DATA: lv_count TYPE i.
+DESCRIBE TABLE LT_REQ LINES lv_count.
+GV_REQUEST_COUNT = lv_count.
+CONDENSE GV_REQUEST_COUNT.
+
+" --- 2. Load Selected ECR Details ---
+GV_SELECTED_ECR = request->get_form_field( 'ecr_detail' ).
+IF GV_SELECTED_ECR IS NOT INITIAL.
+  " Load Audit Trail
+  SELECT * FROM zecm_log
+    INTO CORRESPONDING FIELDS OF TABLE @LT_AUDIT
+    WHERE ecr_no = @GV_SELECTED_ECR
+    ORDER BY action_date DESCENDING, action_time DESCENDING.
+
+  LOOP AT LT_AUDIT INTO LS_AUDIT.
+    SELECT SINGLE zecm_full_name FROM zecm_user INTO @LS_AUDIT-full_name WHERE zecm_user_id = @LS_AUDIT-user_id.
+    
+    DATA: lv_time_str TYPE string,
+          lv_date_str TYPE string.
+    CONCATENATE LS_AUDIT-action_time(2) ':' LS_AUDIT-action_time+2(2) INTO lv_time_str.
+    CONCATENATE LS_AUDIT-action_date+6(2) '.' LS_AUDIT-action_date+4(2) '.' LS_AUDIT-action_date(4) INTO lv_date_str.
+
+    CONCATENATE GV_AUDIT_HTML
+      '<div class="mb-4 relative">'
+        '<div class="absolute left-[-1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-slate-300 border-2 border-white"></div>'
+        '<div class="flex justify-between items-start mb-0.5">'
+          '<span class="text-xs font-bold text-slate-700">' LS_AUDIT-action ' - ' LS_AUDIT-full_name '</span>'
+          '<span class="text-[0.65rem] font-bold text-slate-400 font-mono tracking-wider">' lv_date_str ' ' lv_time_str '</span>'
+        '</div>'
+        '<div class="text-xs text-slate-500">' LS_AUDIT-reason '</div>'
+      '</div>'
+      INTO GV_AUDIT_HTML.
+  ENDLOOP.
+ENDIF.
+
+" --- 3. PENCARIAN DMS (Search by Material) ---
+GV_SEARCH_MAT = request->get_form_field( 'search_mat' ).
+IF GV_SEARCH_MAT IS NOT INITIAL.
+  " Logic pencarian Material ke DMS
+  " Memanfaatkan tabel DRAW/DRAT (Opsional untuk query dasar, akan dilempar ke dms_list/dms_detail)
+ENDIF.
+
+" --- Format HTML List ---
+LOOP AT LT_REQ INTO LS_REQ.
+  " Styling Status
+  IF LS_REQ-status = 'BMAP'.
+    lv_status_color = 'bg-blue-50 text-blue-600 border-blue-200'.
+    lv_status_label = 'BOM Approved'.
+  ELSEIF LS_REQ-status = 'RILS'.
+    lv_status_color = 'bg-emerald-50 text-emerald-600 border-emerald-200'.
+    lv_status_label = 'Released'.
+  ELSEIF LS_REQ-status = 'CSTD'.
+    lv_status_color = 'bg-purple-50 text-purple-600 border-purple-200'.
+    lv_status_label = 'Costing Done'.
+  ENDIF.
+
+  DATA: lv_date2 TYPE string.
+  CONCATENATE LS_REQ-created_date+6(2) '/' LS_REQ-created_date+4(2) '/' LS_REQ-created_date(4) INTO lv_date2.
+
+  " Active state
+  DATA: lv_active_class TYPE string.
+  IF LS_REQ-ecr_no = GV_SELECTED_ECR.
+    lv_active_class = 'bg-brand-50 border-brand-200 ring-1 ring-brand-500'.
+  ELSE.
+    lv_active_class = 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-md'.
+  ENDIF.
+
+  CONCATENATE GV_REQUEST_HTML
+    '<div onclick="window.location.href=''costing_page.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&ecr_detail=' LS_REQ-ecr_no '''"'
+    ' class="group cursor-pointer p-4 rounded-xl border transition-all duration-200 ' lv_active_class '">'
+      '<div class="flex justify-between items-start mb-2">'
+        '<span class="text-xs font-bold text-brand-600 uppercase tracking-widest font-mono">' LS_REQ-ecr_no '</span>'
+        '<span class="px-2.5 py-1 rounded-md text-[0.65rem] font-bold uppercase tracking-wider border ' lv_status_color '">' lv_status_label '</span>'
+      '</div>'
+      '<h3 class="text-sm font-bold text-slate-800 mb-1.5 line-clamp-2 leading-snug group-hover:text-brand-600 transition-colors">' LS_REQ-title '</h3>'
+      '<div class="text-xs text-slate-500 mb-3">'
+        '<i class="fas fa-box-open mr-1.5 opacity-70"></i> ' LS_REQ-matnr_fg
+      '</div>'
+      '<div class="flex items-center justify-between pt-3 border-t border-slate-100/60 mt-auto">'
+        '<div class="flex items-center gap-2">'
+          '<div class="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[0.55rem] font-bold text-slate-500">' LS_REQ-requester(1) '</div>'
+          '<span class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide">' LS_REQ-kategori '</span>'
+        '</div>'
+        '<span class="text-[0.65rem] font-bold text-slate-400 font-mono">' lv_date2 '</span>'
+      '</div>'
+    '</div>'
+    INTO GV_REQUEST_HTML.
+ENDLOOP.

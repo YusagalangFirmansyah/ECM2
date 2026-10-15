@@ -1,0 +1,2 @@
+* Type definitions for admin_drafter_capacity
+* (None needed, standard types used in OnInitialization)

@@ -1,0 +1,101 @@
+" Type Definitions — approver_list.htm V05
+
+
+TYPES: BEGIN OF ty_ireq,
+        ireq_id       TYPE zecm_ireq-ireq_id,
+        title         TYPE zecm_ireq-title,
+        matnr_fg      TYPE zecm_ireq-matnr_fg,
+        matnr_fg_no_zero TYPE char18,
+        maktx         TYPE makt-maktx,
+        kategori      TYPE zecm_ireq-kategori,
+        priority      TYPE zecm_ireq-priority,
+        requester     TYPE zecm_ireq-requester,
+        requester_name TYPE zecm_user-zecm_full_name,
+        status        TYPE zecm_ireq-status,
+        zdept         TYPE zecm_ireq-zdept,
+        zreason       TYPE zecm_ireq-zreason,
+        description   TYPE zecm_ireq-description,
+        req_date  TYPE zecm_ireq-req_date,
+        impl_po       TYPE zecm_ireq-impl_po,
+        impl_date     TYPE zecm_ireq-impl_date,
+        impl_reason   TYPE zecm_ireq-impl_reason,
+        has_attachment TYPE abap_bool,
+       END OF ty_ireq.
+TYPES: tt_ireq TYPE STANDARD TABLE OF ty_ireq.
+
+TYPES: BEGIN OF ty_attachment,
+        att_id    TYPE zecm_bom_att-att_id,
+        ecr_no    TYPE zecm_bom_att-ecr_no,
+        file_name TYPE zecm_bom_att-file_name,
+        mime_type TYPE zecm_bom_att-mime_type,
+        file_size TYPE zecm_bom_att-file_size,
+       END OF ty_attachment.
+TYPES: tt_attachment TYPE STANDARD TABLE OF ty_attachment.
+
+TYPES: BEGIN OF ty_ecr,
+        ecr_no        TYPE zecm_req-ecr_no,
+        title         TYPE zecm_req-title,
+        matnr_fg      TYPE zecm_req-matnr_fg,
+        matnr_fg_no_zero TYPE char18,
+        descr         TYPE zecm_req-descr,
+        kategori      TYPE zecm_req-kategori,
+        priority      TYPE zecm_req-priority,
+        requester     TYPE zecm_req-requester,
+        requester_name TYPE zecm_user-zecm_full_name,
+        drafter       TYPE zecm_req-drafter,
+        drafter_name  TYPE zecm_user-zecm_full_name,
+        dokar         TYPE zecm_req-dokar,
+        dir_number    TYPE zecm_req-dir_number,
+        dir_number_clean TYPE char50,
+        status        TYPE zecm_req-status,
+        reject_reason TYPE zecm_req-reject_reason,
+        cost_estimate TYPE zecm_req-cost_estimate,
+        zdept         TYPE zecm_req-zdept,
+        zreason       TYPE zecm_req-zreason,
+        created_date  TYPE zecm_req-created_date,
+        created_time  TYPE zecm_req-created_time,
+        changed_date  TYPE zecm_req-changed_date,
+        maktx         TYPE makt-maktx,
+        dms_doknr     TYPE draw-doknr,
+        dms_dokar     TYPE draw-dokar,
+        dms_dokvr     TYPE draw-dokvr,
+        dms_doktl     TYPE draw-doktl,
+        dms_dokst     TYPE draw-dokst,
+        dms_dktxt     TYPE drat-dktxt,
+        dms_found     TYPE abap_bool,
+       END OF ty_ecr.
+
+TYPES: tt_ecr TYPE STANDARD TABLE OF ty_ecr.
+
+TYPES: BEGIN OF ty_status_count,
+        status TYPE zecm_req-status,
+        count  TYPE i,
+       END OF ty_status_count.
+
+TYPES: tt_status_count TYPE STANDARD TABLE OF ty_status_count WITH EMPTY KEY.
+
+TYPES: BEGIN OF ty_monthly,
+        month  TYPE c LENGTH 6,
+        status TYPE zecm_req-status,
+        count  TYPE i,
+       END OF ty_monthly.
+
+TYPES: tt_monthly TYPE STANDARD TABLE OF ty_monthly WITH EMPTY KEY.
+
+TYPES: BEGIN OF ty_log,
+        log_id        TYPE zecm_log-log_id,
+        ecr_no        TYPE zecm_log-ecr_no,
+        action        TYPE zecm_log-action,
+        old_status    TYPE zecm_log-old_status,
+        new_status    TYPE zecm_log-new_status,
+        user_id       TYPE zecm_log-user_id,
+        user_name     TYPE zecm_user-zecm_full_name,
+        action_date   TYPE zecm_log-action_date,
+        action_time   TYPE zecm_log-action_time,
+        reason        TYPE zecm_log-reason,
+        action_label  TYPE string,
+        old_label     TYPE string,
+        new_label     TYPE string,
+       END OF ty_log.
+
+TYPES: tt_log TYPE STANDARD TABLE OF ty_log.

@@ -1,0 +1,332 @@
+" ecr_form Event Handler — V05
+" Material search + Submit ECR with new fields
+
+DATA: LV_ACTION    TYPE string,
+      LV_KEYWORD   TYPE string,
+      LV_TITLE     TYPE string,
+      LV_DESC      TYPE string,
+      LV_KATEGORI  TYPE string,
+      LV_PRIORITY  TYPE string,
+      LV_COST      TYPE string,
+      LV_DEPT      TYPE string,
+      LV_REASON    TYPE string,
+      LV_MATERIALS TYPE string,
+      LV_ECR_NO    TYPE numc10,
+      LS_REQ       TYPE zecm_req,
+      LV_URL       TYPE string,
+      LV_COUNT     TYPE i,
+      LV_MATNR     TYPE matnr,
+      LT_SELECTED  TYPE STANDARD TABLE OF string,
+      LV_SEARCH    TYPE string,
+      LV_COUNT_STR TYPE string,
+      LV_PLANT     TYPE string,
+      LV_MTART     TYPE string,
+      LV_Q_ALPHA   TYPE matnr,
+      LV_Q_UP      TYPE string,
+      LV_MAKTX     TYPE makt-maktx,
+      LT_RAW       TYPE tt_mat,
+      LS_RAW       TYPE ty_mat,
+      LS_DEDUP     TYPE ty_dedup,
+      LT_DEDUP     TYPE tt_dedup,
+      LR_MTART     TYPE RANGE OF mara-mtart,
+      LS_RMT       LIKE LINE OF LR_MTART,
+      LR_WERKS     TYPE RANGE OF marc-werks,
+      LS_RWK       LIKE LINE OF LR_WERKS,
+      LV_PLANT_TMP TYPE string,
+      LV_PLANTS    TYPE string,
+      ls_log       TYPE ty_log.
+
+LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+LV_PLANT  = request->get_form_field( 'plant' ).
+LV_MTART  = request->get_form_field( 'mtart' ).
+
+IF LV_PLANT IS INITIAL. LV_PLANT = 'ALL'. ENDIF.
+IF LV_MTART IS INITIAL. LV_MTART = 'ALL'. ENDIF.
+
+" ================================================================
+" SEARCH MATERIAL
+" ================================================================
+
+  " === AJAX CHECK MATERIAL BLOCK ===
+  IF LV_ACTION = 'check_mat'.
+    DATA: lv_check_mat TYPE string,
+          lv_exist_ireq TYPE zecm_ireq,
+          lv_exist_ecr TYPE zecm_req.
+    lv_check_mat = request->get_form_field( 'check_matnr' ).
+    
+    " Pad zeros
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING input = lv_check_mat
+      IMPORTING output = lv_check_mat.
+    
+    " Check IREQ (status REQ, APPR, INWK)
+    SELECT SINGLE * FROM zecm_ireq INTO @lv_exist_ireq 
+      WHERE matnr_fg = @lv_check_mat 
+        AND status IN ('REQ', 'APPR', 'INWK').
+        
+    IF sy-subrc = 0.
+      CONCATENATE 'BLOCKED:Sedang diajukan pada tiket IREQ: ' lv_exist_ireq-ireq_id ' (' lv_exist_ireq-status ').' INTO GV_MESSAGE.
+      _m_response->set_cdata( GV_MESSAGE ).
+      RETURN.
+    ENDIF.
+    
+    " Check ECR (status not CLSD)
+    SELECT SINGLE * FROM zecm_req INTO @lv_exist_ecr
+      WHERE matnr_fg = @lv_check_mat
+        AND status <> 'CLSD'.
+        
+    IF sy-subrc = 0.
+      CONCATENATE 'BLOCKED:Sedang dalam pengerjaan ECO: ' lv_exist_ecr-ecr_no ' (' lv_exist_ecr-status ').' INTO GV_MESSAGE.
+      _m_response->set_cdata( GV_MESSAGE ).
+      RETURN.
+    ENDIF.
+    
+    _m_response->set_cdata( 'OK' ).
+    RETURN.
+  ENDIF.
+  " === END AJAX ===
+
+IF LV_ACTION = 'search_material'.
+  LV_KEYWORD = request->get_form_field( 'keyword' ).
+  CLEAR LT_RESULTS.
+
+  IF LV_MTART = 'ALL'.
+    CLEAR LS_RMT. LS_RMT-SIGN = 'I'. LS_RMT-OPTION = 'EQ'. LS_RMT-LOW = 'FERT'. APPEND LS_RMT TO LR_MTART.
+    CLEAR LS_RMT. LS_RMT-SIGN = 'I'. LS_RMT-OPTION = 'EQ'. LS_RMT-LOW = 'HALB'. APPEND LS_RMT TO LR_MTART.
+    CLEAR LS_RMT. LS_RMT-SIGN = 'I'. LS_RMT-OPTION = 'EQ'. LS_RMT-LOW = 'HALM'. APPEND LS_RMT TO LR_MTART.
+  ELSE.
+    CLEAR LS_RMT. LS_RMT-SIGN = 'I'. LS_RMT-OPTION = 'EQ'. LS_RMT-LOW = LV_MTART. APPEND LS_RMT TO LR_MTART.
+  ENDIF.
+
+  IF LV_PLANT = 'ALL'.
+    CLEAR LS_RWK. LS_RWK-SIGN = 'I'. LS_RWK-OPTION = 'EQ'. LS_RWK-LOW = '2000'. APPEND LS_RWK TO LR_WERKS.
+    CLEAR LS_RWK. LS_RWK-SIGN = 'I'. LS_RWK-OPTION = 'EQ'. LS_RWK-LOW = '3000'. APPEND LS_RWK TO LR_WERKS.
+  ELSE.
+    CLEAR LS_RWK. LS_RWK-SIGN = 'I'. LS_RWK-OPTION = 'EQ'. LS_RWK-LOW = LV_PLANT. APPEND LS_RWK TO LR_WERKS.
+  ENDIF.
+
+  IF LV_KEYWORD IS INITIAL.
+    GV_MESSAGE = 'Isi keyword pencarian dulu.'.
+    GV_ICON = 'warning'.
+    RETURN.
+  ENDIF.
+
+  CONDENSE LV_KEYWORD.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING input  = LV_KEYWORD
+    IMPORTING output = LV_Q_ALPHA.
+  LV_Q_UP = LV_KEYWORD.
+  TRANSLATE LV_Q_UP TO UPPER CASE.
+  CONCATENATE '%' LV_Q_UP '%' INTO LV_SEARCH.
+
+  SELECT a~matnr, b~maktx, c~werks, a~mtart
+    INTO CORRESPONDING FIELDS OF TABLE @LT_RAW
+    FROM mara AS a
+    INNER JOIN makt AS b
+      ON b~matnr = a~matnr AND b~spras = @SY-LANGU
+    LEFT OUTER JOIN marc AS c
+      ON c~matnr = a~matnr
+    WHERE a~mtart IN @LR_MTART
+      AND c~werks IN @LR_WERKS
+      AND ( a~matnr = @LV_Q_ALPHA
+         OR a~matnr LIKE @LV_SEARCH
+         OR b~maktx LIKE @LV_SEARCH ).
+
+  SORT LT_RAW BY matnr ASCENDING werks ASCENDING.
+
+  LOOP AT LT_RAW INTO LS_RAW.
+    CLEAR LS_DEDUP.
+    READ TABLE LT_RESULTS INTO LS_DEDUP WITH KEY matnr = LS_RAW-matnr.
+    IF sy-subrc <> 0.
+      LS_DEDUP-matnr = LS_RAW-matnr.
+      LS_DEDUP-desc  = LS_RAW-maktx.
+      LS_DEDUP-mtart = LS_RAW-mtart.
+      IF LS_RAW-werks IS NOT INITIAL.
+        LS_DEDUP-plants = LS_RAW-werks.
+      ENDIF.
+      APPEND LS_DEDUP TO LT_RESULTS.
+    ELSE.
+      IF LS_RAW-werks IS NOT INITIAL.
+        LV_PLANT_TMP = LS_RAW-werks.
+        IF NOT LS_DEDUP-plants CS LV_PLANT_TMP.
+          IF LS_DEDUP-plants IS INITIAL.
+            LS_DEDUP-plants = LS_RAW-werks.
+          ELSE.
+            CONCATENATE LS_DEDUP-plants ',' LS_RAW-werks INTO LS_DEDUP-plants.
+          ENDIF.
+          MODIFY LT_RESULTS FROM LS_DEDUP TRANSPORTING plants WHERE matnr = LS_RAW-matnr.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+  RETURN.
+ENDIF.
+
+" ================================================================
+" SUBMIT ECR (V05 — with new fields)
+" ================================================================
+IF LV_ACTION = 'submit_ecr'.
+  LV_MATERIALS = request->get_form_field( 'materials' ).
+  LV_TITLE     = request->get_form_field( 'title' ).
+  LV_DESC      = request->get_form_field( 'description' ).
+  LV_KATEGORI  = request->get_form_field( 'kategori' ).
+  LV_PRIORITY  = request->get_form_field( 'priority' ).
+  LV_COST      = request->get_form_field( 'cost_estimate' ).
+  LV_DEPT      = request->get_form_field( 'dept' ).
+  LV_REASON    = request->get_form_field( 'reason' ).
+
+  " V14: Implementation Tracking
+  DATA: lv_impl_po_form     TYPE zecm_req-impl_po,
+        lv_impl_reason_form TYPE zecm_req-impl_reason,
+        lv_raw_date_form    TYPE string.
+
+  lv_impl_po_form     = request->get_form_field( 'impl_po' ).
+  lv_impl_reason_form = request->get_form_field( 'impl_reason' ).
+  lv_raw_date_form    = request->get_form_field( 'impl_date' ).
+  REPLACE ALL OCCURRENCES OF '-' IN lv_raw_date_form WITH ''.
+
+  " Validation
+  IF LV_TITLE IS INITIAL.
+    GV_MESSAGE = 'Judul perubahan wajib diisi.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_MATERIALS IS INITIAL.
+    GV_MESSAGE = 'Pilih minimal satu material.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_KATEGORI IS INITIAL.
+    GV_MESSAGE = 'Kategori wajib dipilih.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_PRIORITY IS INITIAL.
+    GV_MESSAGE = 'Prioritas wajib dipilih.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_DESC IS INITIAL.
+    GV_MESSAGE = 'Deskripsi perubahan wajib diisi.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_DEPT IS INITIAL.
+    GV_MESSAGE = 'Departemen wajib dipilih.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+  IF LV_REASON IS INITIAL.
+    GV_MESSAGE = 'Alasan perubahan wajib dipilih.'.
+    GV_ICON = 'error'. RETURN.
+  ENDIF.
+
+  " V14: Jika Admin yang membuat langsung, wajib isi rencana implementasi
+  IF GV_ROLE = 'ADMIN'.
+    IF lv_impl_po_form IS INITIAL OR lv_raw_date_form IS INITIAL OR lv_impl_reason_form IS INITIAL.
+      GV_MESSAGE = 'Target PO, Tanggal Estimasi Jalan, dan Alasan Lapangan wajib diisi.'.
+      GV_ICON = 'error'. RETURN.
+    ENDIF.
+  ENDIF.
+
+  SPLIT LV_MATERIALS AT ',' INTO TABLE LT_SELECTED.
+
+  LOOP AT LT_SELECTED INTO LV_MATNR.
+    CONDENSE LV_MATNR NO-GAPS.
+    CHECK LV_MATNR IS NOT INITIAL.
+
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING
+        nr_range_nr        = '01'
+        object             = 'ZECM_REQ'
+      IMPORTING
+        number             = LV_ECR_NO
+      EXCEPTIONS
+        interval_not_found = 1
+        object_not_found   = 3
+        OTHERS             = 7.
+
+    IF sy-subrc <> 0.
+      GV_MESSAGE = 'Gagal generate nomor ECR.'.
+      GV_ICON = 'error'. RETURN.
+    ENDIF.
+
+    SELECT SINGLE maktx FROM makt INTO @LV_MAKTX
+      WHERE matnr = @LV_MATNR AND spras = @SY-LANGU.
+
+    CLEAR LS_REQ.
+    LS_REQ-mandt         = sy-mandt.
+    LS_REQ-ecr_no        = LV_ECR_NO.
+    LS_REQ-matnr_fg      = LV_MATNR.
+    LS_REQ-title         = LV_TITLE.
+    LS_REQ-descr         = LV_DESC.
+    LS_REQ-kategori      = LV_KATEGORI.
+    LS_REQ-priority      = LV_PRIORITY.
+    LS_REQ-requester     = GV_USER_ID.
+    LS_REQ-drafter       = GV_USER_ID.
+    LS_REQ-created_by    = GV_USER_ID.
+    LS_REQ-created_date  = sy-datum.
+    LS_REQ-created_time  = sy-uzeit.
+    LS_REQ-change_scope  = 'DRWG'.
+    LS_REQ-zdept         = LV_DEPT.
+    LS_REQ-zreason       = LV_REASON.
+
+    " V14: Jika Admin membuat langsung, status langsung INWK (ECO Aktif) & simpan target rilis
+    IF GV_ROLE = 'ADMIN'.
+      LS_REQ-status       = 'INWK'.
+      LS_REQ-impl_po      = lv_impl_po_form.
+      LS_REQ-impl_date    = lv_raw_date_form.
+      LS_REQ-impl_reason  = lv_impl_reason_form.
+    ELSE.
+      LS_REQ-status       = 'CRTD'.
+    ENDIF.
+
+    " Cost estimate (opsional)
+    IF LV_COST IS NOT INITIAL.
+      LS_REQ-cost_estimate = LV_COST.
+    ENDIF.
+
+    INSERT zecm_req FROM LS_REQ.
+
+    IF sy-subrc <> 0.
+      GV_MESSAGE = 'Gagal menyimpan ECR.'.
+      GV_ICON = 'error'. RETURN.
+    ENDIF.
+
+    " Audit log
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+      IMPORTING number = ls_log-log_id
+      EXCEPTIONS OTHERS = 1.
+
+    IF sy-subrc = 0.
+      ls_log-mandt       = sy-mandt.
+      ls_log-ecr_no      = LV_ECR_NO.
+      ls_log-action      = 'CREA'.
+      ls_log-old_status  = ''.
+      IF GV_ROLE = 'ADMIN'.
+        ls_log-new_status  = 'INWK'.
+        ls_log-reason      = 'Admin created direct ECO with Target Rilis'.
+      ELSE.
+        ls_log-new_status  = 'CRTD'.
+        ls_log-reason      = 'ECR created'.
+      ENDIF.
+      ls_log-user_id     = GV_USER_ID.
+      ls_log-action_date = sy-datum.
+      ls_log-action_time = sy-uzeit.
+      INSERT zecm_log FROM ls_log.
+    ENDIF.
+
+    LV_COUNT = LV_COUNT + 1.
+  ENDLOOP.
+
+  LV_COUNT_STR = LV_COUNT.
+  IF GV_ROLE = 'ADMIN'.
+    CONCATENATE LV_COUNT_STR ' ECO berhasil dibuat' INTO GV_MESSAGE.
+    CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE INTO LV_URL.
+  ELSE.
+    CONCATENATE LV_COUNT_STR ' ECR berhasil dibuat' INTO GV_MESSAGE.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE INTO LV_URL.
+  ENDIF.
+  navigation->goto_page( LV_URL ).
+  RETURN.
+ENDIF.
+
+IF LV_ACTION = 'logout'.
+  navigation->goto_page( 'login.htm' ).
+ENDIF.

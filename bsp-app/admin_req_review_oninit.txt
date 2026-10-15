@@ -1,0 +1,197 @@
+* =======================================================================
+* OnInit — admin_req_review.htm
+* V07: Admin Review Request
+* FIX 25 Jul: String template |...| > CONCATENATE (SE80 BSP safe)
+* =======================================================================
+
+DATA: ls_ireq    TYPE zecm_ireq,
+      lt_drafter TYPE TABLE OF zecm_user,
+      ls_drafter TYPE zecm_user,
+      lv_drafter_opts TYPE string,
+      lv_selected    TYPE string,
+      lv_redirect TYPE string.
+
+" --- 0. Clear page attributes (prevent numpuk on refresh) ---
+CLEAR: GV_ATT_HTML, GV_HAS_ATTACHMENT, GV_ATT_FILENAME, GV_ATT_TYPE,
+       GV_ATT_B64, GV_MESSAGE, GV_ICON, GV_DRAFTER_OPTIONS.
+
+* --- 1. User Info from URL ---
+" FIX Cross-contamination: Always get from URL, do not use stateful IF IS INITIAL
+DATA: lv_url_u TYPE string,
+      lv_url_n TYPE string,
+      lv_url_r TYPE string.
+
+lv_url_u = request->get_form_field( 'u' ).
+lv_url_n = request->get_form_field( 'n' ).
+lv_url_r = request->get_form_field( 'r' ).
+
+IF lv_url_u IS NOT INITIAL.
+  GV_USER_ID = lv_url_u.
+ENDIF.
+IF lv_url_n IS NOT INITIAL.
+  GV_FULL_NAME = lv_url_n.
+ENDIF.
+IF lv_url_r IS NOT INITIAL.
+  GV_ROLE = lv_url_r.
+ENDIF.
+
+* --- 2. Load IREQ_ID ---
+GV_IREQ_ID = request->get_form_field( 'ireq_id' ).
+IF GV_IREQ_ID IS INITIAL.
+  GV_MESSAGE = 'ID Request tidak ditemukan.'. GV_ICON = 'error'.
+  CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID
+    '&r=' GV_ROLE '&n=' GV_FULL_NAME
+    INTO lv_redirect.
+  navigation->goto_page( lv_redirect ).
+  RETURN.
+ENDIF.
+
+* --- 3. Load Request Detail ---
+SELECT SINGLE * FROM zecm_ireq INTO @ls_ireq
+  WHERE ireq_id = @GV_IREQ_ID.
+
+IF sy-subrc <> 0.
+  GV_MESSAGE = 'Request tidak ditemukan.'. GV_ICON = 'error'.
+  CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID
+    '&r=' GV_ROLE '&n=' GV_FULL_NAME
+    INTO lv_redirect.
+  navigation->goto_page( lv_redirect ).
+  RETURN.
+ENDIF.
+GV_REQ_TITLE       = ls_ireq-title.
+GV_REQ_MATNR       = ls_ireq-matnr_fg.
+GV_REQ_KATEGORI    = ls_ireq-kategori.
+GV_REQ_PRIORITY    = ls_ireq-priority.
+GV_REQ_ZDEPT       = ls_ireq-zdept.
+GV_REQ_ZREASON     = ls_ireq-zreason.
+GV_REQ_DESCRIPTION = ls_ireq-description.
+GV_REQ_REQUESTER   = ls_ireq-requester.
+GV_REQ_DATE        = ls_ireq-req_date.
+GV_REQ_STATUS      = ls_ireq-status.
+GV_REQ_IMPL_PO     = ls_ireq-impl_po.
+GV_REQ_IMPL_REASON = ls_ireq-impl_reason.
+GV_REQ_IMPL_DATE   = ls_ireq-impl_date.
+
+" --- Check Attachment Bukti ---
+CLEAR: GV_ATT_HTML.
+DATA: lt_bom_att TYPE TABLE OF zecm_bom_att,
+      ls_bom_att TYPE zecm_bom_att.
+SELECT * FROM zecm_bom_att INTO TABLE @lt_bom_att WHERE ecr_no = @GV_IREQ_ID.
+IF sy-subrc = 0.
+  GV_HAS_ATTACHMENT = 'X'.
+  GV_ATT_HTML = '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'.
+  
+  LOOP AT lt_bom_att INTO ls_bom_att.
+    IF ls_bom_att-mime_type CP 'image/*'.
+      CALL FUNCTION 'SSFC_BASE64_ENCODE'
+        EXPORTING bindata = ls_bom_att-file_data
+        IMPORTING b64data = GV_ATT_B64
+        EXCEPTIONS OTHERS = 1.
+        
+      CONCATENATE GV_ATT_HTML
+        '<div class="bg-white rounded border border-slate-200 '
+        'overflow-hidden flex flex-col">'
+        '<div class="w-full bg-slate-100 flex items-center '
+        'justify-center p-2 flex-1" '
+        'style="min-height: 200px; max-height: 400px;">'
+        '<img src="data:' ls_bom_att-mime_type ';base64,' GV_ATT_B64 '" '
+        'class="max-w-full max-h-[380px] object-contain rounded '
+        'shadow-sm border border-slate-200" alt="Bukti Persetujuan" '
+        'onclick="openLightbox(''data:'
+        ls_bom_att-mime_type
+        ';base64,'
+        GV_ATT_B64
+        ''')" style="cursor: zoom-in;">'
+        '</div>'
+        '<div class="p-3 bg-white border-t border-slate-100 '
+        'flex items-center justify-between">'
+        '<span class="text-xs font-semibold text-slate-700 '
+        'truncate mr-3"><i class="fas fa-image text-emerald-500 mr-1.5"></i>'
+        ls_bom_att-file_name
+        '</span>'
+        '<button type="button" '
+        'onclick="downloadAttachment('''
+        ls_bom_att-att_id
+        ''')" '
+        'class="text-brand-600 hover:text-brand-700" '
+        'title="Download">'
+        '<i class="fas fa-download"></i></button>'
+        '</div></div>'
+        INTO GV_ATT_HTML.
+    ELSE.
+      CONCATENATE GV_ATT_HTML
+        '<div class="flex items-center gap-3 p-4 bg-white rounded '
+        'border border-slate-200 overflow-hidden">'
+        '<div class="w-12 h-12 rounded-lg bg-emerald-100 flex '
+        'items-center justify-center text-emerald-600 text-lg flex-shrink-0">'
+        '<i class="fas fa-file-alt"></i></div>'
+        '<div class="flex-1 min-w-0">'
+        '<p class="text-sm font-semibold text-slate-700 truncate">'
+        ls_bom_att-file_name
+        '</p>'
+        '<p class="text-xs text-slate-500 mt-0.5 truncate">'
+        'Akan otomatis dihapus saat di-Approve.</p></div>'
+        '<button type="button" '
+        'onclick="downloadAttachment('''
+        ls_bom_att-att_id
+        ''')" '
+        'class="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 '
+        'border border-emerald-200 text-emerald-700 rounded-md '
+        'text-xs font-bold transition-all shadow-sm flex items-center gap-2">'
+        '<i class="fas fa-download"></i> Download File</button>'
+        '</div>'
+        INTO GV_ATT_HTML.
+    ENDIF.
+  ENDLOOP.
+  
+  CONCATENATE GV_ATT_HTML '</div>' INTO GV_ATT_HTML.
+ELSE.
+  GV_HAS_ATTACHMENT = ''.
+  GV_ATT_HTML       = ''.
+ENDIF.
+
+* Get material description
+IF GV_REQ_MATNR IS NOT INITIAL.
+  SELECT SINGLE maktx FROM makt INTO @GV_REQ_MATNR_DESC
+    WHERE matnr = @GV_REQ_MATNR AND spras = @sy-langu.
+ENDIF.
+
+* Get requester name
+IF GV_REQ_REQUESTER IS NOT INITIAL.
+  SELECT SINGLE zecm_full_name FROM zecm_user INTO @GV_REQ_REQUESTER_NAME
+    WHERE zecm_user_id = @GV_REQ_REQUESTER.
+ENDIF.
+
+* If form was submitted and it's still REQ, use form values (for edit)
+DATA: lv_form_title TYPE string.
+lv_form_title = request->get_form_field( 'title' ).
+IF lv_form_title IS NOT INITIAL AND GV_REQ_STATUS = 'REQ'.
+  GV_REQ_TITLE       = lv_form_title.
+  GV_REQ_MATNR       = request->get_form_field( 'matnr_fg' ).
+  GV_REQ_KATEGORI    = request->get_form_field( 'kategori' ).
+  GV_REQ_PRIORITY    = request->get_form_field( 'priority' ).
+  GV_REQ_ZDEPT       = request->get_form_field( 'zdept' ).
+  GV_REQ_ZREASON     = request->get_form_field( 'zreason' ).
+  GV_REQ_DESCRIPTION = request->get_form_field( 'description' ).
+ENDIF.
+
+* --- 4. Load Drafter List ---
+SELECT * FROM zecm_user INTO TABLE @lt_drafter
+  WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'.
+
+IF sy-subrc = 0.
+  lv_drafter_opts = '<option value="">-- Pilih Drafter --</option>'.
+  LOOP AT lt_drafter INTO ls_drafter.
+    lv_selected = ''.
+    IF ls_ireq-assigned_drafter = ls_drafter-zecm_user_id.
+      lv_selected = ' selected'.
+    ENDIF.
+    CONCATENATE lv_drafter_opts
+      '<option value="' ls_drafter-zecm_user_id '"' lv_selected '>'
+      ls_drafter-zecm_full_name '</option>'
+      INTO lv_drafter_opts.
+  ENDLOOP.
+  GV_DRAFTER_OPTIONS = lv_drafter_opts.
+ELSE.
+  GV_DRAFTER_OPTIONS = '<option value="">-- Tidak ada drafter tersedia --</option>'.
+ENDIF.

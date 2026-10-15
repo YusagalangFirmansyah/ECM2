@@ -1,0 +1,1345 @@
+﻿<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECM Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] },
+                    colors: {
+                        brand: {
+                            50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0',
+                            300: '#6ee7b7', 400: '#34d399', 500: '#10b981',
+                            600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script>
+        window.GV_USER_ID = '<%= GV_USER_ID %>';
+        window.GV_FULL_NAME = '<%= GV_FULL_NAME %>';
+        window.GV_ROLE = '<%= GV_ROLE %>';
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+        @keyframes badgeGlow {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.6);
+                border-color: #93c5fd;
+            }
+            50% {
+                box-shadow: 0 0 0 6px rgba(37, 99, 235, 0);
+                border-color: #bfdbfe;
+            }
+        }
+        .ecr-pulse-badge {
+            animation: badgeGlow 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+        }
+        @keyframes rowPulse {
+            0%, 100% {
+                background-color: #eff6ff;
+                box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6;
+            }
+            50% {
+                background-color: #dbeafe;
+                box-shadow: inset 0 2px 0 0 #93c5fd, inset 0 -2px 0 0 #93c5fd;
+            }
+        }
+        .ecr-need-approval td {
+            animation: rowPulse 2.5s infinite ease-in-out;
+            border: none !important;
+        }
+        .ecr-need-approval td:first-child {
+            box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset 3px 0 0 0 #3b82f6;
+            animation: none;
+            background-color: #eff6ff;
+            animation: rowPulseLeft 2.5s infinite ease-in-out;
+        }
+        .ecr-need-approval td:last-child {
+            box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset -3px 0 0 0 #3b82f6;
+            animation: none;
+            background-color: #eff6ff;
+            animation: rowPulseRight 2.5s infinite ease-in-out;
+        }
+        @keyframes rowPulseLeft {
+            0%, 100% { background-color: #eff6ff; box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset 3px 0 0 0 #3b82f6; }
+            50% { background-color: #dbeafe; box-shadow: inset 0 2px 0 0 #93c5fd, inset 0 -2px 0 0 #93c5fd, inset 3px 0 0 0 #93c5fd; }
+        }
+        @keyframes rowPulseRight {
+            0%, 100% { background-color: #eff6ff; box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset -3px 0 0 0 #3b82f6; }
+            50% { background-color: #dbeafe; box-shadow: inset 0 2px 0 0 #93c5fd, inset 0 -2px 0 0 #93c5fd, inset -3px 0 0 0 #93c5fd; }
+        }
+        .ecr-need-approval:hover td {
+            background-color: #bfdbfe !important;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased font-sans min-h-screen">
+
+    <%@include file="admin_header.htm"%>
+
+    <main class="w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 space-y-6">
+
+        <!-- ===== DATE RANGE FILTER ===== -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <form method="get" id="dateFilterForm">
+                <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+                <input type="hidden" name="r" value="<%= GV_ROLE %>">
+                <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-calendar-alt text-emerald-600"></i>
+                        <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">Filter Tanggal</span>
+                    </div>
+                    <input type="date" name="date_from" value="<%= GV_DATE_FROM %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                    <span class="text-xs text-slate-400">s/d</span>
+                    <input type="date" name="date_to" value="<%= GV_DATE_TO %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
+                        <i class="fas fa-filter text-[0.65rem]"></i> Terapkan
+                    </button>
+                    <a href="admin_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+                        <i class="fas fa-rotate-left text-[0.65rem]"></i> Reset
+                    </a>
+                    <div class="flex items-center gap-1.5 ml-2 border-l border-slate-200 pl-3">
+                        <span class="text-[0.65rem] text-slate-400 font-semibold">Shortcut:</span>
+                        <button type="button" onclick="setRange(1)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">1 Bulan</button>
+                        <button type="button" onclick="setRange(2)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">2 Bulan</button>
+                        <button type="button" onclick="setRange(6)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">6 Bulan</button>
+                    </div>
+                    <span class="text-[0.65rem] text-slate-400 ml-auto">
+                        <i class="fas fa-info-circle"></i> Data dari <strong><%= GV_DATE_FROM %></strong> sampai <strong><%= GV_DATE_TO %></strong>
+                    </span>
+                </div>
+            </form>
+        </div>
+
+        <!-- ===== SUMMARY CARDS ===== -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-5">
+
+            <!-- ECR (CRTD) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#EFF6FF;color:#3B82F6">
+                    <i class="fas fa-file-circle-plus"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">ECR</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_CRTD %></p>
+                    <p class="text-xs text-slate-400">Menunggu approval</p>
+                </div>
+            </div>
+
+            <!-- ECO (INWK) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FFF7ED;color:#F59E0B">
+                    <i class="fas fa-gears"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">ECO</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INWK %></p>
+                    <p class="text-xs text-slate-400">ECO aktif</p>
+                </div>
+            </div>
+
+            <!-- BOM Pending (BMPR) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF3C7;color:#D97706">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Pending</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMPR %></p>
+                    <p class="text-xs text-slate-400">Tunggu Master Data</p>
+                </div>
+            </div>
+
+            <!-- BOM Approved (BMAP) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#D1FAE5;color:#059669">
+                    <i class="fas fa-check-double"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Ready</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMAP %></p>
+                    <p class="text-xs text-slate-400">Siap submit</p>
+                </div>
+            </div>
+
+            <!-- On Inspection (INSP) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEFCE8;color:#EAB308">
+                    <i class="fas fa-magnifying-glass"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">On Inspection</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INSP %></p>
+                    <p class="text-xs text-slate-400">Tunggu review</p>
+                </div>
+            </div>
+
+            <!-- Rejected (REJC) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF2F2;color:#EF4444">
+                    <i class="fas fa-circle-xmark"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Rejected</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_REJC %></p>
+                    <p class="text-xs text-slate-400">ditolak</p>
+                </div>
+            </div>
+
+            <!-- Request Masuk (IREQ) -->
+            <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#F0FDF4;color:#059669">
+                    <i class="fas fa-inbox"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Request Masuk</p>
+                    <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_IREQ %></p>
+                    <p class="text-xs text-slate-400">menunggu review</p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ===== CHARTS ROW ===== -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Combined Chart Card (Volume & Status) -->
+            <div class="lg:col-span-6 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide mb-1" id="combinedChartTitle">
+                            <i class="fas fa-chart-bar text-blue-500 mr-1"></i> Volume Perubahan
+                        </h2>
+                        <p class="text-xs text-slate-500" id="combinedChartDesc">Jumlah ECR/ECO per bulan (sesuai filter tanggal)</p>
+                    </div>
+                    <!-- Toggle Switch -->
+                    <div class="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button type="button" onclick="toggleChartMode('volume')" id="btnToggleVolume" class="px-3 py-1.5 text-xs font-bold rounded-md bg-white text-blue-600 shadow-sm transition-all">Volume</button>
+                        <button type="button" onclick="toggleChartMode('status')" id="btnToggleStatus" class="px-3 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-700 transition-all">Status</button>
+                    </div>
+                </div>
+                <div class="w-full h-[280px] relative">
+                    <div id="volumeChartContainer" class="absolute inset-0 transition-opacity duration-300 opacity-100 pointer-events-auto">
+                        <canvas id="volumeChart"></canvas>
+                    </div>
+                    <div id="statusChartContainer" class="absolute inset-0 transition-opacity duration-300 opacity-0 pointer-events-none">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kapasitas Drafter Chart Card -->
+            <div class="lg:col-span-6 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide mb-1">
+                    <i class="fas fa-users-gear text-purple-500 mr-1"></i> Kapasitas Drafter
+                </h2>
+                <p class="text-xs text-slate-500 mb-4">Total beban kerja aktif per Drafter</p>
+                <div class="w-full h-[280px]">
+                    <canvas id="kapasitasChart"></canvas>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ===== PANEL REQUEST MASUK (V07) ===== -->
+        <div class="bg-white rounded-xl shadow-sm border border-emerald-200 overflow-hidden">
+            <div class="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-white">
+                <div>
+                    <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide">
+                        <i class="fas fa-inbox text-emerald-600 mr-1"></i> Panel Request Masuk
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-1">Request dari user yang perlu diassign Drafter (APPR) atau sedang ditinjau R&D (REQ)</p>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <!-- Filter Kategori IREQ (JS-based) -->
+                    <div class="flex items-center bg-white rounded-lg border border-slate-200 p-1 shadow-sm" id="filterIreqKat">
+                        <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-emerald-50 text-emerald-700 border border-emerald-200 active" data-val="ALL">Semua</button>
+                        <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-white text-slate-500 hover:bg-slate-50" data-val="DRW">DRW</button>
+                        <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-white text-slate-500 hover:bg-slate-50" data-val="DBX">DBX</button>
+                        <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-white text-slate-500 hover:bg-slate-50" data-val="DMT">DMT</button>
+                    </div>
+                    
+                    <span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm" id="ireqCounter"><%= GV_COUNT_IREQ %> pending</span>
+                    
+                    <button type="button" onclick="cetakPanel('ireq')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm">
+                        <i class="fas fa-print"></i> Cetak Request Masuk
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50">
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">IREQ ID</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Judul</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Material</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Kategori</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Prioritas</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Requester</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Tanggal</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100" id="ireqTableBody">
+                        <%= GV_IREQ_HTML %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+
+
+        <!-- ===== RECENT ECRs ===== -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="flex items-center justify-between p-6 border-b border-slate-100">
+                <div>
+                    <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide">
+                        <i class="fas fa-list text-blue-500 mr-1"></i> Daftar ECR
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-1">Menampilkan semua ECR sesuai filter (<%= GV_RECENT_COUNT %> data)</p>
+                </div>
+                <!-- ECR Search + Pagination Controls + Print -->
+                <div class="flex items-center gap-2">
+                    <input type="text" id="ecrSearch" placeholder="Cari ECR..." onkeyup="filterEcrTable()" class="px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-emerald-500 w-40">
+                    <span id="ecrPageInfo" class="text-[0.65rem] text-slate-400 font-semibold"></span>
+                    <button onclick="ecrPrevPage()" id="ecrPrevBtn" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-bold text-slate-600 disabled:opacity-40" disabled>&laquo;</button>
+                    <button onclick="ecrNextPage()" id="ecrNextBtn" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-bold text-slate-600 disabled:opacity-40">&raquo;</button>
+                    <button type="button" onclick="cetakPanel('ecr')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ml-1">
+                        <i class="fas fa-print"></i> Cetak Daftar ECR
+                    </button>
+                </div>
+            </div>
+            <!-- Filter Dropdowns -->
+            <div class="px-5 py-3 border-b border-slate-100 bg-white flex items-center gap-2 flex-wrap">
+                <span class="text-[0.65rem] font-bold text-slate-500 uppercase tracking-wide mr-1">
+                    <i class="fas fa-filter text-emerald-500 mr-1"></i>Filter:
+                </span>
+                <div id="filterKat" class="flex items-center gap-1.5">
+                    <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200 active" data-value="" onclick="selectKat(this)">Semua</button>
+                    <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" data-value="DRW" onclick="selectKat(this)">WOOD</button>
+                    <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100" data-value="DBX" onclick="selectKat(this)">BOX</button>
+                    <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" data-value="DMT" onclick="selectKat(this)">METAL</button>
+                </div>
+                <select id="filterPri" onchange="filterEcrTable()"
+                    class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+                    <option value="">Semua Prioritas</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                </select>
+                <select id="filterStatus" onchange="filterEcrTable()"
+                    class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+                    <option value="">Semua Status</option>
+                    <option value="CRTD">Need Approval</option>
+                    <option value="INWK">In Work</option>
+                    <option value="BMPR">BOM Pending</option>
+                    <option value="BMAP">BOM Ready</option>
+                    <option value="INSP">Inspection</option>
+                    <option value="REJC">Rejected</option>
+                </select>
+                <select id="filterReq" onchange="filterEcrTable()"
+                    class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+                    <option value="">Semua Requester</option>
+                    <%= GV_REQUESTER_OPTIONS %>
+                </select>
+                <button onclick="resetFilters()" class="px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
+                    <i class="fas fa-rotate-left mr-1"></i>Reset
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50">
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">ECR No</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase max-w-[200px]">Judul</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Material</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Kategori</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Prioritas</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Requester</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Drafter</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Tanggal</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Tgl Target</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ecrTableBody" class="divide-y divide-slate-100">
+                        <%= GV_RECENT_HTML %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Material History Search -->
+        <div id="matHistory" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
+            <h3 class="text-sm font-bold text-slate-800 flex items-center">
+              <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+              <i class="fas fa-history text-purple-500 mr-2"></i>Riwayat Perubahan Material
+            </h3>
+            <p class="text-xs text-slate-500 mt-1">Cari material untuk melihat semua riwayat perubahan ECR</p>
+          </div>
+          <div class="p-5">
+            <form method="post" action="admin_dashboard.htm" class="flex items-center gap-3 flex-wrap">
+              <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+
+              <input type="hidden" name="r" value="<%= GV_ROLE %>">
+              <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+              <div class="relative flex-1 max-w-xl">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input type="text" name="mat_search" value="<%= GV_MAT_SEARCH %>"
+                  placeholder="Ketik nomor material atau deskripsi..."
+                  class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+              </div>
+              <button type="submit" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
+                <i class="fas fa-search text-[0.65rem]"></i> Cari
+              </button>
+              <% IF GV_MAT_SEARCH IS NOT INITIAL. %>
+              <a href="admin_dashboard.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>"
+                class="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+                <i class="fas fa-times text-[0.65rem]"></i> Reset
+              </a>
+              <% ENDIF. %>
+            </form>
+
+            <% IF GV_MAT_SEARCH IS NOT INITIAL. %>
+              <% IF GV_MAT_HISTORY_HTML IS INITIAL. %>
+                <div class="py-12 text-center">
+                  <svg class="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  <p class="text-sm text-slate-400">Tidak ditemukan riwayat untuk \"<strong><%= GV_MAT_SEARCH %></strong>\"</p>
+                </div>
+              <% ELSE. %>
+                <div class="space-y-4">
+                  <%= GV_MAT_HISTORY_HTML %>
+                </div>
+              <% ENDIF. %>
+            <% ENDIF. %>
+          </div>
+        </div>
+
+    </main>
+
+    <!-- ===== CHART.JS INITIALIZATION ===== -->
+    <script>
+        // Status colors
+        const COLORS = {
+            IREQ: '#1E3A5F',
+            CRTD: '#3B82F6',
+            INWK: '#F59E0B',
+            BMPR: '#D97706',
+            BMAP: '#059669',
+            INSP: '#EAB308',
+            REJC: '#EF4444'
+        };
+
+
+        // Custom plugin: draw value at end of bar
+        const barValuePlugin = {
+            id: 'barValuePlugin',
+            afterDraw: function(chart) {
+                var ctx = chart.ctx;
+                ctx.save();
+                chart.data.datasets.forEach(function(dataset, i) {
+                    var meta = chart.getDatasetMeta(i);
+                    if (!meta.hidden) {
+                        meta.data.forEach(function(bar, index) {
+                            var val = dataset.data[index];
+                            if (val > 0) {
+                                ctx.fillStyle = '#1e293b';
+                                ctx.font = 'bold 12px Plus Jakarta Sans';
+                                ctx.textBaseline = 'middle';
+                                var isHorizontal = (chart.options.indexAxis === 'y');
+                                if (isHorizontal) {
+                                    ctx.textAlign = 'left';
+                                    ctx.fillText(val, bar.x + 6, bar.y);
+                                } else {
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText(val, bar.x, bar.y - 10);
+                                }
+                            }
+                        });
+                    }
+                });
+                ctx.restore();
+            }
+        };
+        Chart.register(barValuePlugin);
+
+        // ===== Volume Perubahan (Stacked Bar) =====
+        new Chart(document.getElementById('volumeChart'), {
+            type: 'bar',
+            data: {
+                labels: <%= GV_MONTHS_LABELS %>,
+                datasets: [
+                    { label: 'Request Masuk',   data: <%= GV_MONTHS_IREQ %>, backgroundColor: COLORS.IREQ, borderRadius: 4 },
+                    { label: 'ECR',             data: <%= GV_MONTHS_CRTD %>, backgroundColor: COLORS.CRTD, borderRadius: 4 },
+                    { label: 'ECO',             data: <%= GV_MONTHS_INWK %>, backgroundColor: COLORS.INWK, borderRadius: 4 },
+                    { label: 'BOM Pending',     data: <%= GV_MONTHS_BMPR %>, backgroundColor: COLORS.BMPR, borderRadius: 4 },
+                    { label: 'BOM Ready',       data: <%= GV_MONTHS_BMAP %>, backgroundColor: COLORS.BMAP, borderRadius: 4 },
+                    { label: 'On Inspection',   data: <%= GV_MONTHS_INSP %>, backgroundColor: COLORS.INSP, borderRadius: 4 },
+                    { label: 'Rejected',        data: <%= GV_MONTHS_REJC %>, backgroundColor: COLORS.REJC, borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        onClick: function(e) { e.native.stopPropagation(); },
+                        labels: { boxWidth: 10, padding: 12, font: { size: 11, family: 'Plus Jakarta Sans' } }
+                    },
+                    datalabels: {
+                        display: true,
+                        anchor: 'end', align: 'end', color: '#334155',
+                        font: { size: 11, weight: 'bold', family: 'Plus Jakarta Sans' },
+                        formatter: function(val) { return val > 0 ? val : ''; }
+                    }
+                },
+                scales: {
+                    x: { stacked: true, grid: { display: false } },
+                    y: { stacked: true, beginAtZero: true, grid: { color: "#f1f5f9" }, ticks: { display: false } }
+                }
+            }
+        });
+
+        // ===== Status Change Request (Horizontal Bar) =====
+        new Chart(document.getElementById('statusChart'), {
+            type: 'bar',
+            data: {
+                labels: ['Request Masuk', 'ECR', 'ECO', 'BOM Pending', 'BOM Approved', 'On Inspection', 'Rejected'],
+                datasets: [{
+                    data: [<%= GV_COUNT_IREQ %>, <%= GV_COUNT_CRTD %>, <%= GV_COUNT_INWK %>, <%= GV_COUNT_BMPR %>, <%= GV_COUNT_BMAP %>, <%= GV_COUNT_INSP %>, <%= GV_COUNT_REJC %>],
+                    backgroundColor: [COLORS.IREQ, COLORS.CRTD, COLORS.INWK, COLORS.BMPR, COLORS.BMAP, COLORS.INSP, COLORS.REJC],
+                    borderRadius: 4,
+                    barThickness: 20
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { left: 10 } },
+                plugins: {
+                    legend: { display: false },
+                },
+                scales: {
+                    x: { beginAtZero: true, grid: { display: false }, ticks: { display: false } },
+                    y: { grid: { display: false }, ticks: { font: { family: 'Plus Jakarta Sans', size: 11, weight: '600' }, padding: 8 } }
+                }
+            }
+        });
+
+        // ===== Kapasitas Drafter Chart (Stacked Bar) =====
+        new Chart(document.getElementById('kapasitasChart'), {
+            type: 'bar',
+            data: {
+                labels: <%= GV_CAPA_LABELS %>,
+                datasets: [
+                    { label: 'In Work',     data: <%= GV_CAPA_INWK %>, backgroundColor: COLORS.INWK, borderRadius: 4 },
+                    { label: 'BOM Pending', data: <%= GV_CAPA_BMPR %>, backgroundColor: COLORS.BMPR, borderRadius: 4 },
+                    { label: 'BOM Ready',   data: <%= GV_CAPA_BMAP %>, backgroundColor: COLORS.BMAP, borderRadius: 4 },
+                    { label: 'Inspection',  data: <%= GV_CAPA_INSP %>, backgroundColor: COLORS.INSP, borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 10, padding: 12, font: { size: 11, family: 'Plus Jakarta Sans' } }
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        grid: { display: false },
+                        ticks: {
+                            font: { size: 10, family: 'Plus Jakarta Sans' },
+                            maxRotation: 45,
+                            minRotation: 45,
+                            callback: function(val) {
+                                var label = this.getLabelForValue(val) || '';
+                                return label.length > 15 ? label.substring(0, 15) + '...' : label;
+                            }
+                        }
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        grid: { color: "#f1f5f9" },
+                        ticks: { display: false }
+                    }
+                }
+            }
+        });
+
+        // ===== Toggle Volume vs Status Chart Mode =====
+        function toggleChartMode(mode) {
+            var vC = document.getElementById('volumeChartContainer');
+            var sC = document.getElementById('statusChartContainer');
+            var btnV = document.getElementById('btnToggleVolume');
+            var btnS = document.getElementById('btnToggleStatus');
+            var title = document.getElementById('combinedChartTitle');
+            var desc = document.getElementById('combinedChartDesc');
+
+            if (mode === 'volume') {
+                vC.classList.remove('opacity-0', 'pointer-events-none');
+                vC.classList.add('opacity-100', 'pointer-events-auto');
+                sC.classList.remove('opacity-100', 'pointer-events-auto');
+                sC.classList.add('opacity-0', 'pointer-events-none');
+
+                btnV.className = 'px-3 py-1.5 text-xs font-bold rounded-md bg-white text-blue-600 shadow-sm transition-all';
+                btnS.className = 'px-3 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-700 transition-all';
+                title.innerHTML = '<i class="fas fa-chart-bar text-blue-500 mr-1"></i> Volume Perubahan';
+                desc.textContent = 'Jumlah ECR/ECO per bulan (sesuai filter tanggal)';
+            } else {
+                sC.classList.remove('opacity-0', 'pointer-events-none');
+                sC.classList.add('opacity-100', 'pointer-events-auto');
+                vC.classList.remove('opacity-100', 'pointer-events-auto');
+                vC.classList.add('opacity-0', 'pointer-events-none');
+
+                btnS.className = 'px-3 py-1.5 text-xs font-bold rounded-md bg-white text-emerald-600 shadow-sm transition-all';
+                btnV.className = 'px-3 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-700 transition-all';
+                title.innerHTML = '<i class="fas fa-chart-simple text-emerald-500 mr-1"></i> Status Change Request';
+                desc.textContent = 'Distribusi status (sesuai filter tanggal)';
+            }
+        }
+    </script>
+
+    <!-- ===== GLOBAL UTILITIES: Cetak Panel & Date Range ===== -->
+    <script>
+        // Cetak Laporan per Panel (Request Masuk, Antrian Approval, Daftar ECR)
+        window.cetakPanel = function(type) {
+            var dfEl = document.querySelector('input[name="date_from"]');
+            var dtEl = document.querySelector('input[name="date_to"]');
+            var df = dfEl ? dfEl.value : '';
+            var dt = dtEl ? dtEl.value : '';
+            var url = 'admin_print_ecr.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>';
+            if (type) url += '&type=' + encodeURIComponent(type);
+            if (df) url += '&date_from=' + encodeURIComponent(df);
+            if (dt) url += '&date_to=' + encodeURIComponent(dt);
+            window.open(url, '_blank');
+        };
+
+        window.setRange = function(months) {
+            var today = new Date();
+            var from = new Date(today.getFullYear(), today.getMonth() - (months - 1), 1);
+            var fromStr = from.getFullYear() + '-' + String(from.getMonth() + 1).padStart(2, '0') + '-' + String(from.getDate()).padStart(2, '0');
+            var toStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+            var dfInput = document.querySelector('input[name="date_from"]');
+            var dtInput = document.querySelector('input[name="date_to"]');
+            if (dfInput) dfInput.value = fromStr;
+            if (dtInput) dtInput.value = toStr;
+            var form = document.getElementById('dateFilterForm');
+            if (form) form.submit();
+        };
+    </script>
+
+    <!-- ===== SWEETALERT: Reject Reason + Messages ===== -->
+    <% IF GV_ICON IS NOT INITIAL AND GV_MESSAGE IS NOT INITIAL. %>
+    <div id="swalServerMsg" data-icon="<%= GV_ICON %>" data-msg="<%= GV_MESSAGE %>" style="display:none;"></div>
+    <script>
+        (function() {
+            var el = document.getElementById('swalServerMsg');
+            if (el && typeof Swal !== 'undefined') {
+                var icon = el.getAttribute('data-icon') || 'info';
+                var msg = el.getAttribute('data-msg') || '';
+                Swal.fire({
+                    icon: icon,
+                    title: icon === 'success' ? 'Berhasil!' : 'Pemberitahuan',
+                    text: msg,
+                    timer: icon === 'success' ? 3000 : undefined,
+                    showConfirmButton: icon !== 'success',
+                    background: '#fff',
+                    customClass: { popup: 'rounded-xl shadow-lg' }
+                });
+            }
+        })();
+
+        window.addEventListener('pageshow', function(e) { if (e.persisted && typeof Swal !== 'undefined') Swal.close(); });
+    </script>
+    <% ENDIF. %>
+
+    <script>
+
+        // Reject confirmation with reason
+        document.querySelectorAll('.btn-reject').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var href = this.getAttribute('data-href');
+                Swal.fire({
+                    title: 'Tolak ECR?',
+                    html: '<p class="text-sm text-slate-500 mb-3">Masukkan alasan penolakan:</p>' +
+                          '<textarea id="rejectReason" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" rows="3" placeholder="Alasan penolakan..."></textarea>',
+                    showCancelButton: true,
+                    confirmButtonText: 'Tolak',
+                    confirmButtonColor: '#EF4444',
+                    cancelButtonText: 'Batal',
+                    preConfirm: function() {
+                        var reason = document.getElementById('rejectReason').value;
+                        if (!reason) {
+                            Swal.showValidationMessage('Alasan wajib diisi!');
+                            return false;
+                        }
+                        return reason;
+                    }
+                }).then(function(result) {
+                    if (result.isConfirmed) {
+                        window.location.href = href + '&reason=' + encodeURIComponent(result.value);
+                    }
+                });
+            });
+        });
+
+
+    </script>
+
+
+
+    <!-- Audit Trail Modal -->
+    <div id="auditModal"
+         class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200 ease-out p-4 sm:p-6"
+         onclick="if(event.target===this)closeAuditModal()">
+      <div id="auditModalCard"
+           class="bg-white rounded-2xl max-w-[1000px] w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl transform scale-95 translate-y-3 opacity-0 transition-all duration-200 ease-out border border-slate-100">
+        <!-- Modal Header (Fixed, cleanly clipped by overflow-hidden) -->
+        <div class="shrink-0 px-6 py-5 border-b border-emerald-800/30 select-none"
+             style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-inner shrink-0">
+                <i class="fas fa-history text-white text-base"></i>
+              </div>
+              <div>
+                <h2 class="text-lg font-bold text-white leading-tight">Audit Trail</h2>
+                <p class="text-xs text-emerald-200 font-mono mt-0.5 tracking-wide" id="auditEcrNo"></p>
+              </div>
+            </div>
+            <button onclick="closeAuditModal()" type="button"
+                    class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all duration-150 border border-white/10"
+                    title="Tutup (Esc)">
+              <i class="fas fa-times text-sm"></i>
+            </button>
+          </div>
+        </div>
+        <!-- Modal Body (Scrollable inside, starts strictly below header) -->
+        <div id="auditModalBody" class="flex-1 overflow-y-auto p-6 bg-white min-h-0">
+          <div class="relative pl-8 before:content-[''] before:absolute before:left-3 before:top-0 before:bottom-0 before:w-0.5 before:bg-slate-200 transition-opacity duration-150" id="auditContent">
+          <%= GV_ECR_DETAIL_HTML %><%= GV_AUDIT_HTML %>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var auditModalEl = document.getElementById('auditModal');
+      var auditCardEl = document.getElementById('auditModalCard');
+      var auditContentEl = document.getElementById('auditContent');
+      var auditEcrNoEl = document.getElementById('auditEcrNo');
+
+      function openAuditModal(ecrNo, isPreloaded) {
+        if (!auditModalEl || !auditCardEl) return;
+        auditEcrNoEl.textContent = 'ECR ' + ecrNo;
+
+        var modalBody = document.getElementById('auditModalBody');
+        if (modalBody) {
+          modalBody.scrollTop = 0;
+        }
+
+        // Smooth entry animation
+        auditModalEl.classList.remove('opacity-0', 'pointer-events-none');
+        auditModalEl.classList.add('opacity-100', 'pointer-events-auto');
+        auditCardEl.classList.remove('scale-95', 'translate-y-3', 'opacity-0');
+        auditCardEl.classList.add('scale-100', 'translate-y-0', 'opacity-100');
+
+        if (isPreloaded) {
+          return;
+        }
+
+        // Show loading state
+        auditContentEl.innerHTML = '<div class="py-14 flex flex-col items-center justify-center gap-3 text-slate-400">' +
+          '<i class="fas fa-circle-notch fa-spin text-2xl text-emerald-600"></i>' +
+          '<span class="text-xs font-semibold text-slate-500">Memuat detail ECR & audit trail...</span>' +
+          '</div>';
+
+        var url = 'admin_dashboard.htm?ajax=1&ecr_detail=' + encodeURIComponent(ecrNo) +
+          '&u=' + encodeURIComponent(window.GV_USER_ID || '') +
+          '&n=' + encodeURIComponent(window.GV_FULL_NAME || '') +
+          '&r=' + encodeURIComponent(window.GV_ROLE || '');
+
+        fetch(url)
+          .then(function(res) {
+            return res.text();
+          })
+          .then(function(html) {
+            auditContentEl.style.opacity = '0';
+            setTimeout(function() {
+              auditContentEl.innerHTML = html;
+              auditContentEl.style.opacity = '1';
+            }, 100);
+          })
+          .catch(function() {
+            auditContentEl.innerHTML = '<div class="p-6 text-center text-red-500 text-xs font-semibold">' +
+              'Gagal memuat detail ECR. Silakan coba kembali.</div>';
+          });
+      }
+
+      function closeAuditModal() {
+        if (!auditModalEl || !auditCardEl) return;
+        // Smooth exit animation
+        auditModalEl.classList.remove('opacity-100', 'pointer-events-auto');
+        auditModalEl.classList.add('opacity-0', 'pointer-events-none');
+        auditCardEl.classList.remove('scale-100', 'translate-y-0', 'opacity-100');
+        auditCardEl.classList.add('scale-95', 'translate-y-3', 'opacity-0');
+
+        // Clean up URL if opened via query parameter without triggering reload
+        if (window.history && window.history.replaceState) {
+          var cleanUrl = window.location.pathname + '?u=' + encodeURIComponent(window.GV_USER_ID || '') +
+            '&n=' + encodeURIComponent(window.GV_FULL_NAME || '') +
+            '&r=' + encodeURIComponent(window.GV_ROLE || '');
+          window.history.replaceState(null, '', cleanUrl);
+        }
+      }
+
+      // Backward compatibility alias
+      function showAudit(ecrNo) {
+        openAuditModal(ecrNo, true);
+      }
+
+      // Close modal on Escape key
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && auditModalEl && auditModalEl.classList.contains('opacity-100')) {
+          closeAuditModal();
+        }
+      });
+
+      // Auto-open modal if ecr_detail is in URL params
+      var urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('ecr_detail')) {
+        openAuditModal(urlParams.get('ecr_detail'), true);
+      }
+    </script>
+
+
+    <!-- ECR Form Modal (Admin) -->
+    <div id="ecrModal"
+         class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] items-center justify-center hidden p-4 sm:p-6"
+         onclick="if(event.target===this)closeEcrModal()">
+      <div class="bg-white rounded-2xl max-w-[700px] w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-100">
+        <!-- Modal Header (Fixed, cleanly clipped by overflow-hidden) -->
+        <div class="shrink-0 px-6 py-5 border-b border-emerald-800/30 select-none"
+             style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-inner shrink-0">
+                <i class="fas fa-file-circle-plus text-white text-base"></i>
+              </div>
+              <div>
+                <h2 class="text-lg font-bold text-white leading-tight">Buat ECR Baru</h2>
+                <p class="text-xs text-emerald-200 mt-0.5 tracking-wide">Engineering Change Request</p>
+              </div>
+            </div>
+            <button onclick="closeEcrModal()" type="button"
+                    class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all duration-150 border border-white/10"
+                    title="Tutup (Esc)">
+              <i class="fas fa-times text-sm"></i>
+            </button>
+          </div>
+        </div>
+        <!-- Modal Body (Scrollable inside, starts strictly below header) -->
+        <div id="ecrModalBody" class="flex-1 overflow-y-auto p-6 bg-white min-h-0">
+          <form id="ecrModalForm" method="post">
+            <input type="hidden" name="OnInputProcessing" value="">
+            <input type="hidden" name="action" value="create_ecr">
+
+            <!-- Material Search -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Material <span class="text-red-500">*</span></label>
+              <div class="flex gap-2 mb-2">
+                <input type="text" name="keyword" id="m_keyword" value="<%= GV_MAT_KEYWORD %>" placeholder="Cari material (nama/ID)..." class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+                <button type="button" onclick="doSearch()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-all">Cari</button>
+              </div>
+              <div id="m_results" class="max-h-[150px] overflow-y-auto border border-slate-200 rounded-lg"><%= GV_MAT_RESULTS %></div>
+              <div class="mt-2">
+                <p class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Material Terpilih:</p>
+                <div id="m_selectedList" class="text-xs text-slate-500">Belum ada material dipilih</div>
+              </div>
+              <input type="hidden" name="materials" id="m_materials" value="">
+            </div>
+
+            <!-- Judul -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Judul Perubahan <span class="text-red-500">*</span></label>
+              <input type="text" name="title" id="m_title" placeholder="Contoh: Revisi dimensi kaki kursi" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+            </div>
+
+            <!-- Kategori -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Kategori <span class="text-red-500">*</span></label>
+              <div class="flex gap-3">
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DRW" class="accent-emerald-600">
+                  <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
+                  <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DMT" class="accent-emerald-600">
+                  <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Prioritas -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Prioritas <span class="text-red-500">*</span></label>
+              <div class="flex gap-3">
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="priority" value="CRITICAL" class="accent-red-600">
+                  <div><div class="font-semibold text-sm text-red-600">Critical</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="priority" value="HIGH" class="accent-orange-500">
+                  <div><div class="font-semibold text-sm text-orange-600">High</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="priority" value="MEDIUM" class="accent-blue-600">
+                  <div><div class="font-semibold text-sm text-blue-600">Medium</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="priority" value="LOW" class="accent-slate-500">
+                  <div><div class="font-semibold text-sm text-slate-600">Low</div></div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Drafter (Admin specific) -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Drafter <span class="text-red-500">*</span></label>
+              <select name="drafter" id="m_drafter" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                <option value="">-- Pilih Drafter --</option>
+                <%= GV_DRAFTER_OPTIONS %>
+              </select>
+            </div>
+
+            <!-- Deskripsi -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Deskripsi Perubahan <span class="text-red-500">*</span></label>
+              <textarea name="description" rows="3" placeholder="Jelaskan perubahan yang diinginkan..." class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none"></textarea>
+            </div>
+
+            <!-- Estimasi Biaya -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Estimasi Dampak Biaya</label>
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-slate-500 font-semibold">Rp</span>
+                <input type="number" name="cost_estimate" placeholder="0 (opsional)" class="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+              </div>
+            </div>
+
+            <!-- Departemen -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Departemen <span class="text-red-500">*</span></label>
+              <select name="dept" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                <option value="">-- Pilih Departemen --</option>
+                <option value="Produksi">Produksi</option>
+                <option value="QC">Quality Control</option>
+                <option value="Purchasing">Purchasing</option>
+                <option value="Sales">Sales</option>
+                <option value="Drafter">Drafter</option>
+                <option value="Owner">Owner</option>
+              </select>
+            </div>
+
+            <!-- Alasan -->
+            <div class="mb-4">
+              <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Alasan Perubahan <span class="text-red-500">*</span></label>
+              <select name="reason" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                <option value="">-- Pilih Alasan --</option>
+                <option value="Koreksi Cacat">Koreksi Cacat</option>
+                <option value="Reduksi Biaya">Reduksi Biaya</option>
+                <option value="Perbaikan Desain">Perbaikan Desain</option>
+                <option value="Perubahan Bahan">Perubahan Bahan</option>
+                <option value="Req. Buyer">Req. Buyer</option>
+                <option value="Kepatuhan Standar Industri">Kepatuhan Standar Industri</option>
+                <option value="Upload File Baru">Upload File Baru</option>
+              </select>
+            </div>
+
+            <!-- V14: Implementation Tracking (Target Rilis) -->
+            <div class="mb-4 p-4 bg-blue-50/70 border border-blue-200 rounded-xl">
+              <div class="flex items-center gap-1.5 mb-3 pb-1.5 border-b border-blue-100">
+                <i class="fas fa-calendar-check text-blue-600 text-xs"></i>
+                <span class="text-xs font-bold text-blue-900 uppercase tracking-wide">Rencana Implementasi (Wajib Diisi) <span class="text-red-500">*</span></span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label class="block text-[0.68rem] font-bold text-slate-600 uppercase tracking-wide mb-1">Target Berjalan (PO) <span class="text-red-500">*</span></label>
+                  <input type="text" name="impl_po" id="m_impl_po" placeholder="Contoh: Next PO / PO 45000123" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                  <label class="block text-[0.68rem] font-bold text-slate-600 uppercase tracking-wide mb-1">Tanggal Estimasi Jalan <span class="text-red-500">*</span></label>
+                  <input type="date" name="impl_date" id="m_impl_date" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+              </div>
+              <div>
+                <label class="block text-[0.68rem] font-bold text-slate-600 uppercase tracking-wide mb-1">Keterangan / Alasan Lapangan <span class="text-red-500">*</span></label>
+                <textarea name="impl_reason" id="m_impl_reason" rows="2" placeholder="Alasan kondisi lapangan / pertimbangan rilis..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+              </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="flex gap-3 pt-2">
+              <button type="button" onclick="closeEcrModal()" class="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">Batal</button>
+              <button type="button" onclick="submitEcrForm()" class="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm">Buat ECO Langsung</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .radio-card { transition: all 0.15s; }
+      .radio-card:has(input:checked) { border-color: #059669; background: #ecfdf5; }
+    </style>
+
+    <script>
+      // Filter Approval (CRTD) Kategori Logic
+      document.addEventListener('DOMContentLoaded', function() {
+        var appBtns = document.querySelectorAll('.approval-kat-btn');
+        var appTbody = document.getElementById('approvalTableBody');
+        if(!appTbody) return;
+        var appRows = Array.from(appTbody.querySelectorAll('tr'));
+        var appCounterSpan = document.getElementById('approvalCounter');
+        
+        // Add data-kat to each row based on the category span text (column 4)
+        appRows.forEach(function(row) {
+           var katSpan = row.querySelector('td:nth-child(4) span');
+           if(katSpan) {
+               row.setAttribute('data-kat', katSpan.innerText.trim());
+           }
+        });
+
+        appBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                // Remove active classes
+                appBtns.forEach(function(b) {
+                    b.classList.remove('bg-orange-50', 'text-orange-700', 'border-orange-200', 'active');
+                    b.classList.add('bg-white', 'text-slate-500');
+                });
+                
+                // Set active class
+                this.classList.remove('bg-white', 'text-slate-500');
+                this.classList.add('bg-orange-50', 'text-orange-700', 'border-orange-200', 'active');
+                
+                var filterVal = this.getAttribute('data-val');
+                var visibleCount = 0;
+                
+                appRows.forEach(function(row) {
+                    if(filterVal === 'ALL' || row.getAttribute('data-kat') === filterVal) {
+                        row.style.display = '';
+                        visibleCount++;
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+                
+                // Update counter
+                appCounterSpan.innerText = visibleCount + ' pending';
+            });
+        });
+      });
+
+      // Filter IREQ Kategori Logic
+      document.addEventListener('DOMContentLoaded', function() {
+        var ireqBtns = document.querySelectorAll('.ireq-kat-btn');
+        var tbody = document.getElementById('ireqTableBody');
+        if(!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        var counterSpan = document.getElementById('ireqCounter');
+        
+        // Add data-kat to each row based on the category span text
+        rows.forEach(function(row) {
+           var katSpan = row.querySelector('td:nth-child(4) span');
+           if(katSpan) {
+               row.setAttribute('data-kat', katSpan.innerText.trim());
+           }
+        });
+
+        ireqBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                // Remove active classes
+                ireqBtns.forEach(function(b) {
+                    b.classList.remove('bg-emerald-50', 'text-emerald-700', 'border-emerald-200', 'active');
+                    b.classList.add('bg-white', 'text-slate-500');
+                });
+                
+                // Set active class
+                this.classList.remove('bg-white', 'text-slate-500');
+                this.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200', 'active');
+                
+                var filterVal = this.getAttribute('data-val');
+                var visibleCount = 0;
+                
+                rows.forEach(function(row) {
+                    if(filterVal === 'ALL' || row.getAttribute('data-kat') === filterVal) {
+                        row.style.display = '';
+                        visibleCount++;
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+                
+                // Update counter
+                counterSpan.innerText = visibleCount + ' pending';
+            });
+        });
+      });
+      
+      var selectedMats = {};
+
+      function openEcrModal() {
+        var ecrBodyEl = document.getElementById('ecrModalBody');
+        if (ecrBodyEl) {
+          ecrBodyEl.scrollTop = 0;
+        }
+        var ecrModalEl = document.getElementById('ecrModal');
+        if (ecrModalEl) {
+          ecrModalEl.classList.remove('hidden');
+          ecrModalEl.classList.add('flex');
+        }
+      }
+
+      function closeEcrModal() {
+        var ecrModalEl = document.getElementById('ecrModal');
+        if (ecrModalEl) {
+          ecrModalEl.classList.add('hidden');
+          ecrModalEl.classList.remove('flex');
+        }
+      }
+
+      function doSearch() {
+        var keyword = document.getElementById('m_keyword').value;
+        if (!keyword) {
+          Swal.fire({icon:'warning', title:'Isi keyword dulu', target: document.getElementById('ecrModal')});
+          return;
+        }
+        var form = document.getElementById('ecrModalForm');
+        form.querySelector('input[name="OnInputProcessing"]').value = 'search_material';
+        form.submit();
+      }
+
+      function selectMat(matnr, desc) {
+        if (selectedMats[matnr]) {
+          Swal.fire({icon:'info', title:'Sudah dipilih', timer:1000, showConfirmButton:false, target: document.getElementById('ecrModal')});
+          return;
+        }
+        selectedMats[matnr] = desc;
+        updateMatList();
+      }
+
+      function removeMat(matnr) {
+        delete selectedMats[matnr];
+        updateMatList();
+      }
+
+      function updateMatList() {
+        var list = document.getElementById('m_selectedList');
+        var hidden = document.getElementById('m_materials');
+        var keys = Object.keys(selectedMats);
+        if (keys.length === 0) {
+          list.innerHTML = '<span class="text-slate-400">Belum ada material dipilih</span>';
+          hidden.value = '';
+          return;
+        }
+        var html = '';
+        keys.forEach(function(k) {
+          html += '<span class="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md mr-2 mb-1 text-xs font-semibold">' +
+            k + ' - ' + selectedMats[k] +
+            ' <button type="button" onclick="removeMat(\'' + k + '\')" class="text-red-500 hover:text-red-700 ml-1 font-bold">&times;</button></span>';
+        });
+        list.innerHTML = html;
+        hidden.value = keys.join(',');
+      }
+
+      function submitEcrForm() {
+        var form = document.getElementById('ecrModalForm');
+        var tgt = document.getElementById('ecrModal');
+        var title = form.querySelector('[name="title"]').value.trim();
+        var kategori = form.querySelector('input[name="kategori"]:checked');
+        var priority = form.querySelector('input[name="priority"]:checked');
+        var drafter = form.querySelector('[name="drafter"]').value;
+        var desc = form.querySelector('[name="description"]').value.trim();
+        var dept = form.querySelector('[name="dept"]').value;
+        var reason = form.querySelector('[name="reason"]').value;
+        var mats = document.getElementById('m_materials').value;
+
+        if (!mats) { Swal.fire({icon:'error', title:'Pilih material', target: tgt}); return; }
+        if (!title) { Swal.fire({icon:'error', title:'Judul wajib diisi', target: tgt}); return; }
+        if (!kategori) { Swal.fire({icon:'error', title:'Kategori wajib dipilih', target: tgt}); return; }
+        if (!priority) { Swal.fire({icon:'error', title:'Prioritas wajib dipilih', target: tgt}); return; }
+        if (!drafter) { Swal.fire({icon:'error', title:'Pilih drafter', target: tgt}); return; }
+        if (!desc) { Swal.fire({icon:'error', title:'Deskripsi wajib diisi', target: tgt}); return; }
+        if (!dept) { Swal.fire({icon:'error', title:'Departemen wajib dipilih', target: tgt}); return; }
+        if (!reason) { Swal.fire({icon:'error', title:'Alasan wajib dipilih', target: tgt}); return; }
+
+        // V14: Validasi Implementation Tracking
+        var implPo = form.querySelector('[name="impl_po"]') ? form.querySelector('[name="impl_po"]').value.trim() : '';
+        var implDate = form.querySelector('[name="impl_date"]') ? form.querySelector('[name="impl_date"]').value.trim() : '';
+        var implReason = form.querySelector('[name="impl_reason"]') ? form.querySelector('[name="impl_reason"]').value.trim() : '';
+
+        if (!implPo || !implDate || !implReason) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Lengkapi Rencana Implementasi!',
+            text: 'Field Target PO, Tanggal Estimasi Jalan, dan Alasan Lapangan wajib diisi sebelum membuat ECO langsung.',
+            target: tgt
+          });
+          return;
+        }
+
+        form.querySelector('input[name="action"]').value = 'create_ecr_admin';
+        form.submit();
+      }
+
+      // Auto-open modal if search results exist
+      var resultsDiv = document.getElementById('m_results');
+      if (resultsDiv && resultsDiv.innerHTML.trim() !== '') {
+  function viewDms(dokar, doknr, dokvr, doktl) {
+      window.location.href = 'dms_detail.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&DOKAR=' + encodeURIComponent(dokar.trim()) + '&DOKNR=' + encodeURIComponent(doknr.trim()) + '&DOKVR=' + encodeURIComponent(dokvr.trim()) + '&DOKTL=' + encodeURIComponent(doktl.trim());
+      }
+      openEcrModal();
+      }
+    </script>
+
+
+    <!-- ECR Table Pagination + Search (V06_c) -->
+    <script>
+      var ecrRows = [];
+      var ecrFiltered = [];
+      var ecrPage = 1;
+      var ecrPerPage = 15;
+      var ecrSearchTerm = '';
+
+      function initEcrPagination() {
+        ecrRows = Array.from(document.querySelectorAll('.ecr-row'));
+        ecrFiltered = ecrRows.slice();
+        ecrPage = 1;
+        renderEcrPage();
+      }
+
+            function selectKat(btn) {
+        document.querySelectorAll('#filterKat .kat-pill').forEach(function(b){
+          b.classList.remove('bg-blue-50','text-blue-700','border-blue-200','bg-orange-50','text-orange-700','border-orange-200','bg-emerald-50','text-emerald-700','border-emerald-200','active');
+          b.classList.add('bg-slate-100','text-slate-500','border-slate-200');
+        });
+        btn.classList.remove('bg-slate-100','text-slate-500','border-slate-200');
+        if (btn.dataset.value == 'DRW') btn.classList.add('bg-blue-50','text-blue-700','border-blue-200');
+        else if (btn.dataset.value == 'DBX') btn.classList.add('bg-orange-50','text-orange-700','border-orange-200');
+        else if (btn.dataset.value == 'DMT') btn.classList.add('bg-emerald-50','text-emerald-700','border-emerald-200');
+        else btn.classList.add('bg-slate-100','text-slate-500','border-slate-200');
+        btn.classList.add('active');
+        filterEcrTable();
+      }
+
+      function filterEcrTable() {
+        ecrSearchTerm = document.getElementById('ecrSearch').value.toLowerCase();
+        var kat = document.querySelector('#filterKat .kat-pill.active')?.dataset.value || '';
+        var pri = document.getElementById('filterPri').value;
+        var sts = document.getElementById('filterStatus').value;
+        var req = document.getElementById('filterReq').value;
+        ecrFiltered = ecrRows.filter(function(row) {
+          var text = row.textContent.toLowerCase();
+          var matchKw = !ecrSearchTerm || text.indexOf(ecrSearchTerm) > -1;
+          var matchKat = !kat || row.getAttribute('data-kat') === kat;
+          var matchPri = !pri || row.getAttribute('data-pri') === pri;
+          var matchSts = !sts || row.getAttribute('data-sts') === sts;
+          var matchReq = !req || (row.getAttribute('data-req') || '') === req;
+          return matchKw && matchKat && matchPri && matchSts && matchReq;
+        });
+        ecrPage = 1;
+        renderEcrPage();
+      }
+
+      function resetFilters() {
+        document.getElementById('ecrSearch').value = '';
+        document.querySelectorAll('#filterKat .kat-pill').forEach(function(b){ b.classList.remove('bg-blue-50','text-blue-700','border-blue-200','bg-orange-50','text-orange-700','border-orange-200','bg-emerald-50','text-emerald-700','border-emerald-200','active'); b.classList.add('bg-slate-100','text-slate-500','border-slate-200'); }); document.querySelector('#filterKat .kat-pill[data-value=""]').classList.add('bg-slate-100','text-slate-500','border-slate-200','active');
+        document.getElementById('filterPri').value = '';
+        document.getElementById('filterStatus').value = '';
+        document.getElementById('filterReq').value = '';
+        ecrSearchTerm = '';
+        ecrFiltered = ecrRows.slice();
+        ecrPage = 1;
+        renderEcrPage();
+      }
+
+      function renderEcrPage() {
+        var total = ecrFiltered.length;
+        var totalPages = Math.max(1, Math.ceil(total / ecrPerPage));
+        if (ecrPage > totalPages) ecrPage = totalPages;
+
+        // Hide all rows first
+        ecrRows.forEach(function(r) { r.style.display = 'none'; });
+
+        // Show only current page rows
+        var start = (ecrPage - 1) * ecrPerPage;
+        var end = start + ecrPerPage;
+        ecrFiltered.slice(start, end).forEach(function(r) { r.style.display = ''; });
+
+        // Update info
+        var info = document.getElementById('ecrPageInfo');
+        if (total === 0) {
+          info.textContent = '0 data';
+        } else {
+          info.textContent = (start + 1) + '-' + Math.min(end, total) + ' dari ' + total;
+        }
+
+        // Update buttons
+        document.getElementById('ecrPrevBtn').disabled = (ecrPage <= 1);
+        document.getElementById('ecrNextBtn').disabled = (ecrPage >= totalPages);
+      }
+
+      function ecrPrevPage() { if (ecrPage > 1) { ecrPage--; renderEcrPage(); } }
+      function ecrNextPage() { ecrPage++; renderEcrPage(); }
+
+      // Init on load
+      document.addEventListener('DOMContentLoaded', initEcrPagination);
+
+      // DMS link click handler (for Material History cards)
+      document.addEventListener('click', function(e) {
+        var dmsLink = e.target.closest('.dms-link');
+        if (dmsLink) {
+          var doknr = dmsLink.getAttribute('data-dmsnr');
+          if (doknr) {
+            window.location.href = 'dms_detail.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&DOKNR=' + doknr;
+          }
+        }
+      });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,47 @@
+* dms_list Event Handler
+DATA: lv_action TYPE string,
+      lv_dokar  TYPE dokar,
+      lv_doknr  TYPE doknr,
+      lv_dokvr  TYPE dokvr,
+      lv_doktl  TYPE doktl_d,
+      lv_url    TYPE string.
+
+DATA: ls_header TYPE bapi_doc_draw2,
+      lt_files  TYPE STANDARD TABLE OF bapi_doc_files2,
+      lt_desc   TYPE STANDARD TABLE OF bapi_doc_drat,
+      lt_return TYPE STANDARD TABLE OF bapiret2.
+
+lv_action = request->get_form_field( 'ACTION' ).
+
+" VIEW DMS DETAIL
+IF lv_action = 'DETAIL'.
+  lv_dokar = request->get_form_field( 'DOKAR' ).
+  lv_doknr = request->get_form_field( 'DOKNR' ).
+  lv_dokvr = request->get_form_field( 'DOKVR' ).
+  lv_doktl = request->get_form_field( 'DOKTL' ).
+
+  IF lv_dokar IS NOT INITIAL AND lv_doknr IS NOT INITIAL.
+    CALL FUNCTION 'BAPI_DOCUMENT_GETDETAIL2'
+      EXPORTING
+        documenttype         = lv_dokar
+        documentnumber       = lv_doknr
+        documentpart         = lv_doktl
+        documentversion      = lv_dokvr
+        getdocfiles          = 'X'
+        getdocdescriptions   = 'X'
+      IMPORTING
+        documentdata         = ls_header
+      TABLES
+        documentfiles        = lt_files
+        documentdescriptions = lt_desc
+        return               = lt_return.
+
+    " Store in page attributes for display
+    MV_MSG = 'DMS Detail loaded'.
+  ENDIF.
+ENDIF.
+
+" Navigate back
+CONCATENATE 'dms_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME INTO lv_url.
+navigation->goto_page( lv_url ).
+

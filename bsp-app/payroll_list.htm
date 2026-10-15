@@ -1,0 +1,311 @@
+<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payroll Dashboard - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 500: '#10b981', 600: '#059669', 700: '#047857' }
+          },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #f8fafc; background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px); background-size: 24px 24px; }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen pb-10">
+
+  <%@include file="approver_header.htm" %>
+
+  <div class="px-8 py-7 max-w-[1400px] mx-auto">
+    <!-- Header Banner -->
+    <div class="relative overflow-hidden rounded-xl p-6 mb-6 shadow-sm" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+      <div class="flex items-center justify-between relative z-10">
+        <div>
+          <h1 class="text-xl font-bold text-white mb-1">Payroll Dashboard</h1>
+          <p class="text-[0.76rem] text-brand-200 font-medium">Review & Approval Permintaan Perubahan Routing</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert Messages -->
+    <% IF GV_MESSAGE IS NOT INITIAL. %>
+    <div class="mb-5 px-5 py-3 rounded-xl text-sm font-medium flex items-center gap-2
+      <% IF GV_ICON = 'success'. %>bg-green-50 border border-green-200 text-green-700<% ENDIF. %>
+      <% IF GV_ICON = 'error'. %>bg-red-50 border border-red-200 text-red-700<% ENDIF. %>
+    ">
+      <%= GV_MESSAGE %>
+    </div>
+    <% ENDIF. %>
+
+    <div class="grid grid-cols-1 gap-6">
+      
+      <!-- Request List -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+            <h3 class="font-bold text-slate-700"><i class="fas fa-list-check text-brand-600 mr-2"></i> Antrian Approval Payroll</h3>
+            <span class="px-2.5 py-1 bg-brand-100 text-brand-700 rounded-md text-xs font-bold"><%= GV_REQUEST_COUNT %> Request</span>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50/50 border-b border-slate-100">
+                  <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">ID Request</th>
+                  <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Judul & Material</th>
+                  <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Dept</th>
+                  <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Requester</th>
+                  <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
+                  <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Tgl Request</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Aksi</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <%= GV_REQUEST_HTML %>
+              </tbody>
+            </table>
+            
+            <% DATA: lv_rc_num TYPE i. lv_rc_num = GV_REQUEST_COUNT. %>
+            <% IF lv_rc_num = 0. %>
+            <div class="py-16 text-center">
+              <div class="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-check-double text-2xl text-slate-300"></i>
+              </div>
+              <p class="text-sm font-bold text-slate-400">Belum ada request</p>
+              <p class="text-xs text-slate-400 mt-1">Request baru akan muncul di sini</p>
+            </div>
+            <% ENDIF. %>
+          </div>
+        </div>
+
+  <!-- ========== RIWAYAT REQUEST ========== -->
+  <div class="mt-8">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <h3 class="font-bold text-slate-700"><i class="fas fa-history text-blue-600 mr-2"></i> Riwayat Request</h3>
+        <span class="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-bold"><%= GV_HISTORY_COUNT %> Request</span>
+      </div>
+
+      <% DATA: lv_hcount_num TYPE i. lv_hcount_num = GV_HISTORY_COUNT. %>
+      <% IF lv_hcount_num > 0. %>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50/50 border-b border-slate-100">
+              <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">ID Request</th>
+              <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Judul & Material</th>
+              <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Dept</th>
+              <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Requester</th>
+              <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
+              <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Tgl Request</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <%= GV_HISTORY_HTML %>
+          </tbody>
+        </table>
+      </div>
+      <% ELSE. %>
+      <div class="py-8 text-center">
+        <div class="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-3">
+          <i class="fas fa-inbox text-slate-300"></i>
+        </div>
+        <p class="text-xs text-slate-400">Belum ada riwayat request</p>
+      </div>
+      <% ENDIF. %>
+    </div>
+  </div>
+
+  <!-- Attachment data from ABAP -->
+  <script>
+    var attData = {};
+    
+  </script>
+
+<!-- ========== APPROVAL MODAL ========== -->
+<div id="reviewModal" class="fixed inset-0 z-[200] hidden bg-black/50 flex items-center justify-center" style="backdrop-filter: blur(2px);">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl m-4 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <h3 class="text-lg font-bold text-slate-700">
+                <i class="fas fa-file-signature text-brand-600 mr-2"></i>Review Routing (Payroll)
+            </h3>
+            <button onclick="closeReviewModal()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+        </div>
+        
+        <!-- Tab Navigation Modal -->
+        <div class="flex border-b border-slate-200">
+            <button type="button" onclick="switchModalTab('DETAIL')" id="modTabDetail" class="flex-1 py-3 text-sm font-bold text-brand-600 border-b-2 border-brand-600 bg-brand-50/30">Detail Request</button>
+            <button type="button" onclick="switchModalTab('ACTION')" id="modTabAction" class="flex-1 py-3 text-sm font-bold text-slate-500 border-b-2 border-transparent hover:bg-slate-50">Approve / Reject</button>
+        </div>
+
+        <form action="payroll_list.htm" method="post" id="reviewForm" class="relative">
+            <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+            <input type="hidden" name="r" value="<%= GV_ROLE %>">
+            <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+            <input type="hidden" name="OnInputProcessing" id="modAction" value="">
+            <input type="hidden" name="irouting_id" id="modRoutId" value="">
+
+            <!-- Tab 1: Detail -->
+            <div id="modContentDetail" class="p-6">
+                <div class="mb-5 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                    <h4 class="text-sm font-bold text-blue-800 mb-1" id="modRoutTitle">Judul</h4>
+                    <p class="text-xs text-blue-600 mb-3" id="modRoutMat">Material</p>
+                    <div class="text-xs text-slate-700 bg-white p-3 rounded border border-blue-100" id="modRoutDesc">Deskripsi</div>
+                </div>
+
+                <div>
+                    <p class="text-xs font-bold text-slate-500 uppercase mb-2">Attachment Pendukung:</p>
+                    <div id="modRoutAtt" class="space-y-2 max-h-40 overflow-y-auto pr-2"></div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Action -->
+            <div id="modContentAction" class="p-6 hidden">
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+                    <h4 class="text-sm font-bold text-amber-800 mb-1">Keputusan Payroll</h4>
+                    <p class="text-xs text-amber-700 mb-4">Silakan berikan persetujuan jika perhitungan biaya sudah sesuai. Jika ditolak, request akan dikembalikan.</p>
+                    
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Alasan Penolakan <span class="text-red-500 font-normal italic">(Wajib jika di-reject)</span></label>
+                    <textarea name="reject_reason" id="rejectReason" rows="3" placeholder="Tulis alasan penolakan di sini..." class="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white"></textarea>
+                </div>
+                
+                <div class="flex gap-3 mt-8">
+                    <button type="button" onclick="submitReview('reject_routing')" class="flex-1 px-4 py-2.5 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 rounded-lg text-sm font-bold transition-all"><i class="fas fa-times mr-2"></i>Reject</button>
+                    <button type="button" onclick="submitReview('approve_routing')" class="flex-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm"><i class="fas fa-check mr-2"></i>Approve (Teruskan ke Master Data)</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showReviewModal(id, title, mat, dept, desc) {
+    document.getElementById('modRoutId').value = id;
+    document.getElementById('modRoutTitle').innerText = 'REQ-' + id + ' : ' + title;
+    document.getElementById('modRoutMat').innerText = mat + ' (' + dept + ')';
+    document.getElementById('modRoutDesc').innerText = desc;
+    document.getElementById('rejectReason').value = '';
+    
+    switchModalTab('DETAIL');
+    
+    // Load attachments
+    var attContainer = document.getElementById('modRoutAtt');
+    attContainer.innerHTML = '<p class="text-xs text-slate-400 italic">Memuat lampiran...</p>';
+    
+    if(typeof attData !== 'undefined' && attData[id]) {
+        var html = '';
+        for(var i=0; i<attData[id].length; i++) {
+            var file = attData[id][i];
+            html += '<div class="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2">';
+            html += '<div class="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 text-blue-600"><i class="fas fa-file"></i></div>';
+            html += '<div class="flex-1 min-w-0">';
+            html += '<p class="text-xs font-bold text-slate-700 truncate">' + file.name + '</p>';
+            html += '<p class="text-[0.65rem] text-slate-400">' + file.size + ' KB</p>';
+            html += '</div>';
+            html += '<form action="payroll_list.htm" method="post" target="_blank" class="m-0">';
+            html += '<input type="hidden" name="OnInputProcessing" value="download_att">';
+            html += '<input type="hidden" name="ireq_id" value="' + file.id + '">';
+            html += '<button type="submit" class="text-blue-600 hover:text-blue-800 text-xs font-bold px-2 py-1 rounded hover:bg-blue-50">Download</button>';
+            html += '</form>';
+            html += '</div>';
+        }
+        attContainer.innerHTML = html;
+    } else {
+        attContainer.innerHTML = '<p class="text-xs text-slate-400 italic">Tidak ada lampiran.</p>';
+    }
+
+    document.getElementById('reviewModal').classList.remove('hidden');
+}
+
+function closeReviewModal() {
+    document.getElementById('reviewModal').classList.add('hidden');
+}
+
+function switchModalTab(tab) {
+    var tabDetail = document.getElementById('modTabDetail');
+    var tabAction = document.getElementById('modTabAction');
+    var contentDetail = document.getElementById('modContentDetail');
+    var contentAction = document.getElementById('modContentAction');
+    
+    if(tab === 'DETAIL') {
+        tabDetail.className = 'flex-1 py-3 text-sm font-bold text-brand-600 border-b-2 border-brand-600 bg-brand-50/30';
+        tabAction.className = 'flex-1 py-3 text-sm font-bold text-slate-500 border-b-2 border-transparent hover:bg-slate-50';
+        contentDetail.classList.remove('hidden');
+        contentAction.classList.add('hidden');
+    } else {
+        tabAction.className = 'flex-1 py-3 text-sm font-bold text-brand-600 border-b-2 border-brand-600 bg-brand-50/30';
+        tabDetail.className = 'flex-1 py-3 text-sm font-bold text-slate-500 border-b-2 border-transparent hover:bg-slate-50';
+        contentAction.classList.remove('hidden');
+        contentDetail.classList.add('hidden');
+    }
+}
+
+function showAudit(ecrNo) {
+    var url = window.location.pathname + '?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&ireq_detail=' + ecrNo;
+    window.location.href = url;
+}
+
+function closeAuditModal() {
+    var url = window.location.pathname + '?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>';
+    window.location.href = url;
+}
+
+function submitReview(action) {
+    if(action === 'reject_routing') {
+        var reason = document.getElementById('rejectReason').value.trim();
+        if(!reason) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Oops...',
+                text: 'Alasan penolakan wajib diisi!'
+            });
+            return;
+        }
+    }
+    
+    document.getElementById('modAction').value = action;
+    document.getElementById('reviewForm').submit();
+}
+</script>
+
+<!-- ========== AUDIT TRAIL MODAL ========== -->
+  <div id="auditModal" class="fixed inset-0 z-[200] hidden bg-black/50 flex items-center justify-center" style="backdrop-filter: blur(2px);">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onclick="event.stopPropagation()">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <h3 class="font-bold text-slate-700"><i class="fas fa-history text-blue-600 mr-2"></i> Audit Trail</h3>
+        <button onclick="closeAuditModal()" class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-200 transition-colors">
+          <i class="fas fa-times text-slate-400"></i>
+        </button>
+      </div>
+      <div class="px-5 py-4 max-h-80 overflow-y-auto">
+        <div class="relative pl-8 before:content-[''] before:absolute before:left-3 before:top-0 before:bottom-0 before:w-0.5 before:bg-slate-200" id="auditContent">
+          <%= GV_AUDIT_HTML %>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-slate-200 bg-slate-50 text-right">
+        <button onclick="closeAuditModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-bold transition-colors">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <% IF GV_SELECTED_IREQ IS NOT INITIAL. %>
+  <script>
+    document.getElementById('auditModal').classList.remove('hidden');
+  </script>
+  <% ENDIF. %>
+
+</body>
+</html>

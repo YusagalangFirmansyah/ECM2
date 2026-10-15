@@ -1,0 +1,395 @@
+" requester_print OnInit — V14: Cetak Request List Layout & Audit Trail
+GV_USER_ID       = request->get_form_field( 'u' ).
+GV_FULL_NAME     = request->get_form_field( 'n' ).
+GV_ROLE          = request->get_form_field( 'r' ).
+GV_DATE_FROM     = request->get_form_field( 'date_from' ).
+GV_DATE_TO       = request->get_form_field( 'date_to' ).
+GV_FILTER_STATUS = request->get_form_field( 'filter_status' ).
+GV_SHOW_AUDIT    = request->get_form_field( 'show_audit' ).
+
+IF GV_SHOW_AUDIT IS INITIAL.
+  GV_SHOW_AUDIT = 'X'.
+ENDIF.
+
+" Auth check
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+" Default date range: first day of 4 months ago to today
+IF GV_DATE_FROM IS INITIAL.
+  DATA: lv_yr TYPE n LENGTH 4, lv_mo TYPE n LENGTH 2, lv_yy TYPE n LENGTH 4, lv_mm TYPE n LENGTH 2.
+  lv_yy = sy-datum(4). lv_mm = sy-datum+4(2).
+  lv_yr = lv_yy. lv_mo = lv_mm.
+  IF lv_mo > 4.
+    lv_mo = lv_mo - 4.
+  ELSE.
+    lv_yr = lv_yr - 1. lv_mo = lv_mo + 8.
+  ENDIF.
+  CONCATENATE lv_yr lv_mo '01' INTO GV_DATE_FROM.
+ENDIF.
+IF GV_DATE_TO IS INITIAL.
+  GV_DATE_TO = sy-datum.
+ENDIF.
+
+" Convert display dates (YYYY-MM-DD) to SAP internal format (YYYYMMDD)
+REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_FROM WITH ''.
+REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_TO WITH ''.
+
+DATA: lv_df_internal TYPE sy-datum,
+      lv_dt_internal TYPE sy-datum.
+lv_df_internal = GV_DATE_FROM.
+lv_dt_internal = GV_DATE_TO.
+
+" Query IREQ data with filters
+DATA: lt_print TYPE tt_print_ireq,
+      ls_print TYPE ty_print_ireq.
+
+IF GV_FILTER_STATUS IS INITIAL OR GV_FILTER_STATUS = 'ALL'.
+  SELECT a~ireq_id, a~title, a~matnr_fg, a~kategori, a~priority,
+         a~status, a~zdept, a~zreason, a~description, a~req_date, a~created_time, a~ecr_no,
+         a~admin_note, a~impl_po, a~impl_date, a~impl_reason,
+         b~maktx AS matnr_fg_desc
+    INTO CORRESPONDING FIELDS OF TABLE @lt_print
+    FROM zecm_ireq AS a
+    LEFT OUTER JOIN makt AS b ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+    WHERE a~requester = @GV_USER_ID
+      AND a~req_date >= @lv_df_internal AND a~req_date <= @lv_dt_internal
+    ORDER BY a~req_date DESCENDING, a~ireq_id DESCENDING.
+ELSE.
+  SELECT a~ireq_id, a~title, a~matnr_fg, a~kategori, a~priority,
+         a~status, a~zdept, a~zreason, a~description, a~req_date, a~created_time, a~ecr_no,
+         a~admin_note, a~impl_po, a~impl_date, a~impl_reason,
+         b~maktx AS matnr_fg_desc
+    INTO CORRESPONDING FIELDS OF TABLE @lt_print
+    FROM zecm_ireq AS a
+    LEFT OUTER JOIN makt AS b ON a~matnr_fg = b~matnr AND b~spras = @sy-langu
+    WHERE a~requester = @GV_USER_ID
+      AND a~status = @GV_FILTER_STATUS
+      AND a~req_date >= @lv_df_internal AND a~req_date <= @lv_dt_internal
+    ORDER BY a~req_date DESCENDING, a~ireq_id DESCENDING.
+ENDIF.
+
+" Format display dates in header
+IF strlen( GV_DATE_FROM ) = 8.
+  CONCATENATE GV_DATE_FROM+6(2) '/' GV_DATE_FROM+4(2) '/' GV_DATE_FROM(4) INTO GV_DATE_FROM.
+ENDIF.
+IF strlen( GV_DATE_TO ) = 8.
+  CONCATENATE GV_DATE_TO+6(2) '/' GV_DATE_TO+4(2) '/' GV_DATE_TO(4) INTO GV_DATE_TO.
+ENDIF.
+
+" Build print list HTML
+DATA: lv_html         TYPE string,
+      lv_count        TYPE i VALUE 0,
+      lv_no_str       TYPE string,
+      lv_date_str     TYPE string,
+      lv_ireq_fmt     TYPE string,
+      lv_matnr_fmt    TYPE string,
+      lv_s_label      TYPE string,
+      lv_s_class      TYPE string,
+      lv_p_label      TYPE string,
+      lv_p_class      TYPE string,
+      lv_k_label      TYPE string,
+      lv_desc_fmt     TYPE string,
+      lv_card_html    TYPE string,
+      lv_meta_html    TYPE string,
+      lv_audit_html   TYPE string,
+      lv_extra_html   TYPE string,
+      lt_log          TYPE TABLE OF zecm_log,
+      ls_log          TYPE zecm_log,
+      lv_log_date_str TYPE string,
+      lv_log_time_str TYPE string,
+      lv_log_user_name TYPE string,
+      lv_log_act_label TYPE string,
+      lv_log_act_class TYPE string,
+      lv_log_status_str TYPE string,
+      lv_fix_mat      TYPE matnr.
+
+CLEAR lv_html.
+
+LOOP AT lt_print INTO ls_print.
+  lv_count = lv_count + 1.
+  lv_no_str = lv_count.
+
+  " Format IREQ ID (remove leading zeros)
+  lv_ireq_fmt = ls_print-ireq_id.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING  input  = lv_ireq_fmt
+    IMPORTING  output = lv_ireq_fmt.
+
+  " Format material (remove leading zeros)
+  lv_matnr_fmt = ls_print-matnr_fg.
+  SHIFT lv_matnr_fmt LEFT DELETING LEADING '0'.
+
+  " Fallback: ALPHA_INPUT for MAKT JOIN (data lama mungkin tanpa zeros)
+  IF ls_print-matnr_fg_desc IS INITIAL AND ls_print-matnr_fg IS NOT INITIAL.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING  input  = ls_print-matnr_fg
+      IMPORTING  output = lv_fix_mat.
+    SELECT SINGLE maktx FROM makt INTO @ls_print-matnr_fg_desc
+      WHERE matnr = @lv_fix_mat AND spras = @sy-langu.
+  ENDIF.
+
+  " Format date (YYYYMMDD -> DD.MM.YYYY)
+  CLEAR lv_date_str.
+  IF ls_print-req_date IS NOT INITIAL.
+    CONCATENATE ls_print-req_date+6(2) '.' ls_print-req_date+4(2) '.' ls_print-req_date(4) INTO lv_date_str.
+    
+    " Append time if exists (HH:MM)
+    IF ls_print-created_time IS NOT INITIAL AND strlen( ls_print-created_time ) = 6.
+      DATA: lv_time_str TYPE string.
+      CONCATENATE ls_print-created_time(2) ':' ls_print-created_time+2(2) INTO lv_time_str.
+      CONCATENATE lv_date_str ' - ' lv_time_str INTO lv_date_str.
+    ENDIF.
+  ENDIF.
+
+  " Status label & class
+  CLEAR: lv_s_label, lv_s_class.
+  CASE ls_print-status.
+    WHEN 'REQ'.
+      lv_s_label = 'Menunggu Review'.
+      lv_s_class = 'tag-req'.
+    WHEN 'APPR'.
+      lv_s_label = 'Disetujui R&D'.
+      lv_s_class = 'tag-appr'.
+    WHEN 'ECO'.
+      lv_s_label = 'Diproses ECO'.
+      lv_s_class = 'tag-eco'.
+    WHEN 'REJC'.
+      lv_s_label = 'Ditolak'.
+      lv_s_class = 'tag-rejc'.
+    WHEN OTHERS.
+      lv_s_label = ls_print-status.
+      lv_s_class = 'tag-req'.
+  ENDCASE.
+
+  " Priority label & class
+  CLEAR: lv_p_label, lv_p_class.
+  CASE ls_print-priority.
+    WHEN 'CRITICAL'.
+      lv_p_label = 'Critical'.
+      lv_p_class = 'tag-prio-crit'.
+    WHEN 'HIGH'.
+      lv_p_label = 'High'.
+      lv_p_class = 'tag-prio-high'.
+    WHEN 'MEDIUM'.
+      lv_p_label = 'Medium'.
+      lv_p_class = 'tag-prio-med'.
+    WHEN 'LOW'.
+      lv_p_label = 'Low'.
+      lv_p_class = 'tag-prio-low'.
+    WHEN OTHERS.
+      lv_p_label = ls_print-priority.
+      lv_p_class = 'tag-prio-low'.
+  ENDCASE.
+
+  " Kategori label
+  CLEAR lv_k_label.
+  CASE ls_print-kategori.
+    WHEN 'DRW'. lv_k_label = 'Drawing Wood (DRW)'.
+    WHEN 'DBX'. lv_k_label = 'Drawing Box (DBX)'.
+    WHEN 'DMT'. lv_k_label = 'Drawing Metal (DMT)'.
+    WHEN OTHERS. lv_k_label = ls_print-kategori.
+  ENDCASE.
+
+  " Format Description with line breaks
+  lv_desc_fmt = ls_print-description.
+  IF lv_desc_fmt IS INITIAL.
+    lv_desc_fmt = '<em style="color:#94a3b8;">Tidak ada deskripsi rinci.</em>'.
+  ELSE.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN lv_desc_fmt WITH '<br>'.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN lv_desc_fmt WITH '<br>'.
+  ENDIF.
+
+  " Metadata items
+  CLEAR lv_meta_html.
+  CONCATENATE
+    '<div class="req-grid">'
+    '<div class="grid-item"><span class="grid-label">Material Finish Goods</span><span class="grid-val font-mono">' lv_matnr_fmt ' &mdash; ' ls_print-matnr_fg_desc '</span></div>'
+    '<div class="grid-item"><span class="grid-label">Alasan Perubahan</span><span class="grid-val">' ls_print-zreason '</span></div>'
+    INTO lv_meta_html.
+
+  " If ECR No exists
+  IF ls_print-ecr_no IS NOT INITIAL.
+    DATA: lv_ecr_clean TYPE string.
+    lv_ecr_clean = ls_print-ecr_no.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input = lv_ecr_clean IMPORTING output = lv_ecr_clean.
+    CONCATENATE lv_meta_html
+      '<div class="grid-item"><span class="grid-label">Nomor ECO (SAP)</span><span class="grid-val font-mono font-bold text-orange-600">ECO ' lv_ecr_clean '</span></div>'
+      INTO lv_meta_html.
+  ENDIF.
+
+  " If Implementation Tracking exists
+  IF ls_print-impl_po IS NOT INITIAL OR ls_print-impl_date IS NOT INITIAL.
+    DATA: lv_impl_dt_str TYPE string.
+    CLEAR lv_impl_dt_str.
+    IF ls_print-impl_date IS NOT INITIAL.
+      CONCATENATE ls_print-impl_date+6(2) '/' ls_print-impl_date+4(2) '/' ls_print-impl_date(4) INTO lv_impl_dt_str.
+    ENDIF.
+    CONCATENATE lv_meta_html
+      '<div class="grid-item"><span class="grid-label">Target Rilis Implementasi</span><span class="grid-val">' ls_print-impl_po ' (Tgl: ' lv_impl_dt_str ')</span></div>'
+      INTO lv_meta_html.
+  ENDIF.
+
+  CONCATENATE lv_meta_html '</div>' INTO lv_meta_html.
+
+  " Extra Alert Box for Rejection or Impl Reason
+  CLEAR lv_extra_html.
+  IF ls_print-status = 'REJC' AND ls_print-admin_note IS NOT INITIAL.
+    CONCATENATE
+      '<div class="alert-box alert-rejc">'
+      '<strong><i class="fas fa-times-circle"></i> Alasan Penolakan:</strong> ' ls_print-admin_note
+      '</div>' INTO lv_extra_html.
+  ELSEIF ls_print-impl_reason IS NOT INITIAL.
+    CONCATENATE
+      '<div class="alert-box alert-info">'
+      '<strong><i class="fas fa-info-circle"></i> Pertimbangan Target Lapangan:</strong> ' ls_print-impl_reason
+      '</div>' INTO lv_extra_html.
+  ENDIF.
+
+  " Query Audit Trail for this request
+  CLEAR: lt_log, lv_audit_html.
+  IF ls_print-ecr_no IS NOT INITIAL.
+    SELECT * FROM zecm_log INTO TABLE @lt_log
+      WHERE ( ecr_no = @ls_print-ireq_id AND is_ireq = 'X' )
+         OR ( ecr_no = @ls_print-ecr_no AND is_ireq = '' )
+      ORDER BY action_date ASCENDING, action_time ASCENDING.
+  ELSE.
+    SELECT * FROM zecm_log INTO TABLE @lt_log
+      WHERE ecr_no = @ls_print-ireq_id AND is_ireq = 'X'
+      ORDER BY action_date ASCENDING, action_time ASCENDING.
+  ENDIF.
+
+  IF lt_log IS INITIAL.
+    CLEAR ls_log.
+    ls_log-action      = 'CREA'.
+    ls_log-action_date = ls_print-req_date.
+    ls_log-user_id     = GV_USER_ID.
+    ls_log-old_status  = ''.
+    ls_log-new_status  = 'REQ'.
+    ls_log-reason      = 'Request diajukan oleh pemohon'.
+    APPEND ls_log TO lt_log.
+  ENDIF.
+
+  " Build Audit Trail HTML
+  CONCATENATE
+    '<div class="audit-container">'
+    '<div class="audit-heading"><i class="fas fa-history text-emerald-600"></i> Riwayat Aktivitas &amp; Audit Trail:</div>'
+    '<div class="timeline">'
+    INTO lv_audit_html.
+
+  LOOP AT lt_log INTO ls_log.
+    " User Full Name
+    CLEAR lv_log_user_name.
+    SELECT SINGLE zecm_full_name FROM zecm_user INTO @lv_log_user_name
+      WHERE zecm_user_id = @ls_log-user_id.
+    IF lv_log_user_name IS INITIAL.
+      lv_log_user_name = ls_log-user_id.
+    ENDIF.
+
+    " Date & Time format
+    CLEAR: lv_log_date_str, lv_log_time_str.
+    IF ls_log-action_date IS NOT INITIAL.
+      CONCATENATE ls_log-action_date+6(2) '.' ls_log-action_date+4(2) '.' ls_log-action_date(4) INTO lv_log_date_str.
+      IF ls_log-action_time IS NOT INITIAL.
+        CONCATENATE ls_log-action_time(2) ':' ls_log-action_time+2(2) INTO lv_log_time_str.
+        CONCATENATE lv_log_date_str lv_log_time_str INTO lv_log_date_str SEPARATED BY space.
+      ENDIF.
+    ENDIF.
+
+    " Action badge & label
+    CLEAR: lv_log_act_label, lv_log_act_class.
+    CASE ls_log-action.
+      WHEN 'CREA'.
+        lv_log_act_label = 'Request Dibuat'.
+        lv_log_act_class = 'badge-act-crea'.
+      WHEN 'APPR'.
+        lv_log_act_label = 'Disetujui R&D'.
+        lv_log_act_class = 'badge-act-appr'.
+      WHEN 'REJT' OR 'REJC'.
+        lv_log_act_label = 'Ditolak'.
+        lv_log_act_class = 'badge-act-rejc'.
+      WHEN 'ECO' OR 'INWK'.
+        lv_log_act_label = 'Penugasan ECO'.
+        lv_log_act_class = 'badge-act-eco'.
+      WHEN 'INSP'.
+        lv_log_act_label = 'Inspeksi Produksi'.
+        lv_log_act_class = 'badge-act-insp'.
+      WHEN 'CLSD'.
+        lv_log_act_label = 'Selesai (Closed)'.
+        lv_log_act_class = 'badge-act-clsd'.
+      WHEN OTHERS.
+        lv_log_act_label = ls_log-action.
+        lv_log_act_class = 'badge-act-oth'.
+    ENDCASE.
+
+    " Status Transition
+    CLEAR lv_log_status_str.
+    IF ls_log-old_status IS NOT INITIAL.
+      CONCATENATE 'Status: <strong>' ls_log-old_status '</strong> &rarr; <strong>' ls_log-new_status '</strong>' INTO lv_log_status_str.
+    ELSEIF ls_log-new_status IS NOT INITIAL.
+      CONCATENATE 'Status: <strong>' ls_log-new_status '</strong>' INTO lv_log_status_str.
+    ENDIF.
+
+    CONCATENATE lv_audit_html
+      '<div class="timeline-item">'
+      '<div class="timeline-dot"></div>'
+      '<div class="timeline-content">'
+      '<div class="timeline-top">'
+      '<span class="timeline-badge ' lv_log_act_class '">' lv_log_act_label '</span>'
+      '<span class="timeline-time"><i class="far fa-clock"></i> ' lv_log_date_str '</span>'
+      '<span class="timeline-user">oleh <strong>' lv_log_user_name '</strong></span>'
+      '<span class="timeline-status">' lv_log_status_str '</span>'
+      '</div>'
+      INTO lv_audit_html.
+
+    IF ls_log-reason IS NOT INITIAL.
+      CONCATENATE lv_audit_html
+        '<div class="timeline-reason">' ls_log-reason '</div>'
+        INTO lv_audit_html.
+    ENDIF.
+
+    CONCATENATE lv_audit_html
+      '</div>'
+      '</div>'
+      INTO lv_audit_html.
+  ENDLOOP.
+
+  CONCATENATE lv_audit_html
+    '</div>'
+    '</div>'
+    INTO lv_audit_html.
+
+  " Assemble Card HTML
+  CLEAR lv_card_html.
+  CONCATENATE
+    '<div class="request-card">'
+    '<div class="card-header-bar">'
+    '<div class="header-tags">'
+    '<span class="tag-num">#' lv_no_str '</span>'
+    '<span class="tag-id">IREQ-' lv_ireq_fmt '</span>'
+    '<span class="tag-badge ' lv_s_class '">' lv_s_label '</span>'
+    '<span class="tag-badge ' lv_p_class '">' lv_p_label '</span>'
+    '<span class="tag-badge tag-kat">' lv_k_label '</span>'
+    '<span class="tag-badge tag-dept">' ls_print-zdept '</span>'
+    '</div>'
+    '<div class="header-date"><i class="far fa-calendar-alt"></i> ' lv_date_str '</div>'
+    '</div>'
+    '<div class="req-title">' ls_print-title '</div>'
+    lv_meta_html
+    lv_extra_html
+    '<div class="desc-box">'
+    '<div class="desc-box-label"><i class="fas fa-align-left text-slate-400"></i> Rincian / Deskripsi Permohonan Perubahan:</div>'
+    '<div class="desc-box-content">' lv_desc_fmt '</div>'
+    '</div>'
+    lv_audit_html
+    '</div>'
+    INTO lv_card_html.
+
+  CONCATENATE lv_html lv_card_html INTO lv_html.
+ENDLOOP.
+
+GV_PRINT_HTML  = lv_html.
+GV_PRINT_COUNT = lv_count.

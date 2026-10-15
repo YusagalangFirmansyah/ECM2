@@ -1,0 +1,20 @@
+* =======================================================================
+* Page Attributes — admin_print_ecr.htm
+* V14_i: Cetak Multi-Panel (IREQ, Approval Queue, ECR)
+* =======================================================================
+
+* User info
+GV_USER_ID   TYPE string
+GV_FULL_NAME TYPE string
+GV_ROLE      TYPE string
+
+* Date range & Type filter
+GV_DATE_FROM TYPE string
+GV_DATE_TO   TYPE string
+GV_PRINT_TYPE TYPE string
+
+* Print Headers & Content
+GV_REPORT_TITLE TYPE string
+GV_TH_HEADER    TYPE string
+GV_PRINT_HTML   TYPE string
+GV_PRINT_COUNT  TYPE string

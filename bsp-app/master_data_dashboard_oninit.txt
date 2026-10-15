@@ -1,0 +1,505 @@
+" =======================================================================
+" OnInit — master_data_dashboard.htm
+" V08_e: Master Data Dashboard — BOM Gate Review
+" Role: MASTER_DATA (Mbak Ayu)
+" =======================================================================
+
+" --- Auth ---
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+GV_MESSAGE   = request->get_form_field( 'msg' ).
+GV_ICON      = request->get_form_field( 'icon' ).
+GV_FILTER    = request->get_form_field( 'filter' ).
+
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+" Auth: only MASTER_DATA role
+IF GV_ROLE <> 'MASTER_DATA'.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+" Default filter
+IF GV_FILTER IS INITIAL.
+  GV_FILTER = 'ALL'.
+ENDIF.
+
+" --- Variables ---
+DATA: lt_ecr       TYPE STANDARD TABLE OF ty_bom_ecr,
+      ls_ecr       TYPE ty_bom_ecr,
+      lt_att       TYPE STANDARD TABLE OF ty_attachment,
+      ls_att       TYPE ty_attachment,
+      lv_html      TYPE string,
+      lv_count     TYPE i,
+      lv_count_p   TYPE i,
+      lv_count_a   TYPE i,
+      lv_count_r   TYPE i,
+      lv_matnr_sap TYPE matnr,
+      lv_no_zero   TYPE c LENGTH 40,
+      lv_date_str  TYPE c LENGTH 12,
+      lv_size_str  TYPE c LENGTH 20,
+      lv_bom_badge TYPE string,
+      lv_bg_color  TYPE string,
+      lv_text_color TYPE string,
+      lv_status_label TYPE string,
+      lv_maktx     TYPE makt-maktx,
+      lv_count_str TYPE string,
+      lv_prio_badge TYPE string,
+      lv_kat_badge  TYPE string,
+      lv_js_att    TYPE string,
+      lv_ecr_prev  TYPE string,
+      lv_first_att TYPE c LENGTH 1 VALUE 'X',
+      lv_att_html    TYPE string,
+      lv_has_att     TYPE c LENGTH 1,
+      lv_att_clean_ecr TYPE c LENGTH 40,
+      lv_cur_clean   TYPE c LENGTH 40,
+      lv_fn_safe     TYPE string,
+      lv_by_safe     TYPE string.
+
+" ======================================================================
+" 1. SUMMARY CARDS — Count by BOM_CHECK
+" ======================================================================
+SELECT COUNT(*) FROM zecm_req INTO @lv_count_p
+  WHERE bom_check = 'P' AND status <> 'CLSD' AND status <> 'REJC'.
+SELECT COUNT(*) FROM zecm_req INTO @lv_count_a
+  WHERE bom_check = 'A' AND status <> 'CLSD' AND status <> 'REJC'.
+SELECT COUNT(*) FROM zecm_req INTO @lv_count_r
+  WHERE bom_check = 'R' AND status <> 'CLSD' AND status <> 'REJC'.
+
+GV_COUNT_PENDING  = lv_count_p.
+GV_COUNT_APPROVED = lv_count_a.
+GV_COUNT_REJECTED = lv_count_r.
+
+" ======================================================================
+" 2. ECR LIST — All ECO with BOM_CHECK (not empty)
+" ======================================================================
+SELECT r~ecr_no, r~title, r~matnr_fg,
+       r~kategori, r~priority, r~status, r~bom_check,
+       r~drafter,
+       u1~zecm_full_name AS drafter_name,
+       r~requester,
+       u2~zecm_full_name AS requester_name,
+       r~created_date, r~zdept, r~zreason, r~descr,
+       r~bom_notes,
+       m~maktx
+  FROM zecm_req AS r
+  LEFT OUTER JOIN zecm_user AS u1 ON u1~zecm_user_id = r~drafter
+  LEFT OUTER JOIN zecm_user AS u2 ON u2~zecm_user_id = r~requester
+  LEFT OUTER JOIN makt AS m ON m~matnr = r~matnr_fg AND m~spras = @sy-langu
+  WHERE r~status <> 'CLSD'
+    AND r~status <> 'REJC'
+    AND r~bom_check <> ''
+  INTO CORRESPONDING FIELDS OF TABLE @lt_ecr.
+
+" Sort: Pending first, then Rejected, then Approved
+SORT lt_ecr BY bom_check ASCENDING created_date DESCENDING.
+
+" Load all BOM attachments first so they can be rendered directly
+SELECT a~ecr_no, a~att_id, a~file_name, a~file_ext, a~file_size,
+       a~uploaded_by, a~uploaded_at,
+       u~zecm_full_name AS uploader_name
+  FROM zecm_bom_att AS a
+  LEFT OUTER JOIN zecm_user AS u ON u~zecm_user_id = a~uploaded_by
+  INTO CORRESPONDING FIELDS OF TABLE @lt_att
+  ORDER BY a~ecr_no, a~att_id.
+
+" ======================================================================
+" 3. BUILD TABLE HTML
+" ======================================================================
+CLEAR lv_html.
+lv_count = 0.
+
+LOOP AT lt_ecr INTO ls_ecr.
+  " Filter
+  IF GV_FILTER <> 'ALL'.
+    IF ls_ecr-bom_check <> GV_FILTER.
+      CONTINUE.
+    ENDIF.
+  ENDIF.
+
+  lv_count = lv_count + 1.
+  lv_count_str = lv_count.
+  CONDENSE lv_count_str NO-GAPS.
+
+  " Material number without leading zeros
+  lv_matnr_sap = ls_ecr-matnr_fg.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING input  = lv_matnr_sap
+    IMPORTING output = lv_no_zero.
+  CONDENSE lv_no_zero NO-GAPS.
+
+  " Material description (from JOIN)
+  lv_maktx = ls_ecr-maktx.
+
+  " Date format
+  lv_date_str = ls_ecr-created_date.
+  CONCATENATE lv_date_str+6(2) '.' lv_date_str+4(2) '.' lv_date_str(4) INTO lv_date_str.
+
+  " BOM status badge
+  CASE ls_ecr-bom_check.
+    WHEN 'P'.
+      lv_bg_color = '#FEF3C7'. lv_text_color = '#92400E'.
+      lv_status_label = '<i class="fas fa-clock"></i> Pending'.
+    WHEN 'A'.
+      lv_bg_color = '#D1FAE5'. lv_text_color = '#065F46'.
+      lv_status_label = '<i class="fas fa-check-circle"></i> Approved'.
+    WHEN 'R'.
+      lv_bg_color = '#FEE2E2'. lv_text_color = '#991B1B'.
+      lv_status_label = '<i class="fas fa-times-circle"></i> Rejected'.
+    WHEN OTHERS.
+      lv_bg_color = '#F1F5F9'. lv_text_color = '#475569'.
+      lv_status_label = '---'.
+  ENDCASE.
+
+  CONCATENATE '<span style="background:' lv_bg_color ';color:' lv_text_color
+    ';padding:4px 10px;border-radius:6px;font-size:0.72rem;font-weight:700">'
+    lv_status_label '</span>' INTO lv_bom_badge.
+
+  " Priority badge
+  CASE ls_ecr-priority.
+    WHEN 'HIGH'.
+      lv_prio_badge = '<span style="background:#FEE2E2;color:#991B1B;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">Tinggi</span>'.
+    WHEN 'MED'.
+      lv_prio_badge = '<span style="background:#FEF3C7;color:#92400E;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">Sedang</span>'.
+    WHEN 'LOW'.
+      lv_prio_badge = '<span style="background:#D1FAE5;color:#065F46;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">Rendah</span>'.
+    WHEN OTHERS.
+      lv_prio_badge = '<span style="background:#F1F5F9;color:#475569;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">-</span>'.
+  ENDCASE.
+
+  " Kategori badge
+  CASE ls_ecr-kategori.
+    WHEN 'DRW'.
+      lv_kat_badge = '<span style="background:#DBEAFE;color:#1E40AF;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">Drawing</span>'.
+    WHEN 'DBX'.
+      lv_kat_badge = '<span style="background:#FED7AA;color:#C2410C;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">Box</span>'.
+    WHEN 'DMT'.
+      lv_kat_badge = '<span style="background:#BBF7D0;color:#166534;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">Metal</span>'.
+    WHEN OTHERS.
+      lv_kat_badge = '<span style="background:#F1F5F9;color:#475569;padding:3px 8px;border-radius:5px;font-size:0.65rem;font-weight:700">-</span>'.
+  ENDCASE.
+
+  " Table row
+  CONCATENATE lv_html
+    '<tr class="hover:bg-blue-50 cursor-pointer transition-colors" onclick="toggleDetail(' lv_count_str ')">'
+    '<td class="px-4 py-3"><span class="font-mono text-xs font-bold text-blue-700">' ls_ecr-ecr_no '</span></td>'
+    '<td class="px-4 py-3">'
+      '<div class="font-semibold text-sm text-slate-800">' ls_ecr-title '</div>'
+      '<div class="text-xs text-slate-500 mt-0.5">' lv_no_zero ' &middot; ' lv_maktx '</div>'
+    '</td>'
+    '<td class="px-4 py-3 text-center">' lv_kat_badge '</td>'
+    '<td class="px-4 py-3 text-center">' lv_prio_badge '</td>'
+    '<td class="px-4 py-3">' ls_ecr-drafter_name '</td>'
+    '<td class="px-4 py-3 text-center">' lv_bom_badge '</td>'
+    '<td class="px-4 py-3 text-xs text-slate-500">' lv_date_str '</td>'
+    '</tr>'
+
+    " Accordion detail row (hidden by default)
+    '<tr id="detail-' lv_count_str '" class="hidden">'
+    '<td colspan="7" class="px-4 py-0">'
+    '<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 my-2">'
+    '<div class="grid grid-cols-1 md:grid-cols-3 gap-4">'
+    '<div>'
+      '<p class="text-xs font-bold text-slate-500 uppercase mb-1">Departemen</p>'
+      '<p class="text-sm text-slate-700">' ls_ecr-zdept '</p>'
+    '</div>'
+    '<div>'
+      '<p class="text-xs font-bold text-slate-500 uppercase mb-1">Requester</p>'
+      '<p class="text-sm text-slate-700">' ls_ecr-requester_name '</p>'
+    '</div>'
+    '<div>'
+      '<p class="text-xs font-bold text-slate-500 uppercase mb-1">Alasan</p>'
+      '<p class="text-sm text-slate-700">' ls_ecr-zreason '</p>'
+    '</div>'
+    '</div>'
+    '<div class="mt-3">'
+      '<p class="text-xs font-bold text-slate-500 uppercase mb-1">Deskripsi</p>'
+      '<p class="text-sm text-slate-700">' ls_ecr-descr '</p>'
+    '</div>'
+      INTO lv_html.
+
+  IF ls_ecr-bom_notes IS NOT INITIAL.
+    CONCATENATE lv_html
+    '<div class="mt-3">'
+      '<p class="text-xs font-bold text-slate-500 uppercase mb-1"><i class="fas fa-sticky-note"></i> Catatan Drafter</p>'
+      '<div class="bg-amber-50 border border-amber-200 rounded-lg p-3">'
+        '<p class="text-sm text-slate-700">' ls_ecr-bom_notes '</p>'
+      '</div>'
+    '</div>'
+  INTO lv_html.
+  ENDIF.
+
+  " Build HTML for attachments of this ECR
+  CLEAR: lv_att_html, lv_has_att.
+  lv_att_clean_ecr = ls_ecr-ecr_no.
+  SHIFT lv_att_clean_ecr LEFT DELETING LEADING '0'.
+
+  LOOP AT lt_att INTO ls_att.
+    lv_cur_clean = ls_att-ecr_no.
+    SHIFT lv_cur_clean LEFT DELETING LEADING '0'.
+
+    IF ls_att-ecr_no = ls_ecr-ecr_no OR lv_cur_clean = lv_att_clean_ecr.
+      lv_has_att = 'X'.
+
+      " File size
+      IF ls_att-file_size > 1048576.
+        lv_size_str = ls_att-file_size / 1048576.
+        CONDENSE lv_size_str NO-GAPS.
+        CONCATENATE lv_size_str ' MB' INTO lv_size_str.
+      ELSEIF ls_att-file_size > 1024.
+        lv_size_str = ls_att-file_size / 1024.
+        CONDENSE lv_size_str NO-GAPS.
+        CONCATENATE lv_size_str ' KB' INTO lv_size_str.
+      ELSE.
+        lv_size_str = ls_att-file_size.
+        CONDENSE lv_size_str NO-GAPS.
+        CONCATENATE lv_size_str ' B' INTO lv_size_str.
+      ENDIF.
+
+      " Date
+      lv_date_str = ls_att-uploaded_at.
+      CONCATENATE lv_date_str+6(2) '.' lv_date_str+4(2) '.' lv_date_str(4) INTO lv_date_str.
+
+      CONCATENATE lv_att_html
+        '<div class="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2">'
+        '<div class="w-8 h-8 rounded-lg flex items-center justify-center"'
+        ' style="background:#EFF6FF;color:#2563EB"><i class="fas fa-file-pdf"></i></div>'
+        '<div class="flex-1 min-w-0">'
+        '<p class="text-sm font-semibold text-slate-700 truncate">' ls_att-file_name '</p>'
+        '<p class="text-xs text-slate-400">' lv_size_str ' &middot; ' ls_att-uploader_name
+        ' &middot; ' lv_date_str '</p>'
+        '</div>'
+        '<a href="master_data_dashboard.htm?OnInputProcessing=download_attachment&ecr_no='
+        ls_ecr-ecr_no '&att_id=' ls_att-att_id
+        '&u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '"'
+        ' class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg'
+        ' text-xs font-bold transition-all flex items-center gap-1">'
+        '<i class="fas fa-download"></i> Download</a>'
+        '</div>'
+        INTO lv_att_html.
+    ENDIF.
+  ENDLOOP.
+
+  IF lv_has_att = 'X'.
+    CONCATENATE '<div class="space-y-2">' lv_att_html '</div>' INTO lv_att_html.
+  ELSE.
+    CONCATENATE '<p class="text-xs text-slate-400">'
+      '<i class="fas fa-info-circle mr-1"></i>Belum ada attachment</p>'
+      INTO lv_att_html.
+  ENDIF.
+
+  CONCATENATE lv_html
+    " Attachment section
+    '<div class="mt-4 pt-3 border-t border-blue-200">'
+    '<div class="flex items-center justify-between mb-2">'
+      '<p class="text-xs font-bold text-slate-500 uppercase"><i class="fas fa-paperclip"></i> BOM Attachment</p>'
+    '</div>'
+    '<div id="att-' lv_count_str '">' lv_att_html '</div>'
+    '</div>'
+
+    " Action buttons (only for Pending)
+  INTO lv_html.
+
+  IF ls_ecr-bom_check = 'P'.
+    CONCATENATE lv_html
+      '<div class="mt-4 pt-3 border-t border-blue-200 flex items-center gap-3">'
+      '<form method="post" style="display:inline">'
+      '<input type="hidden" name="OnInputProcessing" value="bom_approve">'
+      '<input type="hidden" name="ecr_no" value="' ls_ecr-ecr_no '">'
+      '<button type="submit" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">'
+        '<i class="fas fa-check"></i> Approve BOM'
+      '</button>'
+      '</form>'
+      '<button type="button" onclick="showRejectForm(' lv_count_str ')" class="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">'
+        '<i class="fas fa-times"></i> Reject'
+      '</button>'
+      '</div>'
+      " Reject form (hidden)
+      '<div id="reject-form-' lv_count_str '" class="hidden mt-3">'
+      '<form method="post">'
+      '<input type="hidden" name="OnInputProcessing" value="bom_reject">'
+      '<input type="hidden" name="ecr_no" value="' ls_ecr-ecr_no '">'
+      '<div class="mb-2">'
+        '<label class="text-xs font-bold text-slate-600 mb-1 block">Alasan Reject *</label>'
+        '<textarea name="reject_reason" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-red-500" placeholder="Tuliskan alasan reject..." required></textarea>'
+      '</div>'
+      '<div class="flex items-center gap-2">'
+        '<button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition-all">Kirim Reject</button>'
+        '<button type="button" onclick="hideRejectForm(' lv_count_str ')" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">Batal</button>'
+      '</div>'
+      '</form>'
+      '</div>'
+      INTO lv_html.
+  ELSEIF ls_ecr-bom_check = 'A'.
+    CONCATENATE lv_html
+      '<div class="mt-4 pt-3 border-t border-blue-200 flex items-center gap-3">'
+      '<form method="post" style="display:inline">'
+      '<input type="hidden" name="OnInputProcessing" value="bom_undo_approve">'
+      '<input type="hidden" name="ecr_no" value="' ls_ecr-ecr_no '">'
+      '<button type="submit" onclick="return confirm(''Yakin ingin membatalkan approval BOM ini?'')" class="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">'
+        '<i class="fas fa-undo"></i> Batal Approve'
+      '</button>'
+      '</form>'
+      '</div>'
+      INTO lv_html.
+  ENDIF.
+
+  " Close detail
+  CONCATENATE lv_html
+    '</div></td></tr>'
+    INTO lv_html.
+
+ENDLOOP.
+
+GV_ECR_HTML  = lv_html.
+GV_ECR_COUNT = lv_count.
+
+" ======================================================================
+" 4. ATTACHMENT DATA (for AJAX-like detail loading & Routing tab)
+" ======================================================================
+CLEAR: lv_js_att, lv_ecr_prev.
+CONCATENATE lv_js_att 'var attData = {' INTO lv_js_att.
+
+LOOP AT lt_att INTO ls_att.
+  IF ls_att-ecr_no <> lv_ecr_prev.
+    IF lv_ecr_prev IS NOT INITIAL.
+      CONCATENATE lv_js_att '],' INTO lv_js_att.
+    ENDIF.
+    CONCATENATE lv_js_att '"' ls_att-ecr_no '":[' INTO lv_js_att.
+    lv_ecr_prev = ls_att-ecr_no.
+  ELSE.
+    CONCATENATE lv_js_att ',' INTO lv_js_att.
+  ENDIF.
+
+  " Escape characters in strings
+  lv_fn_safe = ls_att-file_name.
+  REPLACE ALL OCCURRENCES OF '\' IN lv_fn_safe WITH '/'.
+  REPLACE ALL OCCURRENCES OF '"' IN lv_fn_safe WITH '`'.
+  lv_by_safe = ls_att-uploader_name.
+  REPLACE ALL OCCURRENCES OF '\' IN lv_by_safe WITH '/'.
+  REPLACE ALL OCCURRENCES OF '"' IN lv_by_safe WITH '`'.
+
+  " File size display
+  IF ls_att-file_size > 1048576.
+    lv_size_str = ls_att-file_size / 1048576.
+    CONDENSE lv_size_str NO-GAPS.
+    CONCATENATE lv_size_str ' MB' INTO lv_size_str.
+  ELSEIF ls_att-file_size > 1024.
+    lv_size_str = ls_att-file_size / 1024.
+    CONDENSE lv_size_str NO-GAPS.
+    CONCATENATE lv_size_str ' KB' INTO lv_size_str.
+  ELSE.
+    lv_size_str = ls_att-file_size.
+    CONDENSE lv_size_str NO-GAPS.
+    CONCATENATE lv_size_str ' B' INTO lv_size_str.
+  ENDIF.
+
+  " Date
+  lv_date_str = ls_att-uploaded_at.
+  CONCATENATE lv_date_str+6(2) '.' lv_date_str+4(2) '.' lv_date_str(4) INTO lv_date_str.
+
+  CONCATENATE lv_js_att
+    '{id:"' ls_att-att_id '",name:"' lv_fn_safe '",ext:"' ls_att-file_ext
+    '",size:"' lv_size_str '",by:"' lv_by_safe '",at:"' lv_date_str '"}'
+    INTO lv_js_att.
+ENDLOOP.
+
+IF lv_ecr_prev IS NOT INITIAL.
+  CONCATENATE lv_js_att ']' INTO lv_js_att.
+ENDIF.
+CONCATENATE lv_js_att '};' INTO lv_js_att.
+
+" Store as data attribute in a hidden div (rendered in layout)
+" ======================================================================
+" 5. ROUTING TAB — ECR with change_scope = ROUT, status PAYR
+" ======================================================================
+DATA: lt_routing     TYPE STANDARD TABLE OF ty_bom_ecr,
+      ls_routing     TYPE ty_bom_ecr,
+      lv_r_html      TYPE string,
+      lv_r_count     TYPE i,
+      lv_r_count_str TYPE string,
+      lv_r_date_str  TYPE c LENGTH 12,
+      lv_r_badge     TYPE string,
+      lv_r_bg        TYPE string,
+      lv_r_tc        TYPE string,
+      lv_r_no_zero   TYPE c LENGTH 40.
+
+SELECT r~ecr_no, r~title, r~matnr_fg,
+       r~status,
+       r~requester,
+       u2~zecm_full_name AS requester_name,
+       r~created_date, r~zdept, r~descr,
+       m~maktx
+  FROM zecm_req AS r
+  LEFT OUTER JOIN zecm_user AS u2 ON u2~zecm_user_id = r~requester
+  LEFT OUTER JOIN makt AS m ON m~matnr = r~matnr_fg AND m~spras = @sy-langu
+  WHERE r~change_scope = 'ROUT'
+    AND r~status = 'PAYR'
+  INTO CORRESPONDING FIELDS OF TABLE @lt_routing.
+
+DESCRIBE TABLE lt_routing LINES lv_r_count.
+GV_ROUTING_COUNT = lv_r_count.
+
+CLEAR lv_r_html.
+lv_r_count = 0.
+
+LOOP AT lt_routing INTO ls_routing.
+  lv_r_count = lv_r_count + 1.
+  lv_r_count_str = lv_r_count.
+  CONDENSE lv_r_count_str NO-GAPS.
+
+  " Material number without leading zeros
+  lv_r_no_zero = ls_routing-matnr_fg.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING input  = lv_r_no_zero
+    IMPORTING output = lv_r_no_zero.
+  CONDENSE lv_r_no_zero NO-GAPS.
+
+  " Date format
+  lv_r_date_str = ls_routing-created_date.
+  CONCATENATE lv_r_date_str+6(2) '.' lv_r_date_str+4(2) '.' lv_r_date_str(4) INTO lv_r_date_str.
+
+  " Status badge - always PAYR in this query
+  lv_r_bg = '#FEF3C7'. lv_r_tc = '#92400E'.
+  lv_r_badge = '<i class="fas fa-clock"></i> Menunggu Eksekusi'.
+
+  " Build row style
+  DATA: lv_r_style TYPE string.
+  CONCATENATE 'background:' lv_r_bg ';color:' lv_r_tc
+    ';padding:4px 10px;border-radius:6px;font-size:0.72rem;font-weight:700'
+    INTO lv_r_style.
+
+  CONCATENATE lv_r_html
+    '<tr class="hover:bg-amber-50 cursor-pointer transition-colors"'
+    ' data-id="' ls_routing-ecr_no '"'
+    ' data-title="' ls_routing-title '"'
+    ' data-matnr="' lv_r_no_zero '"'
+    ' data-dept="' ls_routing-zdept '"'
+    ' data-desc="' ls_routing-descr '"'
+    ' onclick="showRoutingFromRow(this)">'
+    '<td class="px-4 py-3"><span class="font-mono text-xs font-bold text-amber-700">REQ-'
+    ls_routing-ecr_no '</span></td>'
+    '<td class="px-4 py-3">'
+    '<div class="font-semibold text-sm text-slate-800">' ls_routing-title '</div>'
+    '<div class="text-xs text-slate-500 mt-0.5">' lv_r_no_zero '</div>'
+    '</td>'
+    '<td class="px-4 py-3"><span style="' lv_r_style '">' lv_r_badge '</span></td>'
+    '<td class="px-4 py-3 text-xs text-slate-600">' ls_routing-requester_name '</td>'
+    '<td class="px-4 py-3 text-xs text-slate-500">' lv_r_date_str '</td>'
+    '<td class="px-4 py-3 text-right">'
+    '<button type="button" onclick="event.stopPropagation(); showRoutingFromRow(this.parentElement.parentElement)"'
+    ' class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-all shadow-sm">'
+    '<i class="fas fa-play mr-1"></i> Eksekusi</button>'
+    '</td>'
+    '</tr>'
+    INTO lv_r_html.
+ENDLOOP.
+
+GV_ROUTING_HTML = lv_r_html.
+
+" Store as data attribute in a hidden div (rendered in layout)
+GV_ATTACH_HTML = lv_js_att.

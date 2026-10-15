@@ -1,0 +1,18 @@
+TYPES: BEGIN OF ty_mat,
+         matnr TYPE mara-matnr,
+         maktx TYPE makt-maktx,
+         werks TYPE marc-werks,
+         mtart TYPE mara-mtart,
+       END OF ty_mat.
+TYPES: tt_mat TYPE STANDARD TABLE OF ty_mat.
+
+TYPES: BEGIN OF ty_dedup,
+         matnr  TYPE string,
+         desc   TYPE string,
+         mtart  TYPE string,
+         plants TYPE string,
+       END OF ty_dedup.
+TYPES: tt_dedup TYPE STANDARD TABLE OF ty_dedup.
+
+" ZECM_LOG audit trail type
+TYPES: ty_log TYPE zecm_log.

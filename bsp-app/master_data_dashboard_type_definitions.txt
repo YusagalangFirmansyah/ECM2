@@ -1,0 +1,67 @@
+* =======================================================================
+* Type Definitions — master_data_dashboard.htm
+* V08_d: Master Data Dashboard — BOM Gate Review
+* Role: MASTER_DATA (Mbak Ayu)
+* =======================================================================
+
+TYPES:
+  " Status count for summary cards
+  BEGIN OF ty_status_count,
+    bom_check TYPE c LENGTH 1,
+    count     TYPE i,
+  END OF ty_status_count,
+
+  tt_status_count TYPE STANDARD TABLE OF ty_status_count WITH EMPTY KEY,
+
+  " ECR list with BOM info
+  BEGIN OF ty_bom_ecr,
+    ecr_no        TYPE zecm_req-ecr_no,
+    title         TYPE zecm_req-title,
+    matnr_fg      TYPE zecm_req-matnr_fg,
+    kategori      TYPE zecm_req-kategori,
+    priority      TYPE zecm_req-priority,
+    status        TYPE zecm_req-status,
+    bom_check     TYPE zecm_req-bom_check,
+    drafter       TYPE zecm_req-drafter,
+    drafter_name  TYPE zecm_user-zecm_full_name,
+    requester     TYPE zecm_req-requester,
+    requester_name TYPE zecm_user-zecm_full_name,
+    created_date  TYPE zecm_req-created_date,
+    zdept         TYPE zecm_req-zdept,
+    zreason       TYPE zecm_req-zreason,
+    descr         TYPE zecm_req-descr,
+    bom_notes     TYPE zecm_req-bom_notes,
+    maktx         TYPE makt-maktx,
+  END OF ty_bom_ecr,
+
+  tt_bom_ecr TYPE STANDARD TABLE OF ty_bom_ecr WITH EMPTY KEY,
+
+  " Attachment from ZECM_BOM_ATT
+  BEGIN OF ty_attachment,
+    ecr_no       TYPE zecm_bom_att-ecr_no,
+    att_id       TYPE zecm_bom_att-att_id,
+    file_name    TYPE zecm_bom_att-file_name,
+    file_ext     TYPE zecm_bom_att-file_ext,
+    file_size    TYPE zecm_bom_att-file_size,
+    uploaded_by  TYPE zecm_bom_att-uploaded_by,
+    uploaded_at  TYPE zecm_bom_att-uploaded_at,
+    uploader_name TYPE zecm_user-zecm_full_name,
+  END OF ty_attachment,
+
+  tt_attachment TYPE STANDARD TABLE OF ty_attachment WITH EMPTY KEY,
+
+  " Audit trail
+  BEGIN OF ty_audit,
+    log_id       TYPE zecm_log-log_id,
+    ecr_no       TYPE zecm_log-ecr_no,
+    action       TYPE zecm_log-action,
+    old_status   TYPE zecm_log-old_status,
+    new_status   TYPE zecm_log-new_status,
+    user_id      TYPE zecm_log-user_id,
+    action_date  TYPE zecm_log-action_date,
+    action_time  TYPE zecm_log-action_time,
+    reason       TYPE zecm_log-reason,
+    username     TYPE c LENGTH 100,
+  END OF ty_audit,
+
+  tt_audit TYPE STANDARD TABLE OF ty_audit WITH EMPTY KEY.

@@ -1,0 +1,526 @@
+" =======================================================================
+" OnInit — requester_list.htm
+" V07_d: Requester Dashboard — Session check + load requests + audit
+" =======================================================================
+
+DATA: LT_REQUEST   TYPE TABLE OF TY_REQUEST,
+      LS_REQUEST   TYPE TY_REQUEST,
+      LT_AUDIT     TYPE TABLE OF TY_AUDIT,
+      LS_AUDIT     TYPE TY_AUDIT,
+      lv_status_color TYPE string,
+      lv_status_label TYPE string,
+      lv_num       TYPE n LENGTH 10,
+      lv_msg       TYPE string,
+      GV_MAT_KEYWORD TYPE string,
+      LT_MATERIAL TYPE TABLE OF TY_MATERIAL,
+      LS_MATERIAL TYPE TY_MATERIAL,
+      LV_TLABEL    TYPE string,
+      LV_TCOLOR    TYPE string,
+      LV_ACTION    TYPE string.
+
+" --- 0. Clear page attributes (prevent numpuk on refresh) ---
+CLEAR: GV_REQUEST_HTML, GV_REQUEST_COUNT, GV_MAT_RESULTS,
+       GV_AUDIT_HTML, GV_SELECTED_IREQ, GV_MESSAGE, GV_ICON.
+GV_REQUEST_COUNT = '0'.
+
+" --- 1. User Info from URL ---
+GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+LV_KEYWORD   = request->get_form_field( 'keyword' ).
+LV_PLANT     = request->get_form_field( 'plant' ).
+LV_MTART     = request->get_form_field( 'mtart' ).
+
+IF LV_PLANT IS INITIAL. LV_PLANT = 'ALL'. ENDIF.
+IF LV_MTART IS INITIAL. LV_MTART = 'ALL'. ENDIF.
+
+IF GV_USER_ID IS INITIAL.
+  GV_MESSAGE = 'Session expired. Silakan login ulang.'. GV_ICON = 'error'.
+  navigation->goto_page( 'login.htm' ). RETURN.
+ENDIF.
+
+" --- 2. Message from redirect ---
+GV_MESSAGE = request->get_form_field( 'msg' ).
+IF GV_MESSAGE IS NOT INITIAL.
+  IF GV_MESSAGE CS 'Gagal'.
+    GV_ICON = 'error'.
+  ELSE.
+    GV_ICON = 'success'.
+  ENDIF.
+ENDIF.
+
+
+" --- 2. Material Search (OnInit — langsung dari form) ---
+GV_MAT_KEYWORD = request->get_form_field( 'keyword' ).
+IF GV_MAT_KEYWORD IS NOT INITIAL.
+  CLEAR GV_MAT_RESULTS.
+  CONCATENATE '%' GV_MAT_KEYWORD '%' INTO GV_MAT_KEYWORD.
+  TRANSLATE GV_MAT_KEYWORD TO UPPER CASE.
+  SELECT a~matnr, b~maktx, a~mtart UP TO 20 ROWS
+    INTO CORRESPONDING FIELDS OF TABLE @LT_MATERIAL
+    FROM MARA AS A
+    INNER JOIN MAKT AS B
+      ON B~matnr = A~matnr AND B~spras = @SY-LANGU
+    WHERE A~mtart IN ('FERT', 'HALB', 'HALM')
+      AND ( A~matnr LIKE @GV_MAT_KEYWORD
+         OR B~maktx LIKE @GV_MAT_KEYWORD ).
+  IF SY-SUBRC = 0.
+    SORT LT_MATERIAL BY MTART ASCENDING.
+    DATA: lv_maktx_safe TYPE string.
+    LOOP AT LT_MATERIAL INTO LS_MATERIAL.
+      CASE LS_MATERIAL-MTART.
+        WHEN 'FERT'.
+          LV_TLABEL = 'Finish Goods'.
+          LV_TCOLOR = 'bg-emerald-100 text-emerald-700'.
+        WHEN 'HALB'.
+          LV_TLABEL = 'Semifinish Goods'.
+          LV_TCOLOR = 'bg-blue-100 text-blue-700'.
+        WHEN 'HALM'.
+          LV_TLABEL = 'Semifinish Metal'.
+          LV_TCOLOR = 'bg-purple-100 text-purple-700'.
+        WHEN OTHERS.
+          LV_TLABEL = LS_MATERIAL-MTART.
+          LV_TCOLOR = 'bg-slate-100 text-slate-600'.
+      ENDCASE.
+
+      " Encode maktx for safe use in data-* attributes
+      lv_maktx_safe = LS_MATERIAL-MAKTX.
+      REPLACE ALL OCCURRENCES OF '&' IN lv_maktx_safe WITH '&amp;'.
+      REPLACE ALL OCCURRENCES OF '"' IN lv_maktx_safe WITH '&quot;'.
+
+      CONCATENATE GV_MAT_RESULTS
+        '<div class="mat-pick" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;'
+        'padding:6px 12px;border-bottom:1px solid #e2e8f0;"'
+        ' data-matnr="' LS_MATERIAL-MATNR '"'
+        ' data-maktx="' lv_maktx_safe '">'
+        '<div style="display:flex;align-items:center;gap:8px;">'
+        '<span class="inline-block px-2 py-1 rounded-md text-[0.65rem] font-bold tracking-wide '
+        'uppercase border ' LV_TCOLOR '">' LV_TLABEL '</span>'
+        '<span class="text-xs font-semibold text-slate-800">' LS_MATERIAL-MATNR '</span>'
+        '<span class="text-xs text-slate-400">' LS_MATERIAL-MAKTX '</span>'
+        '</div>'
+        '<button type="button"'
+        ' class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold hover:bg-emerald-200 transition">'
+        '<i class="fas fa-plus mr-1"></i>Pilih</button></div>'
+        INTO GV_MAT_RESULTS.
+    ENDLOOP.
+  ELSE.
+    GV_MAT_RESULTS = '<div class="p-3 text-sm text-slate-400 text-center">'
+      && '<i class="fas fa-search text-2xl mb-2 block"></i>'
+      && 'Material tidak ditemukan.</div>'.
+  ENDIF.
+ENDIF.
+
+" --- 3. Submit Request (inline di OnInit) ---
+IF LV_ACTION IS INITIAL.
+  LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+ENDIF.
+IF LV_ACTION = 'submit_request'.
+  DATA: LV_MAT_LIST TYPE string,
+        LV_TITLE_VAL TYPE string,
+        LV_DESC_VAL TYPE string,
+        LV_KAT_VAL TYPE string,
+        LV_PRI_VAL TYPE string,
+        LV_DEPT_VAL TYPE string,
+        LV_REASON_VAL TYPE string,
+        LV_IREQ_NUM TYPE numc10,
+        LS_NEW_IREQ TYPE zecm_req,
+        LS_NEW_LOG TYPE zecm_log.
+
+  LV_MAT_LIST   = request->get_form_field( 'materials' ).
+  LV_TITLE_VAL  = request->get_form_field( 'title' ).
+  LV_DESC_VAL   = request->get_form_field( 'description' ).
+  LV_KAT_VAL    = request->get_form_field( 'kategori' ).
+  LV_PRI_VAL    = request->get_form_field( 'priority' ).
+  LV_DEPT_VAL   = request->get_form_field( 'dept' ).
+  LV_REASON_VAL = request->get_form_field( 'reason' ).
+
+  IF GV_USER_ID IS INITIAL.
+    GV_USER_ID = request->get_form_field( 'u' ).
+  ENDIF.
+
+  IF LV_TITLE_VAL IS INITIAL.
+    GV_MESSAGE = 'Judul wajib diisi.'. GV_ICON = 'error'.
+  ELSEIF LV_MAT_LIST IS INITIAL.
+    GV_MESSAGE = 'Pilih minimal satu material.'. GV_ICON = 'error'.
+
+  ELSEIF LV_DEPT_VAL IS INITIAL.
+    GV_MESSAGE = 'Departemen wajib dipilih.'. GV_ICON = 'error'.
+  ELSE.
+    SPLIT LV_MAT_LIST AT ',' INTO TABLE DATA(LT_SEL).
+    READ TABLE LT_SEL INTO LV_MAT_LIST INDEX 1.
+    CONDENSE LV_MAT_LIST NO-GAPS.
+
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_REQ'
+      IMPORTING number = LV_IREQ_NUM
+      EXCEPTIONS OTHERS = 1.
+
+    IF sy-subrc <> 0.
+      GV_MESSAGE = 'Gagal generate nomor request.'. GV_ICON = 'error'.
+    ELSE.
+      CLEAR LS_NEW_IREQ.
+      LS_NEW_IREQ-ecr_no    = LV_IREQ_NUM.
+      LS_NEW_IREQ-title      = LV_TITLE_VAL.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING  input  = LV_MAT_LIST
+        IMPORTING  output = LV_MAT_LIST.
+      CONDENSE LV_MAT_LIST NO-GAPS.
+      LS_NEW_IREQ-matnr_fg   = LV_MAT_LIST.
+      LS_NEW_IREQ-kategori   = LV_KAT_VAL.
+      LS_NEW_IREQ-priority   = LV_PRI_VAL.
+      LS_NEW_IREQ-zdept      = LV_DEPT_VAL.
+      LS_NEW_IREQ-zreason    = LV_REASON_VAL.
+      LS_NEW_IREQ-descr = LV_DESC_VAL.
+      LS_NEW_IREQ-requester  = GV_USER_ID.
+      LS_NEW_IREQ-status     = 'REQ'.
+      LS_NEW_IREQ-created_date   = sy-datum.
+
+      INSERT zecm_req FROM LS_NEW_IREQ.
+
+      IF sy-subrc = 0.
+        CALL FUNCTION 'NUMBER_GET_NEXT'
+          EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+          IMPORTING number = LS_NEW_LOG-log_id
+          EXCEPTIONS OTHERS = 1.
+        IF sy-subrc = 0.
+          LS_NEW_LOG-mandt       = sy-mandt.
+          LS_NEW_LOG-ecr_no      = LV_IREQ_NUM.
+          LS_NEW_LOG-action      = 'CREA'.
+          LS_NEW_LOG-old_status  = ''.
+          LS_NEW_LOG-new_status  = 'REQ'.
+          LS_NEW_LOG-user_id     = GV_USER_ID.
+          LS_NEW_LOG-action_date = sy-datum.
+          LS_NEW_LOG-action_time = sy-uzeit.
+          LS_NEW_LOG-is_ireq    = ''.
+          INSERT zecm_log FROM LS_NEW_LOG.
+        ENDIF.
+
+        LV_MSG = 'Request berhasil dikirim.'.
+        CONCATENATE 'requester_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' LV_MSG INTO DATA(LV_URL).
+        navigation->goto_page( LV_URL ).
+        RETURN.
+      ELSE.
+        GV_MESSAGE = 'Gagal menyimpan request.'. GV_ICON = 'error'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDIF.
+
+" --- 3. Filter Params ---
+GV_FILTER_STATUS = request->get_form_field( 'filter_status' ).
+GV_DATE_FROM     = request->get_form_field( 'date_from' ).
+GV_DATE_TO       = request->get_form_field( 'date_to' ).
+GV_SEARCH        = request->get_form_field( 'search' ).
+
+IF GV_FILTER_STATUS IS INITIAL.
+  GV_FILTER_STATUS = 'ALL'.
+ENDIF.
+
+IF GV_DATE_FROM IS NOT INITIAL.
+  REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_FROM WITH ''.
+ENDIF.
+IF GV_DATE_TO IS NOT INITIAL.
+  REPLACE ALL OCCURRENCES OF '-' IN GV_DATE_TO WITH ''.
+ENDIF.
+
+" --- 4. Load Request List (with filters) ---
+IF GV_FILTER_STATUS = 'ALL' AND GV_DATE_FROM IS INITIAL AND GV_DATE_TO IS INITIAL AND GV_SEARCH IS INITIAL.
+  SELECT * FROM zecm_req
+    INTO CORRESPONDING FIELDS OF TABLE @LT_REQUEST
+    WHERE requester = @GV_USER_ID
+    ORDER BY created_date DESCENDING, ecr_no DESCENDING.
+ELSEIF GV_SEARCH IS NOT INITIAL.
+  DATA: lv_search_kw TYPE string.
+  lv_search_kw = GV_SEARCH.
+  TRANSLATE lv_search_kw TO UPPER CASE.
+  CONCATENATE '%' lv_search_kw '%' INTO lv_search_kw.
+  SELECT * FROM zecm_req
+    INTO CORRESPONDING FIELDS OF TABLE @LT_REQUEST
+    WHERE requester = @GV_USER_ID
+      AND ( title LIKE @lv_search_kw OR matnr_fg LIKE @lv_search_kw )
+    ORDER BY created_date DESCENDING, ecr_no DESCENDING.
+ELSE.
+  SELECT * FROM zecm_req
+    INTO CORRESPONDING FIELDS OF TABLE @LT_REQUEST
+    WHERE requester = @GV_USER_ID
+    ORDER BY created_date DESCENDING, ecr_no DESCENDING.
+ENDIF.
+
+" Apply status + date filter (post-query for simplicity)
+IF GV_FILTER_STATUS <> 'ALL'.
+  DELETE LT_REQUEST WHERE status <> GV_FILTER_STATUS.
+ENDIF.
+IF GV_DATE_FROM IS NOT INITIAL.
+  DELETE LT_REQUEST WHERE created_date < GV_DATE_FROM.
+ENDIF.
+IF GV_DATE_TO IS NOT INITIAL.
+  DELETE LT_REQUEST WHERE created_date > GV_DATE_TO.
+ENDIF.
+
+IF sy-subrc = 0.
+  GV_REQUEST_COUNT = lines( LT_REQUEST ).
+  lv_num = GV_REQUEST_COUNT.
+  LOOP AT LT_REQUEST INTO LS_REQUEST.
+    CASE LS_REQUEST-status.
+      WHEN 'REQ'.        lv_status_color = 'bg-yellow-100 text-yellow-700'.  lv_status_label = 'Menunggu Review'.
+      WHEN 'APPR'.       lv_status_color = 'bg-blue-100 text-blue-700'.     lv_status_label = 'Disetujui Admin'.
+      WHEN 'ECO'.        lv_status_color = 'bg-emerald-100 text-emerald-700'. lv_status_label = 'ECO Dibuat'.
+      WHEN 'REJC'.       lv_status_color = 'bg-red-100 text-red-700'.        lv_status_label = 'Ditolak'.
+      WHEN OTHERS.       lv_status_color = 'bg-slate-100 text-slate-600'.    lv_status_label = LS_REQUEST-status.
+    ENDCASE.
+    IF LS_REQUEST-ecr_no IS NOT INITIAL.
+      SELECT SINGLE status FROM zecm_req INTO @LS_REQUEST-ecr_status
+        WHERE ecr_no = @LS_REQUEST-ecr_no.
+    ENDIF.
+    IF LS_REQUEST-assigned_drafter IS NOT INITIAL.
+      SELECT SINGLE zecm_full_name FROM zecm_user
+        INTO @LS_REQUEST-drafter_name
+        WHERE zecm_user_id = @LS_REQUEST-assigned_drafter.
+    ENDIF.
+    " Format kategori label
+    DATA: lv_kat_label TYPE string,
+          lv_pri_label TYPE string,
+          lv_pri_color TYPE string,
+          lv_date_fmt  TYPE string,
+          lv_id_clean  TYPE string,
+          lv_mat_clean TYPE string,
+          lv_kat_color TYPE string.
+    CASE LS_REQUEST-kategori.
+      WHEN 'DRW'.  lv_kat_label = 'Drawing'.    lv_kat_color = 'bg-blue-100 text-blue-700'.
+      WHEN 'DBX'.  lv_kat_label = 'Box'.         lv_kat_color = 'bg-orange-100 text-orange-700'.
+      WHEN 'DMT'.  lv_kat_label = 'Metal'.       lv_kat_color = 'bg-green-100 text-green-700'.
+      WHEN OTHERS. lv_kat_label = LS_REQUEST-kategori. lv_kat_color = 'bg-slate-100 text-slate-600'.
+    ENDCASE.
+    CASE LS_REQUEST-priority.
+      WHEN 'HIGH'.   lv_pri_label = 'Tinggi'.  lv_pri_color = 'bg-red-100 text-red-700'.
+      WHEN 'MEDIUM'. lv_pri_label = 'Sedang'.  lv_pri_color = 'bg-yellow-100 text-yellow-700'.
+      WHEN 'LOW'.    lv_pri_label = 'Rendah'.  lv_pri_color = 'bg-slate-100 text-slate-600'.
+      WHEN OTHERS.   lv_pri_label = LS_REQUEST-priority. lv_pri_color = 'bg-slate-100 text-slate-600'.
+    ENDCASE.
+    " Format date: 20260731 -> 31 Jul 2026
+    CALL FUNCTION 'CONVERSION_EXIT_PDATE_OUTPUT'
+      EXPORTING input = LS_REQUEST-created_date
+      IMPORTING output = lv_date_fmt.
+    " Clean leading zeros
+    lv_id_clean = LS_REQUEST-ecr_no.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input = lv_id_clean
+      IMPORTING output = lv_id_clean.
+    lv_mat_clean = LS_REQUEST-matnr_fg.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING input = lv_mat_clean
+      IMPORTING output = lv_mat_clean.
+
+    " Main row — clickable to toggle detail
+    CONCATENATE GV_REQUEST_HTML
+      '<tr class="hover:bg-slate-50 cursor-pointer transition-colors" '
+      'onclick="toggleDetail(''' LS_REQUEST-ecr_no ''')" id="row-' LS_REQUEST-ecr_no '">'
+      '<td class="px-4 py-3 text-sm font-mono text-brand-600 font-semibold">'
+      lv_id_clean '</td>'
+      '<td class="px-4 py-3">'
+      '<div class="text-sm font-semibold text-slate-700">' LS_REQUEST-title '</div>'
+      '<div class="text-xs text-slate-400">' lv_mat_clean '</div>'
+      '</td>'
+      '<td class="px-4 py-3"><span class="inline-block px-2 py-1 rounded-full text-xs font-bold '
+      lv_status_color '">' lv_status_label '</span></td>'
+      INTO GV_REQUEST_HTML.
+    IF LS_REQUEST-ecr_no IS NOT INITIAL.
+      CONCATENATE GV_REQUEST_HTML
+        '<td class="px-4 py-3 text-sm font-mono">' LS_REQUEST-ecr_no '</td>'
+        INTO GV_REQUEST_HTML.
+    ELSE.
+      CONCATENATE GV_REQUEST_HTML
+        '<td class="px-4 py-3 text-sm text-slate-300">-</td>'
+        INTO GV_REQUEST_HTML.
+    ENDIF.
+    CONCATENATE GV_REQUEST_HTML
+      '<td class="px-4 py-3 text-sm text-slate-500">' lv_date_fmt '</td>'
+      INTO GV_REQUEST_HTML.
+
+    IF LS_REQUEST-status = 'REQ'.
+      CONCATENATE GV_REQUEST_HTML
+        '<td class="px-4 py-3 text-right">'
+        '<button type="button" onclick="event.stopPropagation(); confirmCancelIreq(''' LS_REQUEST-ecr_no ''')" '
+        'class="w-7 h-7 inline-flex items-center justify-center rounded bg-red-50 text-red-600 hover:bg-red-500 hover:text-white transition-colors" title="Batal & Hapus">'
+        '<i class="fas fa-trash-alt text-xs"></i></button></td>'
+        INTO GV_REQUEST_HTML.
+    ELSE.
+      CONCATENATE GV_REQUEST_HTML '<td class="px-4 py-3 text-right"></td>' INTO GV_REQUEST_HTML.
+    ENDIF.
+
+    CONCATENATE GV_REQUEST_HTML '</tr>' INTO GV_REQUEST_HTML.
+
+    " Expandable detail row (hidden by default)
+    CONCATENATE GV_REQUEST_HTML
+      '<tr id="detail-' LS_REQUEST-ecr_no '" class="hidden">'
+      '<td colspan="6" class="px-0 py-0">'
+      '<div class="bg-slate-50 border-t border-b border-slate-200 px-6 py-4">'
+      '<div class="grid grid-cols-1 gap-3">'
+      '<div>'
+      '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Departemen</div>'
+      '<div class="text-sm text-slate-700">' LS_REQUEST-zdept '</div>'
+      '</div>'
+      '</div>'
+      INTO GV_REQUEST_HTML.
+    " Description (full width)
+    IF LS_REQUEST-descr IS NOT INITIAL.
+      CONCATENATE GV_REQUEST_HTML
+        '<div class="mt-3 pt-3 border-t border-slate-200">'
+        '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Deskripsi</div>'
+        '<div class="text-sm text-slate-600">' LS_REQUEST-descr '</div>'
+        '</div>'
+        INTO GV_REQUEST_HTML.
+    ENDIF.
+    
+    " Check for attachment
+    DATA: ls_bom_att TYPE zecm_bom_att.
+    SELECT SINGLE * FROM zecm_bom_att INTO @ls_bom_att WHERE ecr_no = @LS_REQUEST-ecr_no.
+    IF sy-subrc = 0.
+      " If it's an image, decode and show inline + lightbox
+      IF ls_bom_att-mime_type CP 'image/*'.
+        DATA: lv_b64 TYPE string.
+        CALL FUNCTION 'SSFC_BASE64_ENCODE'
+          EXPORTING bindata = ls_bom_att-file_data
+          IMPORTING b64data = lv_b64
+          EXCEPTIONS OTHERS = 1.
+          
+        CONCATENATE GV_REQUEST_HTML
+          '<div class="mt-3 pt-3 border-t border-slate-200">'
+          '<div class="flex items-center justify-between mb-3">'
+          '<span class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide"><i class="fas fa-paperclip mr-1"></i> File Attachment</span>'
+          '<button type="button" onclick="event.stopPropagation(); downloadAttachment(''' LS_REQUEST-ecr_no ''')" '
+          'class="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1"><i class="fas fa-download"></i> Download Asli</button>'
+          '</div>'
+          '<div class="bg-white rounded border border-slate-200 overflow-hidden">'
+          '<div class="w-full bg-slate-100 flex items-center justify-center p-2" style="min-height: 150px; max-height: 250px;">'
+          '<img src="data:' ls_bom_att-mime_type ';base64,' lv_b64 '" class="max-w-full max-h-[230px] object-contain rounded shadow-sm border border-slate-200" alt="Bukti Persetujuan" '
+          'onclick="event.stopPropagation(); openLightbox(''data:' ls_bom_att-mime_type ';base64,' lv_b64 ''')" style="cursor: zoom-in;">'
+          '</div>'
+          '<div class="p-3 bg-white border-t border-slate-100 flex items-center justify-between">'
+          '<span class="text-xs font-semibold text-slate-700 truncate mr-3"><i class="fas fa-image text-emerald-500 mr-1.5"></i>' ls_bom_att-file_name '</span>'
+          '<span class="text-[0.65rem] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">Klik foto untuk lihat layar penuh</span>'
+          '</div></div></div>'
+          INTO GV_REQUEST_HTML.
+      ELSE.
+        " If PDF or other, show card with download link
+        CONCATENATE GV_REQUEST_HTML
+          '<div class="mt-3 pt-3 border-t border-slate-200">'
+          '<div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-3"><i class="fas fa-paperclip mr-1"></i> File Attachment</div>'
+          '<div class="bg-white rounded border border-slate-200 overflow-hidden">'
+          '<div class="flex items-center gap-3 p-4">'
+          '<div class="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600 text-lg">'
+          '<i class="fas fa-file-pdf"></i></div>'
+          '<div class="flex-1">'
+          '<p class="text-sm font-semibold text-slate-700">' ls_bom_att-file_name '</p>'
+          '<p class="text-[0.65rem] text-slate-500 mt-0.5">Otomatis terhapus saat di-Approve.</p></div>'
+          '<button type="button" onclick="event.stopPropagation(); downloadAttachment(''' LS_REQUEST-ecr_no ''')" '
+          'class="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-md text-xs font-bold transition-all shadow-sm flex items-center gap-2">'
+          '<i class="fas fa-download"></i> Download File</button>'
+          '</div></div></div>'
+          INTO GV_REQUEST_HTML.
+      ENDIF.
+    ENDIF.
+
+    " Assigned Drafter + Audit Trail button
+    CONCATENATE GV_REQUEST_HTML
+      '<div class="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">'
+      '<div>'
+      INTO GV_REQUEST_HTML.
+    IF LS_REQUEST-drafter_name IS NOT INITIAL.
+      CONCATENATE GV_REQUEST_HTML
+        '<span class="text-xs text-slate-500">Drafter: <strong class="text-slate-700">'
+        LS_REQUEST-drafter_name '</strong></span>'
+        INTO GV_REQUEST_HTML.
+    ENDIF.
+    CONCATENATE GV_REQUEST_HTML '</div><div class="flex items-center gap-2">' INTO GV_REQUEST_HTML.
+    
+    IF LS_REQUEST-status = 'REQ'.
+      CONCATENATE GV_REQUEST_HTML
+        '<button type="button" onclick="event.stopPropagation(); confirmCancelIreq(''' LS_REQUEST-ecr_no ''')" '
+        'class="px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs font-bold text-red-600 '
+        'hover:bg-red-500 hover:text-white hover:border-red-500 transition shadow-sm">'
+        '<i class="fas fa-trash-alt mr-1"></i>Batalkan Request</button>'
+        INTO GV_REQUEST_HTML.
+    ENDIF.
+
+    CONCATENATE GV_REQUEST_HTML
+      '<button type="button" onclick="event.stopPropagation(); showAudit(''' LS_REQUEST-ecr_no ''')" '
+      'class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 '
+      'hover:bg-slate-100 transition">'
+      '<i class="fas fa-history mr-1 text-brand-600"></i>Audit Trail</button>'
+      '</div>'
+      '</div></td></tr>'
+      INTO GV_REQUEST_HTML.
+  ENDLOOP.
+ELSE.
+  GV_REQUEST_COUNT = '0'.
+  GV_REQUEST_HTML = '<tr><td colspan="6" class="px-4 py-12 text-center text-slate-400">'
+    && '<i class="fas fa-inbox text-3xl mb-3 block"></i>Belum ada request.<br>'
+    && '<span class="text-sm">Klik "Request Baru" untuk membuat request pertama Anda.</span></td></tr>'.
+ENDIF.
+
+" --- 4. Audit Trail Modal ---
+GV_SELECTED_IREQ = request->get_form_field( 'ireq_detail' ).
+IF GV_SELECTED_IREQ IS NOT INITIAL.
+  " Ambil data IREQ untuk cek status
+  DATA: LS_IREQ_AUDIT TYPE zecm_req.
+  SELECT SINGLE * FROM zecm_req INTO @LS_IREQ_AUDIT
+    WHERE ecr_no = @GV_SELECTED_IREQ AND change_scope = 'ROUT'.
+
+  IF LS_IREQ_AUDIT-ecr_no IS NOT INITIAL.
+    " Sudah di-approve → ambil audit trail ECR dari ZECM_LOG
+    SELECT * FROM zecm_log
+      INTO CORRESPONDING FIELDS OF TABLE @LT_AUDIT
+      WHERE ecr_no = @LS_IREQ_AUDIT-ecr_no
+        AND is_ireq = ''.
+  ELSEIF LS_IREQ_AUDIT-status = 'REJC'.
+    " Ditolak → ambil log penolakan dari ZECM_LOG
+    SELECT * FROM zecm_log
+      INTO CORRESPONDING FIELDS OF TABLE @LT_AUDIT
+      WHERE ecr_no = @GV_SELECTED_IREQ
+        AND is_ireq = ''.
+  ELSE.
+    " Masih menunggu review → tampilkan info dari ZECM_IROUTING
+    CLEAR LT_AUDIT.
+    CLEAR LS_AUDIT.
+    LS_AUDIT-action      = 'CREA'.
+    LS_AUDIT-action_date = LS_IREQ_AUDIT-created_date.
+    LS_AUDIT-user_id     = LS_IREQ_AUDIT-requester.
+    LS_AUDIT-new_status  = 'REQ'.
+    APPEND LS_AUDIT TO LT_AUDIT.
+  ENDIF.
+
+  IF LT_AUDIT IS NOT INITIAL.
+    LOOP AT LT_AUDIT INTO LS_AUDIT.
+      SELECT SINGLE zecm_full_name FROM zecm_user
+        INTO @LS_AUDIT-full_name
+        WHERE zecm_user_id = @LS_AUDIT-user_id.
+      CONCATENATE GV_AUDIT_HTML
+        '<div class="relative mb-4 p-3 bg-white border border-slate-200 rounded-lg">'
+        '<div class="absolute -left-[22px] top-4 w-2.5 h-2.5 rounded-full '
+        'bg-emerald-600 border-[3px] border-white" '
+        'style="box-shadow:0 0 0 2px #059669"></div>'
+        '<span class="inline-block px-2 py-0.5 rounded text-[0.6rem] font-bold '
+        'uppercase tracking-wide bg-slate-100 text-slate-600">'
+        LS_AUDIT-action '</span>'
+        '<div class="text-[0.72rem] text-slate-400 mt-1">' LS_AUDIT-action_date '</div>'
+        '<div class="text-[0.75rem] font-semibold text-slate-600">'
+        'oleh: ' LS_AUDIT-full_name '</div>'
+        '<div class="text-[0.75rem] text-slate-500 mt-1">Status: <strong>'
+        LS_AUDIT-old_status '</strong> &rarr; <strong>'
+        LS_AUDIT-new_status '</strong></div>'
+        INTO GV_AUDIT_HTML.
+      IF LS_AUDIT-reason IS NOT INITIAL.
+        CONCATENATE GV_AUDIT_HTML
+          '<div class="text-[0.75rem] text-slate-600 mt-2 px-3 py-2 '
+          'bg-amber-50 border-l-[3px] border-amber-400 rounded">'
+          LS_AUDIT-reason '</div>'
+          INTO GV_AUDIT_HTML.
+      ENDIF.
+      CONCATENATE GV_AUDIT_HTML '</div>' INTO GV_AUDIT_HTML.
+    ENDLOOP.
+  ELSE.
+    GV_AUDIT_HTML = '<div class="text-sm text-slate-400 py-4">Belum ada log aktivitas.</div>'.
+  ENDIF.
+ENDIF.

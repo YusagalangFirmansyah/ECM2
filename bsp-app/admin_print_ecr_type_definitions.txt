@@ -1,0 +1,22 @@
+* =======================================================================
+* Type Definitions — admin_print_ecr.htm
+* V14_i: Cetak Multi-Panel (IREQ, Approval Queue, ECR)
+* =======================================================================
+
+TYPES:
+  BEGIN OF ty_print_ecr,
+    ecr_no        TYPE zecm_req-ecr_no,
+    title         TYPE zecm_req-title,
+    matnr_fg      TYPE zecm_req-matnr_fg,
+    matnr_fg_desc TYPE c LENGTH 100,
+    kategori      TYPE zecm_req-kategori,
+    priority      TYPE zecm_req-priority,
+    status        TYPE zecm_req-status,
+    requester     TYPE zecm_req-requester,
+    fullname      TYPE c LENGTH 100,
+    drafter       TYPE zecm_req-drafter,
+    drafter_name  TYPE c LENGTH 100,
+    created_date  TYPE zecm_req-created_date,
+  END OF ty_print_ecr,
+
+  tt_print_ecr TYPE STANDARD TABLE OF ty_print_ecr WITH EMPTY KEY.

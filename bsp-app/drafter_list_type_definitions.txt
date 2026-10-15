@@ -1,0 +1,79 @@
+" Type Definitions — drafter_list.htm V08_d
+" + bom_check field for BOM Gate
+
+TYPES: BEGIN OF ty_ecr_drafter,
+        ecr_no             TYPE zecm_req-ecr_no,
+        title              TYPE zecm_req-title,
+        matnr_fg           TYPE zecm_req-matnr_fg,
+        matnr_fg_no_zero   TYPE char18,
+        kategori           TYPE zecm_req-kategori,
+        priority           TYPE zecm_req-priority,
+        status             TYPE zecm_req-status,
+        drafter            TYPE zecm_req-drafter,
+        requester          TYPE zecm_req-requester,
+        requester_name     TYPE zecm_user-zecm_full_name,
+        drafter_name       TYPE zecm_user-zecm_full_name,
+        descr              TYPE zecm_req-descr,
+        dokar              TYPE zecm_req-dokar,
+        dir_number         TYPE zecm_req-dir_number,
+        dir_number_clean   TYPE char50,
+        reject_reason      TYPE zecm_req-reject_reason,
+        cost_estimate      TYPE zecm_req-cost_estimate,
+        zdept              TYPE zecm_req-zdept,
+        zreason            TYPE zecm_req-zreason,
+        created_date       TYPE zecm_req-created_date,
+        changed_date       TYPE zecm_req-changed_date,
+        maktx              TYPE makt-maktx,
+        bom_check          TYPE zecm_req-bom_check,
+bom_notes          TYPE zecm_req-bom_notes,
+        dms_doknr          TYPE draw-doknr,
+        dms_dokar          TYPE draw-dokar,
+        dms_dokvr          TYPE draw-dokvr,
+        dms_doktl          TYPE draw-doktl,
+        dms_dokst          TYPE draw-dokst,
+        dms_dktxt          TYPE drat-dktxt,
+        dms_found          TYPE abap_bool,
+        impl_po            TYPE zecm_ireq-impl_po,
+        impl_date          TYPE zecm_ireq-impl_date,
+        impl_reason        TYPE zecm_ireq-impl_reason,
+       END OF ty_ecr_drafter.
+
+TYPES: tt_ecr_drafter TYPE STANDARD TABLE OF ty_ecr_drafter.
+
+TYPES: BEGIN OF ty_status_count,
+        status TYPE zecm_req-status,
+        count  TYPE i,
+       END OF ty_status_count.
+
+TYPES: BEGIN OF ty_log,
+        log_id        TYPE zecm_log-log_id,
+        ecr_no        TYPE zecm_log-ecr_no,
+        action        TYPE zecm_log-action,
+        old_status    TYPE zecm_log-old_status,
+        new_status    TYPE zecm_log-new_status,
+        user_id       TYPE zecm_log-user_id,
+        user_name     TYPE zecm_user-zecm_full_name,
+        action_date   TYPE zecm_log-action_date,
+        action_time   TYPE zecm_log-action_time,
+        reason        TYPE zecm_log-reason,
+        assignee_name TYPE string,
+        action_label  TYPE string,
+        old_label     TYPE string,
+        new_label     TYPE string,
+       END OF ty_log.
+
+TYPES: tt_log TYPE STANDARD TABLE OF ty_log.
+
+TYPES: BEGIN OF ty_bom_att,
+        ecr_no       TYPE zecm_bom_att-ecr_no,
+        att_id       TYPE zecm_bom_att-att_id,
+        file_name    TYPE zecm_bom_att-file_name,
+        file_ext     TYPE zecm_bom_att-file_ext,
+        mime_type    TYPE zecm_bom_att-mime_type,
+        file_size    TYPE zecm_bom_att-file_size,
+        uploaded_by  TYPE zecm_bom_att-uploaded_by,
+        uploaded_at  TYPE zecm_bom_att-uploaded_at,
+        uploaded_time TYPE zecm_bom_att-uploaded_time,
+       END OF ty_bom_att.
+
+TYPES: tt_bom_att TYPE STANDARD TABLE OF ty_bom_att.

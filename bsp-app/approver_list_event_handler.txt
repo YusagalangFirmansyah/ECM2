@@ -1,0 +1,918 @@
+
+* approver_list Event Handler
+DATA: lv_action      TYPE string,
+      lv_ecr_no      TYPE numc10,
+      lv_reason      TYPE string,
+      lv_dokar       TYPE dokar,
+      lv_doknr       TYPE doknr,
+      lv_dokvr       TYPE dokvr,
+      lv_doktl       TYPE doktl_d,
+      lv_matnr_conv  TYPE matnr,
+      lv_old_status  TYPE zecm_req-status,
+      lv_url         TYPE string,
+      ls_log         TYPE zecm_log,
+      ls_doc_data    TYPE bapi_doc_draw2,
+      ls_doc_datax   TYPE bapi_doc_drawx2,
+      ls_return      TYPE bapiret2,
+      lv_error       TYPE abap_bool,
+      lt_old_ver     TYPE STANDARD TABLE OF draw-dokvr,
+      lv_old_ver     TYPE draw-dokvr,
+      lv_matnr_raw_ap TYPE char90,
+      lv_objky_ap     TYPE char90,
+      lv_objky_cln_ap TYPE char90,
+      lv_dir_number   TYPE zecm_req-dir_number,
+      lv_dokst        TYPE dokst,
+      lt_dir_parts    TYPE STANDARD TABLE OF string,
+      lv_dir_lines    TYPE i.
+
+lv_action = request->get_form_field( 'OnInputProcessing' ).
+
+" --- QUICK ACTION IREQ (Approve / Reject dari Dashboard) ---
+IF lv_action = 'approve_ireq'.
+  DATA: lv_ireq_id_app TYPE zecm_ireq-ireq_id.
+  lv_ireq_id_app = request->get_form_field( 'ireq_id' ).
+  
+  DATA: wa_ireq_dash TYPE zecm_ireq.
+  SELECT SINGLE * FROM zecm_ireq INTO @wa_ireq_dash WHERE ireq_id = @lv_ireq_id_app.
+  IF sy-subrc = 0 AND wa_ireq_dash-status = 'REQ'.
+    wa_ireq_dash-status = 'APPR'.
+    UPDATE zecm_ireq FROM wa_ireq_dash.
+  ENDIF.
+  
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr             = '01'
+      object                  = 'ZECM_LOG'
+    IMPORTING
+      number                  = ls_log-log_id
+    EXCEPTIONS
+      interval_not_found      = 1
+      number_range_not_intern = 2
+      object_not_found        = 3
+      quantity_is_0           = 4
+      quantity_is_not_1       = 5
+      interval_overflow       = 6
+      buffer_overflow         = 7
+      OTHERS                  = 8.
+  IF sy-subrc <> 0.
+    " fallback
+    ls_log-log_id = '999999'.
+  ENDIF.
+  ls_log-ecr_no = lv_ireq_id_app. " Simpan ireq_id di ecr_no
+  ls_log-is_ireq = 'X'.
+  ls_log-action = 'APPR'.
+  ls_log-old_status = 'REQ'.
+  ls_log-new_status = 'APPR'.
+  ls_log-user_id = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason = 'Approved from Approver Dashboard (Quick Action)'.
+  INSERT zecm_log FROM ls_log.
+  
+  MV_MESSAGE = 'Request berhasil disetujui.'.
+  MV_ICON = 'success'.
+  
+  " Gunakan URL redirect dengan hash parameter untuk scroll pos
+  DATA: lv_scroll_pos TYPE string.
+  lv_scroll_pos = request->get_form_field( 'scroll_pos' ).
+  
+  CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON INTO lv_url.
+  
+  IF lv_scroll_pos IS NOT INITIAL.
+  CONCATENATE lv_url '&scroll_pos=' lv_scroll_pos INTO lv_url.
+  ENDIF.
+  
+  _M_RESPONSE->set_status( code = 302 reason = 'Found' ).
+  _M_RESPONSE->set_header_field( name = 'Location' value = lv_url ).
+  RETURN.
+  
+ELSEIF lv_action = 'reject_ireq'.
+  DATA: lv_ireq_id_rej TYPE zecm_ireq-ireq_id,
+        lv_ireq_reason TYPE string.
+  lv_ireq_id_rej = request->get_form_field( 'ireq_id' ).
+  lv_ireq_reason = request->get_form_field( 'reject_reason' ).
+  
+  UPDATE zecm_ireq SET status = 'REJC', admin_note = @lv_ireq_reason WHERE ireq_id = @lv_ireq_id_rej.
+  
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr             = '01'
+      object                  = 'ZECM_LOG'
+    IMPORTING
+      number                  = ls_log-log_id
+    EXCEPTIONS
+      interval_not_found      = 1
+      number_range_not_intern = 2
+      object_not_found        = 3
+      quantity_is_0           = 4
+      quantity_is_not_1       = 5
+      interval_overflow       = 6
+      buffer_overflow         = 7
+      OTHERS                  = 8.
+  IF sy-subrc <> 0.
+    " fallback
+    ls_log-log_id = '999999'.
+  ENDIF.
+  ls_log-ecr_no = lv_ireq_id_rej.
+  ls_log-is_ireq = 'X'.
+  ls_log-action = 'REJT'.
+  ls_log-old_status = 'REQ'.
+  ls_log-new_status = 'REJC'.
+  ls_log-user_id = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason = lv_ireq_reason.
+  INSERT zecm_log FROM ls_log.
+  
+  MV_MESSAGE = 'Request berhasil ditolak.'.
+  MV_ICON = 'success'.
+  RETURN.
+* -----------------------------------------------------------
+* APPROVE ECR DRAFT (CRTD -> INWK) 
+* -----------------------------------------------------------
+ELSEIF lv_action = 'approve_draft'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  
+  DATA: lv_impl_po TYPE zecm_req-impl_po,
+        lv_impl_date TYPE string,
+        lv_impl_reason TYPE zecm_req-impl_reason.
+        
+  lv_impl_po = request->get_form_field( 'impl_po' ).
+  lv_impl_date = request->get_form_field( 'impl_date' ).
+  lv_impl_reason = request->get_form_field( 'impl_reason' ).
+  REPLACE ALL OCCURRENCES OF '-' IN lv_impl_date WITH ''.
+
+  IF lv_ecr_no IS NOT INITIAL AND lv_impl_po IS NOT INITIAL AND lv_impl_date IS NOT INITIAL AND lv_impl_reason IS NOT INITIAL.
+    UPDATE zecm_req SET status = 'INWK',
+                        impl_po = @lv_impl_po,
+                        impl_date = @lv_impl_date,
+                        impl_reason = @lv_impl_reason,
+                        changed_date = @sy-datum,
+                        changed_time = @sy-uzeit
+      WHERE ecr_no = @lv_ecr_no AND status = 'CRTD'.
+      
+    IF sy-subrc = 0.
+      CALL FUNCTION 'NUMBER_GET_NEXT'
+        EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+        IMPORTING number = ls_log-log_id
+        EXCEPTIONS OTHERS = 1.
+      IF sy-subrc = 0.
+        ls_log-mandt = sy-mandt.
+        ls_log-ecr_no = lv_ecr_no.
+        ls_log-action = 'APPR'.
+        ls_log-old_status = 'CRTD'.
+        ls_log-new_status = 'INWK'.
+        ls_log-user_id = GV_USER_ID.
+        ls_log-action_date = sy-datum.
+        ls_log-action_time = sy-uzeit.
+        ls_log-reason = 'Approver menyetujui ECR (CRTD -> INWK) dengan Target Rilis'.
+        INSERT zecm_log FROM ls_log.
+      ENDIF.
+      
+      MV_MESSAGE = 'Draft ECR berhasil disetujui menjadi ECO baru.'.
+      MV_ICON = 'success'.
+    ELSE.
+      MV_MESSAGE = 'Gagal menyetujui Draft ECR (Mungkin status sudah berubah).'.
+      MV_ICON = 'error'.
+    ENDIF.
+  ELSE.
+    MV_MESSAGE = 'Data tidak lengkap.'.
+    MV_ICON = 'error'.
+  ENDIF.
+  RETURN.
+
+* -----------------------------------------------------------
+* REJECT ECR DRAFT (CRTD -> REJC)
+* -----------------------------------------------------------
+ELSEIF lv_action = 'reject_draft'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  lv_reason = request->get_form_field( 'reject_reason' ).
+  
+  IF lv_ecr_no IS NOT INITIAL AND lv_reason IS NOT INITIAL.
+    UPDATE zecm_req SET status = 'REJC',
+                        reject_reason = @lv_reason,
+                        changed_date = @sy-datum,
+                        changed_time = @sy-uzeit
+      WHERE ecr_no = @lv_ecr_no AND status = 'CRTD'.
+      
+    IF sy-subrc = 0.
+      CALL FUNCTION 'NUMBER_GET_NEXT'
+        EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+        IMPORTING number = ls_log-log_id
+        EXCEPTIONS OTHERS = 1.
+      IF sy-subrc = 0.
+        ls_log-mandt = sy-mandt.
+        ls_log-ecr_no = lv_ecr_no.
+        ls_log-action = 'REJT'.
+        ls_log-old_status = 'CRTD'.
+        ls_log-new_status = 'REJC'.
+        ls_log-user_id = GV_USER_ID.
+        ls_log-action_date = sy-datum.
+        ls_log-action_time = sy-uzeit.
+        ls_log-reason = lv_reason.
+        INSERT zecm_log FROM ls_log.
+      ENDIF.
+      
+      MV_MESSAGE = 'Draft ECR berhasil ditolak.'.
+      MV_ICON = 'success'.
+    ELSE.
+      MV_MESSAGE = 'Gagal menolak Draft ECR.'.
+      MV_ICON = 'error'.
+    ENDIF.
+  ELSE.
+    MV_MESSAGE = 'Data tidak lengkap (Nomor ECR / Alasan kosong).'.
+    MV_ICON = 'error'.
+  ENDIF.
+  RETURN.
+
+* -----------------------------------------------------------
+* APPROVE ECR (INSP -> CLSD) + DMS (AP -> FR) + Obsolete versi lama
+ELSEIF lv_action = 'approve_ecr'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+
+  IF lv_ecr_no IS INITIAL.
+    MV_MESSAGE = 'ECR tidak valid.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Ambil data ECR (termasuk dir_number jika sudah terdaftar)
+  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+  SELECT SINGLE matnr_fg, dir_number FROM zecm_req
+    INTO (@lv_matnr_conv, @lv_dir_number)
+    WHERE ecr_no = @lv_ecr_no.
+
+  " 1. Prioritas Utama: Ambil langsung dari DIR_NUMBER yang tersimpan di ECR
+  IF lv_dir_number IS NOT INITIAL.
+    CLEAR lt_dir_parts.
+    SPLIT lv_dir_number AT '/' INTO TABLE lt_dir_parts.
+    DESCRIBE TABLE lt_dir_parts LINES lv_dir_lines.
+    IF lv_dir_lines >= 2.
+      READ TABLE lt_dir_parts INDEX 1 INTO lv_dokar.
+      READ TABLE lt_dir_parts INDEX 2 INTO lv_doknr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING  input  = lv_doknr
+        IMPORTING  output = lv_doknr.
+
+      SELECT SINGLE dokvr, doktl, dokst
+        FROM draw
+        INTO (@lv_dokvr, @lv_doktl, @lv_dokst)
+        WHERE dokar = @lv_dokar
+          AND doknr = @lv_doknr.
+    ENDIF.
+  ENDIF.
+
+  " 2. Fallback: Lookup DRAD & DRAW berdasarkan Material FG
+  IF lv_doknr IS INITIAL OR lv_dokvr IS INITIAL.
+    CLEAR: lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING  input  = lv_matnr_conv
+      IMPORTING  output = lv_matnr_conv.
+
+    SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+      INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+      FROM drad AS a
+      INNER JOIN draw AS b
+        ON a~dokar = b~dokar
+       AND a~doknr = b~doknr
+       AND a~dokvr = b~dokvr
+       AND a~doktl = b~doktl
+      WHERE a~objky = @lv_matnr_conv
+        AND a~dokob = 'MARA'
+        AND a~dokar IN ('DRW', 'DBX', 'DMT')
+        AND b~dokst = 'AP'.
+
+    IF sy-subrc <> 0.
+      DATA: lv_matnr_no0_app TYPE matnr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING  input  = lv_matnr_conv
+        IMPORTING  output = lv_matnr_no0_app.
+
+      SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+        INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+        FROM drad AS a
+        INNER JOIN draw AS b
+          ON a~dokar = b~dokar
+         AND a~doknr = b~doknr
+         AND a~dokvr = b~dokvr
+         AND a~doktl = b~doktl
+        WHERE a~objky = @lv_matnr_no0_app
+          AND a~dokob = 'MARA'
+          AND a~dokar IN ('DRW', 'DBX', 'DMT')
+          AND b~dokst = 'AP'.
+    ENDIF.
+  ENDIF.
+
+
+
+  " Ubah DMS: AP -> FR (Released)
+  IF lv_doknr IS NOT INITIAL.
+    lv_error = abap_false.
+
+    CLEAR: ls_doc_data, ls_doc_datax, ls_return.
+    ls_doc_data-statusintern  = 'FR'.
+    ls_doc_datax-statusintern = 'X'.
+
+    CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+      EXPORTING
+        documenttype    = lv_dokar
+        documentnumber  = lv_doknr
+        documentpart    = lv_doktl
+        documentversion = lv_dokvr
+        documentdata    = ls_doc_data
+        documentdatax   = ls_doc_datax
+      IMPORTING
+        return          = ls_return.
+
+    IF ls_return-type CA 'EA'.
+      MV_MESSAGE = |Gagal update DMS ke Released: { ls_return-message }|.
+      MV_ICON    = 'error'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      RETURN.
+    ENDIF.
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING wait = 'X'.
+
+    " Obsolete versi lama (FR -> H4)
+    REFRESH lt_old_ver.
+    SELECT dokvr INTO TABLE lt_old_ver
+      FROM draw
+      WHERE dokar = lv_dokar
+        AND doknr = lv_doknr
+        AND doktl = lv_doktl
+        AND dokst = 'FR'
+        AND dokvr <> lv_dokvr.
+
+    LOOP AT lt_old_ver INTO lv_old_ver.
+      CLEAR: ls_doc_data, ls_doc_datax, ls_return.
+      ls_doc_data-statusextern  = 'H4'.
+      ls_doc_datax-statusextern = 'X'.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+        EXPORTING
+          documenttype    = lv_dokar
+          documentnumber  = lv_doknr
+          documentpart    = lv_doktl
+          documentversion = lv_old_ver
+          documentdata    = ls_doc_data
+          documentdatax   = ls_doc_datax
+        IMPORTING
+          return          = ls_return.
+
+      IF ls_return-type CA 'EA'.
+        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      ELSE.
+        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+          EXPORTING wait = 'X'.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  " Update ECR: INSP -> CLSD
+  SELECT SINGLE status FROM zecm_req INTO @lv_old_status
+    WHERE ecr_no = @lv_ecr_no.
+
+  UPDATE zecm_req SET
+    status       = 'CLSD',
+    changed_date = @sy-datum,
+    changed_time = @sy-uzeit
+  WHERE ecr_no = @lv_ecr_no.
+
+  " Insert log
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_LOG'
+    IMPORTING
+      number      = ls_log-log_id.
+
+  ls_log-mandt       = sy-mandt.
+  ls_log-ecr_no      = lv_ecr_no.
+  ls_log-action      = 'CLSD'.
+  ls_log-old_status  = lv_old_status.
+  ls_log-new_status  = 'CLSD'.
+  ls_log-user_id     = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason      = 'Approver menyetujui ECR'.
+
+  INSERT zecm_log FROM @ls_log.
+
+  MV_MESSAGE = 'ECR berhasil di-approve. DMS Released.'.
+  MV_ICON    = 'success'.
+
+" REVISI ECR (INSP -> INWK) + DMS (AP -> IA)
+ELSEIF lv_action = 'revisi_ecr'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  lv_reason = request->get_form_field( 'revisi_reason' ).
+
+  IF lv_ecr_no IS INITIAL.
+    MV_MESSAGE = 'ECR tidak valid.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF lv_reason IS INITIAL.
+    MV_MESSAGE = 'Catatan revisi wajib diisi.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Ambil data ECR (termasuk dir_number jika sudah terdaftar)
+  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+  SELECT SINGLE matnr_fg, dir_number FROM zecm_req
+    INTO (@lv_matnr_conv, @lv_dir_number)
+    WHERE ecr_no = @lv_ecr_no.
+
+  " 1. Prioritas Utama: Ambil langsung dari DIR_NUMBER yang tersimpan di ECR
+  IF lv_dir_number IS NOT INITIAL.
+    CLEAR lt_dir_parts.
+    SPLIT lv_dir_number AT '/' INTO TABLE lt_dir_parts.
+    DESCRIBE TABLE lt_dir_parts LINES lv_dir_lines.
+    IF lv_dir_lines >= 2.
+      READ TABLE lt_dir_parts INDEX 1 INTO lv_dokar.
+      READ TABLE lt_dir_parts INDEX 2 INTO lv_doknr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING  input  = lv_doknr
+        IMPORTING  output = lv_doknr.
+
+      SELECT SINGLE dokvr, doktl, dokst
+        FROM draw
+        INTO (@lv_dokvr, @lv_doktl, @lv_dokst)
+        WHERE dokar = @lv_dokar
+          AND doknr = @lv_doknr.
+    ENDIF.
+  ENDIF.
+
+  " 2. Fallback: Lookup DRAD & DRAW berdasarkan Material FG
+  IF lv_doknr IS INITIAL OR lv_dokvr IS INITIAL.
+    CLEAR: lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING  input  = lv_matnr_conv
+      IMPORTING  output = lv_matnr_conv.
+
+    SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+      INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+      FROM drad AS a
+      INNER JOIN draw AS b
+        ON a~dokar = b~dokar
+       AND a~doknr = b~doknr
+       AND a~dokvr = b~dokvr
+       AND a~doktl = b~doktl
+      WHERE a~objky = @lv_matnr_conv
+        AND a~dokob = 'MARA'
+        AND a~dokar IN ('DRW', 'DBX', 'DMT')
+        AND b~dokst = 'AP'.
+
+    IF sy-subrc <> 0.
+      DATA: lv_matnr_no0_rev TYPE matnr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING  input  = lv_matnr_conv
+        IMPORTING  output = lv_matnr_no0_rev.
+
+      SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+        INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+        FROM drad AS a
+        INNER JOIN draw AS b
+          ON a~dokar = b~dokar
+         AND a~doknr = b~doknr
+         AND a~dokvr = b~dokvr
+         AND a~doktl = b~doktl
+        WHERE a~objky = @lv_matnr_no0_rev
+          AND a~dokob = 'MARA'
+          AND a~dokar IN ('DRW', 'DBX', 'DMT')
+          AND b~dokst = 'AP'.
+    ENDIF.
+  ENDIF.
+
+  " Ubah DMS: AP -> ZG -> IA (kembali ke In Work)
+  IF lv_doknr IS NOT INITIAL.
+    IF lv_dokst = 'AP'.
+      " Step 1: AP -> ZG (Rejected)
+      CLEAR: ls_doc_data, ls_doc_datax, ls_return.
+      ls_doc_data-statusintern  = 'ZG'.
+      ls_doc_datax-statusintern = 'X'.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+        EXPORTING
+          documenttype    = lv_dokar
+          documentnumber  = lv_doknr
+          documentpart    = lv_doktl
+          documentversion = lv_dokvr
+          documentdata    = ls_doc_data
+          documentdatax   = ls_doc_datax
+        IMPORTING
+          return          = ls_return.
+
+      IF ls_return-type CA 'EA'.
+        MV_MESSAGE = |Gagal update DMS ke In Work: { ls_return-message }|.
+        MV_ICON    = 'error'.
+        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        RETURN.
+      ENDIF.
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING wait = 'X'.
+
+      " Step 2: ZG -> IA (In Work)
+      CLEAR: ls_doc_data, ls_doc_datax, ls_return.
+      ls_doc_data-statusintern  = 'IA'.
+      ls_doc_datax-statusintern = 'X'.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+        EXPORTING
+          documenttype    = lv_dokar
+          documentnumber  = lv_doknr
+          documentpart    = lv_doktl
+          documentversion = lv_dokvr
+          documentdata    = ls_doc_data
+          documentdatax   = ls_doc_datax
+        IMPORTING
+          return          = ls_return.
+
+      IF ls_return-type CA 'EA'.
+        MV_MESSAGE = |Gagal update DMS ke In Work: { ls_return-message }|.
+        MV_ICON    = 'error'.
+        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        RETURN.
+      ENDIF.
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING wait = 'X'.
+
+    ELSEIF lv_dokst = 'ZG'.
+      " Dokumen sudah di ZG, langsung ZG -> IA (In Work)
+      CLEAR: ls_doc_data, ls_doc_datax, ls_return.
+      ls_doc_data-statusintern  = 'IA'.
+      ls_doc_datax-statusintern = 'X'.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+        EXPORTING
+          documenttype    = lv_dokar
+          documentnumber  = lv_doknr
+          documentpart    = lv_doktl
+          documentversion = lv_dokvr
+          documentdata    = ls_doc_data
+          documentdatax   = ls_doc_datax
+        IMPORTING
+          return          = ls_return.
+
+      IF ls_return-type CA 'EA'.
+        MV_MESSAGE = |Gagal update DMS ke In Work: { ls_return-message }|.
+        MV_ICON    = 'error'.
+        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        RETURN.
+      ENDIF.
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING wait = 'X'.
+    ENDIF.
+  ENDIF.
+
+  " Update ECR: INSP -> INWK
+  SELECT SINGLE status FROM zecm_req INTO @lv_old_status
+    WHERE ecr_no = @lv_ecr_no.
+
+  UPDATE zecm_req SET
+    status        = 'INWK',
+    reject_reason = @lv_reason,
+    changed_date  = @sy-datum,
+    changed_time  = @sy-uzeit
+  WHERE ecr_no = @lv_ecr_no.
+
+  " Insert log
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_LOG'
+    IMPORTING
+      number      = ls_log-log_id.
+
+  ls_log-mandt       = sy-mandt.
+  ls_log-ecr_no      = lv_ecr_no.
+  ls_log-action      = 'REVS'.
+  ls_log-old_status  = lv_old_status.
+  ls_log-new_status  = 'INWK'.
+  ls_log-user_id     = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason      = lv_reason.
+
+  INSERT zecm_log FROM @ls_log.
+
+  MV_MESSAGE = 'ECR dikembalikan ke drafter untuk revisi.'.
+  MV_ICON    = 'warning'.
+
+" REJECT ECR (INSP -> REJC) + DMS (AP -> ZG)
+ELSEIF lv_action = 'reject_ecr'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  lv_reason = request->get_form_field( 'reject_reason' ).
+
+  IF lv_ecr_no IS INITIAL.
+    MV_MESSAGE = 'ECR tidak valid.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF lv_reason IS INITIAL.
+    MV_MESSAGE = 'Alasan reject wajib diisi.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Ambil data ECR
+  " Ambil data ECR (termasuk dir_number jika sudah terdaftar)
+  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+  SELECT SINGLE matnr_fg, dir_number FROM zecm_req
+    INTO (@lv_matnr_conv, @lv_dir_number)
+    WHERE ecr_no = @lv_ecr_no.
+
+  " 1. Prioritas Utama: Ambil langsung dari DIR_NUMBER yang tersimpan di ECR
+  IF lv_dir_number IS NOT INITIAL.
+    CLEAR lt_dir_parts.
+    SPLIT lv_dir_number AT '/' INTO TABLE lt_dir_parts.
+    DESCRIBE TABLE lt_dir_parts LINES lv_dir_lines.
+    IF lv_dir_lines >= 2.
+      READ TABLE lt_dir_parts INDEX 1 INTO lv_dokar.
+      READ TABLE lt_dir_parts INDEX 2 INTO lv_doknr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING  input  = lv_doknr
+        IMPORTING  output = lv_doknr.
+
+      SELECT SINGLE dokvr, doktl, dokst
+        FROM draw
+        INTO (@lv_dokvr, @lv_doktl, @lv_dokst)
+        WHERE dokar = @lv_dokar
+          AND doknr = @lv_doknr.
+    ENDIF.
+  ENDIF.
+
+  " 2. Fallback: Lookup DRAD & DRAW berdasarkan Material FG
+  IF lv_doknr IS INITIAL OR lv_dokvr IS INITIAL.
+    CLEAR: lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING  input  = lv_matnr_conv
+      IMPORTING  output = lv_matnr_conv.
+
+    SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+      INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+      FROM drad AS a
+      INNER JOIN draw AS b
+        ON a~dokar = b~dokar
+       AND a~doknr = b~doknr
+       AND a~dokvr = b~dokvr
+       AND a~doktl = b~doktl
+      WHERE a~objky = @lv_matnr_conv
+        AND a~dokob = 'MARA'
+        AND a~dokar IN ('DRW', 'DBX', 'DMT')
+        AND b~dokst = 'AP'.
+
+    IF sy-subrc <> 0.
+      DATA: lv_matnr_no0_rej TYPE matnr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING  input  = lv_matnr_conv
+        IMPORTING  output = lv_matnr_no0_rej.
+
+      SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+        INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+        FROM drad AS a
+        INNER JOIN draw AS b
+          ON a~dokar = b~dokar
+         AND a~doknr = b~doknr
+         AND a~dokvr = b~dokvr
+         AND a~doktl = b~doktl
+        WHERE a~objky = @lv_matnr_no0_rej
+          AND a~dokob = 'MARA'
+          AND a~dokar IN ('DRW', 'DBX', 'DMT')
+          AND b~dokst = 'AP'.
+    ENDIF.
+  ENDIF.
+
+
+
+  " Ubah DMS: AP -> ZG (Rejected)
+  IF lv_doknr IS NOT INITIAL.
+    CLEAR: ls_doc_data, ls_doc_datax, ls_return.
+    ls_doc_data-statusintern  = 'ZG'.
+    ls_doc_datax-statusintern = 'X'.
+
+    CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+      EXPORTING
+        documenttype    = lv_dokar
+        documentnumber  = lv_doknr
+        documentpart    = lv_doktl
+        documentversion = lv_dokvr
+        documentdata    = ls_doc_data
+        documentdatax   = ls_doc_datax
+      IMPORTING
+        return          = ls_return.
+
+    IF ls_return-type CA 'EA'.
+      MV_MESSAGE = |Gagal update DMS ke Rejected: { ls_return-message }|.
+      MV_ICON    = 'error'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      RETURN.
+    ENDIF.
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING wait = 'X'.
+  ENDIF.
+
+  " Update ECR: INSP -> REJC
+  SELECT SINGLE status FROM zecm_req INTO @lv_old_status
+    WHERE ecr_no = @lv_ecr_no.
+
+  UPDATE zecm_req SET
+    status        = 'REJC',
+    reject_reason = @lv_reason,
+    rejected_by   = @GV_USER_ID,
+    changed_date  = @sy-datum,
+    changed_time  = @sy-uzeit
+  WHERE ecr_no = @lv_ecr_no.
+
+  " Insert log
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_LOG'
+    IMPORTING
+      number      = ls_log-log_id.
+
+  ls_log-mandt       = sy-mandt.
+  ls_log-ecr_no      = lv_ecr_no.
+  ls_log-action      = 'REJT'.
+  ls_log-old_status  = lv_old_status.
+  ls_log-new_status  = 'REJC'.
+  ls_log-user_id     = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason      = lv_reason.
+
+  INSERT zecm_log FROM @ls_log.
+
+  MV_MESSAGE = 'ECR berhasil ditolak.'.
+  MV_ICON    = 'success'.
+
+
+CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON '&filter=INSP' INTO lv_url.
+_M_RESPONSE->set_status( code = 302 reason = 'Found' ).
+    _M_RESPONSE->set_header_field( name = 'Location' value = lv_url ).
+    RETURN.
+
+" APPROVE IREQ (REQ -> APPR) (NEW)
+ELSEIF lv_action = 'approve_ireq'.
+  DATA: lv_ireq_id TYPE string.
+  lv_ireq_id = request->get_form_field( 'ireq_id' ).
+
+  IF lv_ireq_id IS INITIAL.
+    MV_MESSAGE = 'ID Request Masuk tidak valid.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+  
+  DATA: wa_ireq_appr TYPE zecm_ireq.
+  SELECT SINGLE * FROM zecm_ireq INTO @wa_ireq_appr WHERE ireq_id = @lv_ireq_id.
+  IF sy-subrc = 0 AND wa_ireq_appr-status = 'REQ'.
+    wa_ireq_appr-status = 'APPR'.
+    UPDATE zecm_ireq FROM wa_ireq_appr.
+  ELSE.
+    sy-subrc = 4.
+  ENDIF.
+    
+  IF sy-subrc = 0.
+    " Logging
+    DATA: ls_ireq_log TYPE zecm_log.
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+      IMPORTING number = ls_ireq_log-log_id.
+
+    ls_ireq_log-mandt       = sy-mandt.
+    ls_ireq_log-ecr_no      = lv_ireq_id. " Using ireq_id in ecr_no field
+    ls_ireq_log-is_ireq     = 'X'.        " Mark as IREQ log
+    ls_ireq_log-action      = 'APPR'.
+    ls_ireq_log-old_status  = 'REQ'.
+    ls_ireq_log-new_status  = 'APPR'.
+    ls_ireq_log-user_id     = GV_USER_ID.
+    ls_ireq_log-action_date = sy-datum.
+    ls_ireq_log-action_time = sy-uzeit.
+    ls_ireq_log-reason      = 'Approver menyetujui Pre-Request'.
+
+    INSERT zecm_log FROM ls_ireq_log.
+
+    MV_MESSAGE = 'Request Masuk berhasil di-approve (REQ > APPR).'.
+    MV_ICON    = 'success'.
+  ELSE.
+    MV_MESSAGE = 'Gagal approve Request Masuk atau Request sudah diproses.'.
+    MV_ICON    = 'error'.
+  ENDIF.
+
+" REJECT IREQ (REQ -> REJC) (NEW)
+ELSEIF lv_action = 'reject_ireq'.
+  lv_ireq_id = request->get_form_field( 'ireq_id' ).
+  lv_reason = request->get_form_field( 'reject_reason' ).
+
+  IF lv_ireq_id IS INITIAL.
+    MV_MESSAGE = 'ID Request Masuk tidak valid.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF lv_reason IS INITIAL.
+    lv_reason = 'Ditolak oleh approver'.
+  ENDIF.
+
+  " Update IREQ Status: REQ -> REJC
+  UPDATE zecm_ireq SET status = 'REJC', admin_note = @lv_reason
+    WHERE ireq_id = @lv_ireq_id AND status = 'REQ'.
+    
+  IF sy-subrc = 0.
+    " Logging
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+      IMPORTING number = ls_ireq_log-log_id.
+
+    ls_ireq_log-mandt       = sy-mandt.
+    ls_ireq_log-ecr_no      = lv_ireq_id. 
+    ls_ireq_log-is_ireq     = 'X'.
+    ls_ireq_log-action      = 'REJT'.
+    ls_ireq_log-old_status  = 'REQ'.
+    ls_ireq_log-new_status  = 'REJC'.
+    ls_ireq_log-user_id     = GV_USER_ID.
+    ls_ireq_log-action_date = sy-datum.
+    ls_ireq_log-action_time = sy-uzeit.
+    ls_ireq_log-reason      = lv_reason.
+
+    INSERT zecm_log FROM ls_ireq_log.
+
+    MV_MESSAGE = 'Request Masuk berhasil ditolak.'.
+    MV_ICON    = 'success'.
+  ELSE.
+    MV_MESSAGE = 'Gagal menolak Request Masuk atau Request sudah diproses.'.
+    MV_ICON    = 'error'.
+  ENDIF.
+
+
+ELSEIF lv_action = 'cancel_approve_ireq'.
+  DATA: lv_ireq_id_cancel TYPE string.
+  lv_ireq_id_cancel = request->get_form_field( 'ireq_id' ).
+
+  IF lv_ireq_id_cancel IS INITIAL.
+    MV_MESSAGE = 'ID Request Masuk tidak valid.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Prevent if already processed by admin 
+  DATA: ls_ireq_chk TYPE zecm_ireq.
+  SELECT SINGLE * FROM zecm_ireq INTO @ls_ireq_chk WHERE ireq_id = @lv_ireq_id_cancel.
+  IF ls_ireq_chk-ecr_no IS NOT INITIAL.
+    MV_MESSAGE = 'Gagal membatalkan. ECO sudah dibuat oleh Admin.'.
+    MV_ICON    = 'error'.
+    
+    CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON '&filter_ireq=APPR' INTO lv_url.
+    _M_RESPONSE->set_status( code = 302 reason = 'Found' ).
+    _M_RESPONSE->set_header_field( name = 'Location' value = lv_url ).
+    RETURN.
+  ENDIF.
+  
+  " Update IREQ Status: APPR -> REQ, and reset implementation tracking fields
+  UPDATE zecm_ireq SET status = 'REQ', 
+                       impl_po = '', 
+                       impl_date = '00000000', 
+                       impl_reason = ''
+    WHERE ireq_id = @lv_ireq_id_cancel AND status = 'APPR'.
+    
+  IF sy-subrc = 0.
+    " Logging
+    DATA: ls_cancel_log TYPE zecm_log.
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+      IMPORTING number = ls_cancel_log-log_id.
+
+    ls_cancel_log-mandt       = sy-mandt.
+    ls_cancel_log-ecr_no      = lv_ireq_id_cancel. 
+    ls_cancel_log-is_ireq     = 'X'.
+    ls_cancel_log-action      = 'CNCL'.
+    ls_cancel_log-old_status  = 'APPR'.
+    ls_cancel_log-new_status  = 'REQ'.
+    ls_cancel_log-user_id     = GV_USER_ID.
+    ls_cancel_log-action_date = sy-datum.
+    ls_cancel_log-action_time = sy-uzeit.
+    ls_cancel_log-reason      = 'Approver membatalkan approval (Batal Approve)'.
+
+    INSERT zecm_log FROM ls_cancel_log.
+
+    MV_MESSAGE = 'Approval berhasil dibatalkan. Request kembali ke antrian Menunggu Approval.'.
+    MV_ICON    = 'success'.
+  ELSE.
+    MV_MESSAGE = 'Gagal membatalkan approval. Request mungkin sudah diproses.'.
+    MV_ICON    = 'error'.
+  ENDIF.
+
+  CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON '&filter_ireq=REQ' INTO lv_url.
+  _M_RESPONSE->set_status( code = 302 reason = 'Found' ).
+  _M_RESPONSE->set_header_field( name = 'Location' value = lv_url ).
+  RETURN.
+
+ENDIF.

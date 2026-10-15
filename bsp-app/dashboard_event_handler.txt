@@ -1,0 +1,3 @@
+IF request->get_form_field( 'OnInputProcessing' ) = 'logout'.
+  navigation->goto_page( 'login.htm' ).
+ENDIF.

@@ -1,0 +1,1151 @@
+" drafter_list Event Handler â€” V08_e
+" + upload_bom + download_bom actions for BOM Gate
+
+DATA: lv_action      TYPE string,
+      lv_ecr_no      TYPE numc10,
+      lv_dokar       TYPE dokar,
+      lv_old_status  TYPE zecm_req-status,
+      lv_url         TYPE string,
+      lv_matnr_conv  TYPE matnr,
+      lv_doknr       TYPE doknr,
+      lv_dokvr       TYPE dokvr,
+      lv_doktl       TYPE doktl_d,
+      lv_dokst       TYPE dokst,
+      lv_dir_number  TYPE zecm_req-dir_number,
+      ls_log         TYPE zecm_log,
+      ls_doc_data    TYPE bapi_doc_draw2,
+      ls_doc_datax   TYPE bapi_doc_drawx2,
+      ls_return      TYPE bapiret2.
+
+lv_action = request->get_form_field( 'OnInputProcessing' ).
+
+" ============================================================
+" AUTHORIZATION CHECK (Security Guard)
+" Pastikan Drafter hanya bisa modifikasi ECR miliknya sendiri
+" ============================================================
+IF lv_action = 'upload_bom' OR lv_action = 'submit_ecr' OR lv_action = 'skip_bom' OR 
+   lv_action = 'cancel_upload_bom' OR lv_action = 'reject_ecr' OR lv_action = 'cancel_ecr'.
+  
+  DATA: lv_auth_ecr TYPE numc10.
+  lv_auth_ecr = request->get_form_field( 'ecr_no' ).
+  IF lv_auth_ecr IS NOT INITIAL.
+    DATA: lv_auth_drafter TYPE zecm_req-drafter.
+    SELECT SINGLE drafter FROM zecm_req INTO @lv_auth_drafter WHERE ecr_no = @lv_auth_ecr.
+    IF sy-subrc = 0 AND lv_auth_drafter <> GV_USER_ID.
+      GV_MESSAGE = 'Akses Ditolak: Anda bukan PIC Drafter untuk ECR ini.'.
+      GV_ICON    = 'error'.
+      CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+      navigation->goto_page( lv_url ).
+      RETURN.
+    ENDIF.
+  ENDIF.
+ENDIF.
+
+" ============================================================
+" UPLOAD BOM ATTACHMENT (multipart binary â†’ ZECM_BOM_ATT)
+" ============================================================
+IF lv_action = 'upload_bom'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  GV_BOM_NOTES = request->get_form_field( 'bom_notes' ).
+
+  IF lv_ecr_no IS INITIAL.
+    GV_MESSAGE = 'ECR tidak valid.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Check ECR status â€” must be INWK to upload BOM
+  DATA: lv_bom_status TYPE zecm_req-status.
+  SELECT SINGLE status FROM zecm_req INTO @lv_bom_status
+    WHERE ecr_no = @lv_ecr_no.
+  IF lv_bom_status <> 'INWK'.
+    GV_MESSAGE = 'Hanya ECR dengan status In Work yang bisa upload BOM.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Parse Base64 form data (sent via JS FileReader)
+  DATA: lv_b64       TYPE string,
+        lv_file_name TYPE string,
+        lv_mime_type TYPE string,
+        lv_file_ext  TYPE string,
+        lv_file_bin  TYPE xstring,
+        lv_att_count TYPE i VALUE 0.
+
+  lv_b64       = request->get_form_field( 'bom_file_b64' ).
+  lv_file_name = request->get_form_field( 'bom_file_name' ).
+  lv_mime_type = request->get_form_field( 'bom_file_type' ).
+
+  IF lv_b64 IS INITIAL OR lv_file_name IS INITIAL.
+    GV_MESSAGE = 'File BOM wajib diisi.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Clean and Decode Base64 to XSTRING
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN lv_b64 WITH ''.
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN lv_b64 WITH ''.
+  TRANSLATE lv_b64 USING ' +'.
+
+  CALL FUNCTION 'SSFC_BASE64_DECODE'
+    EXPORTING
+      b64data                  = lv_b64
+    IMPORTING
+      bindata                  = lv_file_bin
+    EXCEPTIONS
+      ssfc_fault               = 1
+      ssfc_base64_decode_error = 2
+      OTHERS                   = 3.
+
+  IF sy-subrc <> 0 OR lv_file_bin IS INITIAL.
+    GV_MESSAGE = 'Gagal memproses file.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Extract extension & validate PDF safely (supports multiple dots e.g. BOM_rev.01.pdf)
+  DATA: lt_fn_parts TYPE TABLE OF string,
+        lv_fn_lines TYPE i,
+        lv_is_excel TYPE c LENGTH 1 VALUE '',
+        lv_fn_upper TYPE string,
+        lv_mime_low TYPE string.
+
+  " 1. Cek ekstensi dari titik paling akhir
+  SPLIT lv_file_name AT '.' INTO TABLE lt_fn_parts.
+  DESCRIBE TABLE lt_fn_parts LINES lv_fn_lines.
+  IF lv_fn_lines > 1.
+    READ TABLE lt_fn_parts INDEX lv_fn_lines INTO lv_file_ext.
+    CONDENSE lv_file_ext NO-GAPS.
+    TRANSLATE lv_file_ext TO LOWER CASE.
+    IF lv_file_ext = 'xls' OR lv_file_ext = 'xlsx'.
+      lv_is_excel = 'X'.
+    ENDIF.
+  ENDIF.
+
+  " 2. Fallback: cek jika nama file berakhiran atau mengandung .PDF
+  IF lv_is_excel IS INITIAL.
+    lv_fn_upper = lv_file_name.
+    TRANSLATE lv_fn_upper TO UPPER CASE.
+    IF lv_fn_upper CS '.XLS'.
+      lv_is_excel   = 'X'.
+    ENDIF.
+  ENDIF.
+
+  " 3. Fallback: cek MIME Type dari browser
+  IF lv_is_excel IS INITIAL.
+    lv_mime_low = lv_mime_type.
+    TRANSLATE lv_mime_low TO LOWER CASE.
+    IF lv_mime_low CS 'excel' OR lv_mime_low CS 'spreadsheet'.
+      lv_is_excel   = 'X'.
+    ENDIF.
+  ENDIF.
+
+  IF lv_is_excel IS INITIAL.
+    GV_MESSAGE = 'Hanya file Excel yang diizinkan.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Get next ATT_ID
+  DATA: lv_max_att_id TYPE zecm_bom_att-att_id.
+  SELECT MAX( att_id ) FROM zecm_bom_att INTO @lv_max_att_id
+    WHERE ecr_no = @lv_ecr_no.
+
+  lv_max_att_id = lv_max_att_id + 1.
+
+  " Insert to ZECM_BOM_ATT
+  DATA: ls_bom_att TYPE zecm_bom_att.
+  CLEAR ls_bom_att.
+  ls_bom_att-mandt        = sy-mandt.
+  ls_bom_att-ecr_no       = lv_ecr_no.
+  ls_bom_att-att_id       = lv_max_att_id.
+  ls_bom_att-file_name    = lv_file_name.
+  ls_bom_att-file_ext     = lv_file_ext.
+  ls_bom_att-mime_type    = lv_mime_type.
+  ls_bom_att-file_size    = xstrlen( lv_file_bin ).
+  ls_bom_att-file_data    = lv_file_bin.
+  ls_bom_att-uploaded_by  = GV_USER_ID.
+  ls_bom_att-uploaded_at  = sy-datum.
+  ls_bom_att-uploaded_time = sy-uzeit.
+
+  INSERT zecm_bom_att FROM ls_bom_att.
+
+  IF sy-subrc = 0.
+    lv_att_count = 1.
+  ENDIF.
+
+  " Update BOM_CHECK = 'P' and status = 'BMPR' if files uploaded
+  IF lv_att_count > 0.
+    UPDATE zecm_req SET
+      status       = 'BMPR',
+      bom_check    = 'P',
+      bom_notes    = @GV_BOM_NOTES,
+      changed_date = @sy-datum,
+      changed_time = @sy-uzeit
+    WHERE ecr_no = @lv_ecr_no.
+
+    " Audit log
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+      IMPORTING number = ls_log-log_id
+      EXCEPTIONS OTHERS = 1.
+
+    IF sy-subrc = 0.
+      ls_log-mandt       = sy-mandt.
+      ls_log-ecr_no      = lv_ecr_no.
+      ls_log-action      = 'BOM_PENDING'.
+      ls_log-old_status  = lv_bom_status.
+      ls_log-new_status  = 'BMPR'.
+      ls_log-user_id     = GV_USER_ID.
+      ls_log-action_date = sy-datum.
+      ls_log-action_time = sy-uzeit.
+      ls_log-reason      = '1 file Excel uploaded'.
+      INSERT zecm_log FROM ls_log.
+    ENDIF.
+
+    GV_MESSAGE = 'File BOM berhasil di-upload. Menunggu review Master Data.'.
+    GV_ICON    = 'success'.
+  ELSE.
+    GV_MESSAGE = 'Gagal menyimpan file ke database.'.
+    GV_ICON    = 'error'.
+  ENDIF.
+
+  CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+  navigation->goto_page( lv_url ). RETURN.
+ENDIF.
+
+" DOWNLOAD BOM ATTACHMENT (binary response from ZECM_BOM_ATT)
+" ============================================================
+IF lv_action = 'download_bom'.
+  DATA: lv_dl_ecr_no TYPE zecm_bom_att-ecr_no,
+        lv_dl_att_id TYPE zecm_bom_att-att_id,
+        ls_dl_att    TYPE zecm_bom_att,
+        lv_mime_str  TYPE string,
+        lv_fname_str TYPE string.
+
+  lv_dl_ecr_no = request->get_form_field( 'ecr_no' ).
+  lv_dl_att_id = request->get_form_field( 'att_id' ).
+
+  SELECT SINGLE * FROM zecm_bom_att INTO @ls_dl_att
+    WHERE ecr_no = @lv_dl_ecr_no AND att_id = @lv_dl_att_id.
+
+  IF sy-subrc = 0.
+    lv_mime_str = ls_dl_att-mime_type.
+    lv_fname_str = ls_dl_att-file_name.
+    runtime->server->response->set_header_field(
+      name  = 'Content-Type'
+      value = lv_mime_str ).
+    runtime->server->response->set_header_field(
+      name  = 'Content-Disposition'
+      value = |attachment; filename="{ lv_fname_str }"| ).
+    runtime->server->response->set_data( data = ls_dl_att-file_data ).
+    RETURN.
+  ELSE.
+    GV_MESSAGE = 'File tidak ditemukan.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+ENDIF.
+
+" ============================================================
+" SEARCH MATERIAL (from modal â€” keep modal open)
+" ============================================================
+IF lv_action = 'search_material'.
+  LV_MAT_KEYWORD = request->get_form_field( 'keyword' ).
+  LV_MODAL_OPEN = 'X'.
+
+  IF LV_MAT_KEYWORD IS NOT INITIAL.
+    DATA: lv_q TYPE matnr, lv_qs TYPE string, lv_html TYPE string.
+    DATA: BEGIN OF ls_m,
+            matnr TYPE mara-matnr,
+            maktx TYPE makt-maktx,
+            mtart TYPE mara-mtart,
+          END OF ls_m,
+          lt_m LIKE STANDARD TABLE OF ls_m.
+
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING input  = LV_MAT_KEYWORD
+      IMPORTING output = lv_q.
+    lv_qs = LV_MAT_KEYWORD.
+    TRANSLATE lv_qs TO UPPER CASE.
+    CONCATENATE '%' lv_qs '%' INTO lv_qs.
+
+    SELECT a~matnr, b~maktx, a~mtart
+      INTO TABLE @lt_m
+      FROM mara AS a
+      INNER JOIN makt AS b ON b~matnr = a~matnr AND b~spras = @sy-langu
+      WHERE ( a~matnr = @lv_q
+         OR a~matnr LIKE @lv_qs
+         OR b~maktx LIKE @lv_qs )
+        AND a~mtart IN ( 'FERT', 'HALB', 'HALM' )
+      ORDER BY a~mtart ASCENDING, a~matnr ASCENDING.
+
+    CLEAR lv_html.
+    DATA: lv_mnr TYPE string,
+          lv_mtart_bg TYPE string,
+          lv_mtart_s TYPE string,
+          lv_maktx_safe TYPE string.
+    LOOP AT lt_m INTO ls_m.
+      lv_mnr = ls_m-matnr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING input  = lv_mnr
+        IMPORTING output = lv_mnr.
+
+      " HTML-encode maktx for safe use in data-* attributes
+      lv_maktx_safe = ls_m-maktx.
+      REPLACE ALL OCCURRENCES OF '&' IN lv_maktx_safe WITH '&amp;'.
+      REPLACE ALL OCCURRENCES OF '"' IN lv_maktx_safe WITH '&quot;'.
+
+      CLEAR lv_mtart_bg.
+      CASE ls_m-mtart.
+        WHEN 'FERT'. lv_mtart_bg = 'bg-emerald-100 text-emerald-700'. lv_mtart_s = 'Finish Goods'.
+        WHEN 'HALB'. lv_mtart_bg = 'bg-blue-100 text-blue-700'.       lv_mtart_s = 'HALB'.
+        WHEN 'HALM'. lv_mtart_bg = 'bg-orange-100 text-orange-700'.   lv_mtart_s = 'HALM'.
+        WHEN OTHERS. lv_mtart_bg = 'bg-slate-100 text-slate-700'.     lv_mtart_s = ls_m-mtart.
+      ENDCASE.
+
+      CONCATENATE lv_html
+        '<div class="flex items-center justify-between px-3 py-2 hover:bg-emerald-50 cursor-pointer border-b border-slate-100 last:border-0 mat-pick"'
+        ' data-matnr="' ls_m-matnr '"'
+        ' data-maktx="' lv_maktx_safe '">'
+        '<div>'
+        '<span class="text-[0.65rem] px-2 py-0.5 rounded font-extrabold tracking-wide ' lv_mtart_bg '">' lv_mtart_s '</span>'
+        ' <span class="text-xs text-slate-700 ml-1">' lv_mnr '</span>'
+        '<div class="text-xs text-slate-600 mt-0.5">' ls_m-maktx '</div>'
+        '</div>'
+        '<span class="text-emerald-600 text-xs font-bold">+ Pilih</span></div>'
+        INTO lv_html.
+    ENDLOOP.
+
+    IF lv_html IS INITIAL.
+      GV_MAT_RESULTS = '<div class="text-center py-3 text-slate-400 text-xs">Tidak ditemukan</div>'.
+    ELSE.
+      GV_MAT_RESULTS = lv_html.
+    ENDIF.
+  ENDIF.
+
+  " DON'T redirect â€” just fall through to OnInit + Layout
+  RETURN.
+ENDIF.
+
+" CREATE ECR (from modal â€” drafter creates new ECR)
+IF lv_action = 'create_ecr'.
+  DATA: lv_title     TYPE string,
+        lv_desc      TYPE string,
+        lv_kat       TYPE string,
+        lv_prio      TYPE string,
+        lv_cost      TYPE string,
+        lv_dept      TYPE string,
+        lv_reason    TYPE string,
+        lv_matnr_str TYPE string,
+        lv_maktx     TYPE makt-maktx,
+        ls_req       TYPE zecm_req,
+        lv_count     TYPE i VALUE 0.
+
+  lv_title     = request->get_form_field( 'title' ).
+  lv_desc      = request->get_form_field( 'description' ).
+  lv_kat       = request->get_form_field( 'kategori' ).
+  lv_prio      = request->get_form_field( 'priority' ).
+  lv_cost      = request->get_form_field( 'cost_estimate' ).
+  lv_dept      = request->get_form_field( 'dept' ).
+  lv_reason    = request->get_form_field( 'reason' ).
+  lv_matnr_str = request->get_form_field( 'materials' ).
+
+  " Validate user session (prevent empty requester/drafter)
+  IF GV_USER_ID IS INITIAL.
+    GV_USER_ID = request->get_form_field( 'u' ).
+  ENDIF.
+  IF GV_USER_ID IS INITIAL.
+    GV_MESSAGE = 'Session expired. Silakan login ulang.'. GV_ICON = 'error'.
+    navigation->goto_page( 'login.htm' ). RETURN.
+  ENDIF.
+
+  " Validation
+  IF lv_title IS INITIAL.
+    GV_MESSAGE = 'Judul wajib diisi.'. GV_ICON = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+  IF lv_matnr_str IS INITIAL.
+    GV_MESSAGE = 'Pilih material.'. GV_ICON = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+  IF lv_kat IS INITIAL OR lv_prio IS INITIAL OR lv_desc IS INITIAL OR lv_dept IS INITIAL OR lv_reason IS INITIAL.
+    GV_MESSAGE = 'Semua field wajib diisi.'. GV_ICON = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Create ECR per material
+  DATA: lt_mat TYPE STANDARD TABLE OF string,
+        ls_mat TYPE string.
+  SPLIT lv_matnr_str AT ',' INTO TABLE lt_mat.
+
+  LOOP AT lt_mat INTO ls_mat.
+    CONDENSE ls_mat NO-GAPS.
+    CHECK ls_mat IS NOT INITIAL.
+
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_REQ'
+      IMPORTING number = lv_ecr_no
+      EXCEPTIONS OTHERS = 1.
+
+    IF sy-subrc <> 0.
+      GV_MESSAGE = 'Gagal generate nomor ECR.'. GV_ICON = 'error'.
+      CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+      navigation->goto_page( lv_url ). RETURN.
+    ENDIF.
+
+    SELECT SINGLE maktx FROM makt INTO @lv_maktx
+      WHERE matnr = @ls_mat AND spras = @sy-langu.
+
+    CLEAR ls_req.
+    ls_req-mandt         = sy-mandt.
+    ls_req-ecr_no        = lv_ecr_no.
+    ls_req-matnr_fg      = ls_mat.
+    ls_req-title         = lv_title.
+    ls_req-descr         = lv_desc.
+    ls_req-kategori      = lv_kat.
+    ls_req-priority      = lv_prio.
+    ls_req-requester     = GV_USER_ID.
+    ls_req-drafter       = GV_USER_ID.
+    ls_req-status        = 'CRTD'.
+    ls_req-created_by    = GV_USER_ID.
+    ls_req-created_date  = sy-datum.
+    ls_req-created_time  = sy-uzeit.
+    ls_req-change_scope  = 'DRWG'.
+    ls_req-zdept         = lv_dept.
+    ls_req-zreason       = lv_reason.
+    IF lv_cost IS NOT INITIAL.
+      ls_req-cost_estimate = lv_cost.
+    ENDIF.
+
+    INSERT zecm_req FROM ls_req.
+
+    IF sy-subrc = 0.
+      " Audit log
+      CALL FUNCTION 'NUMBER_GET_NEXT'
+        EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+        IMPORTING number = ls_log-log_id
+        EXCEPTIONS OTHERS = 1.
+
+      IF sy-subrc = 0.
+        ls_log-mandt       = sy-mandt.
+        ls_log-ecr_no      = lv_ecr_no.
+        ls_log-action      = 'CREA'.
+        ls_log-new_status  = 'CRTD'.
+        ls_log-user_id     = GV_USER_ID.
+        ls_log-action_date = sy-datum.
+        ls_log-action_time = sy-uzeit.
+        INSERT zecm_log FROM ls_log.
+      ENDIF.
+
+      lv_count = lv_count + 1.
+    ENDIF.
+  ENDLOOP.
+
+  DATA lv_msg TYPE string.
+  lv_msg = lv_count.
+  CONCATENATE lv_msg 'ECR berhasil dibuat' INTO GV_MESSAGE SEPARATED BY ' '.
+  GV_ICON = 'success'.
+  CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+  navigation->goto_page( lv_url ).
+  RETURN.
+ENDIF.
+
+" SUBMIT ECR (INWK -> INSP) + DMS (IA -> AP)
+IF lv_action = 'submit_ecr'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+
+  IF lv_ecr_no IS INITIAL.
+    GV_MESSAGE = 'ECR tidak valid.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Cek status harus BMAP (BOM Approved) atau INWK jika dalam siklus revisi
+  DATA: lv_cur_status    TYPE zecm_req-status,
+        lv_cur_bom_check TYPE zecm_req-bom_check.
+  SELECT SINGLE status, bom_check FROM zecm_req 
+    INTO (@lv_cur_status, @lv_cur_bom_check)
+    WHERE ecr_no = @lv_ecr_no.
+
+  IF lv_cur_status <> 'BMAP' AND NOT ( lv_cur_status = 'INWK' AND ( lv_cur_bom_check = 'A' OR lv_cur_bom_check IS INITIAL ) ).
+    GV_MESSAGE = 'BOM belum di-approve Master Data. Status harus BOM Approved.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  SELECT SINGLE matnr_fg FROM zecm_req INTO @lv_matnr_conv
+    WHERE ecr_no = @lv_ecr_no.
+
+  " DMS detection — Prioritas 1: dir_number tersimpan di ECR
+  CLEAR: lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+  DATA: lv_cur_dir_sub TYPE zecm_req-dir_number.
+  SELECT SINGLE dir_number FROM zecm_req INTO @lv_cur_dir_sub WHERE ecr_no = @lv_ecr_no.
+
+  IF lv_cur_dir_sub IS NOT INITIAL.
+    DATA: lt_sub_tokens TYPE TABLE OF string,
+          lv_sub_cnt    TYPE i.
+    SPLIT lv_cur_dir_sub AT '/' INTO TABLE lt_sub_tokens.
+    DESCRIBE TABLE lt_sub_tokens LINES lv_sub_cnt.
+    IF lv_sub_cnt >= 2.
+      READ TABLE lt_sub_tokens INDEX 1 INTO lv_dokar.
+      READ TABLE lt_sub_tokens INDEX 2 INTO lv_doknr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING  input  = lv_doknr
+        IMPORTING  output = lv_doknr.
+
+      SELECT SINGLE dokvr, doktl, dokst
+        FROM draw
+        INTO (@lv_dokvr, @lv_doktl, @lv_dokst)
+        WHERE dokar = @lv_dokar
+          AND doknr = @lv_doknr.
+    ENDIF.
+  ENDIF.
+
+  " DMS detection — Prioritas 2: targeted DRAD query by material
+  IF lv_doknr IS INITIAL OR lv_dokvr IS INITIAL.
+    CLEAR: lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
+    " Try without ALPHA first (DRAD might store without leading zeros)
+    SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+      INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+      FROM drad AS a
+      INNER JOIN draw AS b
+        ON a~dokar = b~dokar
+       AND a~doknr = b~doknr
+       AND a~dokvr = b~dokvr
+       AND a~doktl = b~doktl
+      WHERE a~objky = @lv_matnr_conv
+        AND a~dokob = 'MARA'
+        AND a~dokar IN ('DRW', 'DBX', 'DMT')
+        AND b~dokst = 'IA'.
+
+    " Fallback: try with ALPHA_INPUT (if DRAD stores with leading zeros)
+    IF sy-subrc <> 0.
+      DATA: lv_matnr_alpha_sub TYPE matnr.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING  input  = lv_matnr_conv
+        IMPORTING  output = lv_matnr_alpha_sub.
+
+      SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+        INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
+        FROM drad AS a
+        INNER JOIN draw AS b
+          ON a~dokar = b~dokar
+         AND a~doknr = b~doknr
+         AND a~dokvr = b~dokvr
+         AND a~doktl = b~doktl
+        WHERE a~objky = @lv_matnr_alpha_sub
+          AND a~dokob = 'MARA'
+          AND a~dokar IN ('DRW', 'DBX', 'DMT')
+          AND b~dokst = 'IA'.
+    ENDIF.
+  ENDIF.
+
+  IF lv_doknr IS INITIAL.
+    GV_MESSAGE = 'DMS belum terdeteksi. Pastikan dokumen sudah di-upload dengan status In Work.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Ubah status DMS: IA -> AP (hanya jika saat ini masih IA)
+  IF lv_dokst = 'IA'.
+    CLEAR: ls_doc_data, ls_doc_datax, ls_return.
+    ls_doc_data-statusintern  = 'AP'.
+    ls_doc_datax-statusintern = 'X'.
+
+    CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+      EXPORTING
+        documenttype    = lv_dokar
+        documentnumber  = lv_doknr
+        documentpart    = lv_doktl
+        documentversion = lv_dokvr
+        documentdata    = ls_doc_data
+        documentdatax   = ls_doc_datax
+      IMPORTING
+        return          = ls_return.
+
+    IF ls_return-type CA 'EA'.
+      GV_MESSAGE = |Gagal update DMS: { ls_return-message }|.
+      GV_ICON    = 'error'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      RETURN.
+    ENDIF.
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING wait = 'X'.
+  ENDIF.
+
+  " Update ECR: INWK -> INSP
+  " Remove leading zeros from doknr before storing
+  DATA: lv_doknr_clean TYPE string.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING  input  = lv_doknr
+    IMPORTING  output = lv_doknr_clean.
+  CONCATENATE lv_dokar '/' lv_doknr_clean INTO lv_dir_number.
+
+  SELECT SINGLE status FROM zecm_req INTO @lv_old_status
+    WHERE ecr_no = @lv_ecr_no.
+
+  UPDATE zecm_req SET
+    status       = 'INSP',
+    dir_number   = @lv_dir_number,
+    changed_date = @sy-datum,
+    changed_time = @sy-uzeit
+  WHERE ecr_no = @lv_ecr_no.
+
+  " Log
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_LOG'
+    IMPORTING
+      number      = ls_log-log_id.
+
+  ls_log-mandt       = sy-mandt.
+  ls_log-ecr_no      = lv_ecr_no.
+  ls_log-action      = 'INSP'.
+  ls_log-old_status  = lv_old_status.
+  ls_log-new_status  = 'INSP'.
+  ls_log-user_id     = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason      = lv_dir_number.
+
+  INSERT zecm_log FROM @ls_log.
+
+  GV_MESSAGE = 'ECR berhasil disubmit. Menunggu review approver.'.
+  GV_ICON    = 'success'.
+  CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+  navigation->goto_page( lv_url ).
+  RETURN.
+
+" REJECT ECR (INWK -> REJC with reason)
+" ============================================================
+" SKIP BOM (CRTD/INWK -> BMAP directly)
+" ============================================================
+ELSEIF lv_action = 'skip_bom'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  
+  IF lv_ecr_no IS NOT INITIAL.
+    SELECT SINGLE * FROM zecm_req INTO ls_req WHERE ecr_no = lv_ecr_no.
+    IF sy-subrc = 0.
+      lv_old_status = ls_req-status.
+      ls_req-status       = 'BMAP'.
+      ls_req-bom_check    = 'A'.
+      ls_req-bom_notes    = 'BOM Skipped - Tidak ada perubahan BOM'.
+      ls_req-changed_date = sy-datum.
+      ls_req-changed_time = sy-uzeit.
+      MODIFY zecm_req FROM ls_req.
+
+      " Catat log ECR: Action=BOM_SKIP, Note=BOM tidak berubah
+      CLEAR ls_log.
+      ls_log-ecr_no = lv_ecr_no.
+      ls_log-action = 'BOM_SKIP'.
+      ls_log-old_status = lv_old_status.
+      ls_log-new_status = 'BMAP'.
+      ls_log-user_id = GV_USER_ID.
+      ls_log-action_date = sy-datum.
+      ls_log-action_time = sy-uzeit.
+      ls_log-reason = 'Tidak ada perubahan BOM'.
+
+      CALL FUNCTION 'NUMBER_GET_NEXT'
+        EXPORTING nr_range_nr = '01' object = 'ZECM_LOGNR'
+        IMPORTING number = ls_log-log_id
+        EXCEPTIONS OTHERS = 1.
+      IF sy-subrc = 0.
+        MODIFY zecm_log FROM ls_log.
+      ENDIF.
+
+      CONCATENATE 'BOM untuk ECR' lv_ecr_no 'dilewati. ECR siap disubmit.' INTO GV_MESSAGE SEPARATED BY space.
+      GV_ICON = 'success'.
+    ELSE.
+      GV_MESSAGE = 'Gagal menemukan ECR.'.
+      GV_ICON = 'error'.
+    ENDIF.
+  ENDIF.
+
+  CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON '&ecr_detail=' lv_ecr_no INTO lv_url.
+  navigation->goto_page( lv_url ).
+  RETURN.
+
+" CANCEL UPLOAD BOM (BMPR -> INWK)
+" ============================================================
+ELSEIF lv_action = 'cancel_upload_bom'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+
+  IF lv_ecr_no IS INITIAL.
+    GV_MESSAGE = 'ECR tidak valid.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Cek status harus BMPR (BOM Pending)
+  SELECT SINGLE status FROM zecm_req INTO @lv_old_status
+    WHERE ecr_no = @lv_ecr_no.
+  IF lv_old_status <> 'BMPR'.
+    GV_MESSAGE = 'Hanya status BOM Pending yang bisa dibatalkan upload-nya.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Hapus attachment lama
+  DELETE FROM zecm_bom_att WHERE ecr_no = lv_ecr_no.
+
+  " Balikkan status ke INWK dan kosongkan bom_check + bom_notes
+  UPDATE zecm_req SET
+    status       = 'INWK',
+    bom_check    = ' ',
+    bom_notes    = ' ',
+    changed_date = @sy-datum,
+    changed_time = @sy-uzeit
+  WHERE ecr_no = @lv_ecr_no.
+
+  " Log
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_LOG'
+    IMPORTING
+      number      = ls_log-log_id.
+
+  ls_log-mandt       = sy-mandt.
+  ls_log-ecr_no      = lv_ecr_no.
+  ls_log-action      = 'BOM_UND_UPLD'.
+  ls_log-old_status  = 'BMPR'.
+  ls_log-new_status  = 'INWK'.
+  ls_log-user_id     = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason      = 'Drafter membatalkan upload BOM'.
+
+  INSERT zecm_log FROM @ls_log.
+
+  GV_MESSAGE = 'Upload BOM dibatalkan. Status dikembalikan ke In Work.'.
+  GV_ICON    = 'success'.
+  CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+  navigation->goto_page( lv_url ).
+  RETURN.
+
+ELSEIF lv_action = 'reject_ecr'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+  DATA: lv_reject_reason TYPE string.
+  lv_reject_reason = request->get_form_field( 'reason' ).
+
+  IF lv_ecr_no IS INITIAL.
+    GV_MESSAGE = 'ECR tidak valid.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF lv_reject_reason IS INITIAL.
+    GV_MESSAGE = 'Alasan reject wajib diisi!'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Baca status terkini sebelum diubah
+  SELECT SINGLE status FROM zecm_req INTO @lv_old_status
+    WHERE ecr_no = @lv_ecr_no.
+  IF lv_old_status IS INITIAL.
+    lv_old_status = 'INWK'.
+  ENDIF.
+
+  " Update ECR status to REJC
+  UPDATE zecm_req SET
+    status         = 'REJC',
+    reject_reason  = @lv_reject_reason,
+    changed_date   = @sy-datum,
+    changed_time   = @sy-uzeit
+  WHERE ecr_no = @lv_ecr_no.
+
+  IF sy-subrc = 0.
+    " Log
+    DATA: ls_rej_log TYPE zecm_log.
+    CALL FUNCTION 'NUMBER_GET_NEXT'
+      EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+      IMPORTING number = ls_rej_log-log_id.
+    ls_rej_log-ecr_no      = lv_ecr_no.
+    ls_rej_log-action      = 'REJT'.
+    ls_rej_log-old_status  = lv_old_status.
+    ls_rej_log-new_status  = 'REJC'.
+    ls_rej_log-user_id     = GV_USER_ID.
+    ls_rej_log-action_date = sy-datum.
+    ls_rej_log-action_time = sy-uzeit.
+    ls_rej_log-reason      = lv_reject_reason.
+    INSERT zecm_log FROM ls_rej_log.
+
+    CONCATENATE 'ECR' lv_ecr_no 'ditolak (' lv_old_status '-> REJC)'
+      INTO GV_MESSAGE SEPARATED BY ' '.
+    GV_ICON = 'success'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ).
+    RETURN.
+  ELSE.
+    CONCATENATE 'Gagal reject ECR' lv_ecr_no INTO GV_MESSAGE SEPARATED BY ' '.
+    GV_ICON = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ).
+    RETURN.
+  ENDIF.
+  RETURN.
+
+" CANCEL ECR (INWK -> CRTD)
+ELSEIF lv_action = 'cancel_ecr'.
+  lv_ecr_no = request->get_form_field( 'ecr_no' ).
+
+  IF lv_ecr_no IS INITIAL.
+    GV_MESSAGE = 'ECR tidak valid.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  SELECT SINGLE status FROM zecm_req INTO @lv_old_status
+    WHERE ecr_no = @lv_ecr_no.
+
+  IF lv_old_status <> 'INWK' AND lv_old_status <> 'BMPR'.
+    GV_MESSAGE = 'Hanya ECR dengan status In Work atau BOM Pending yang bisa dibatalkan.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  UPDATE zecm_req SET
+    status       = 'CRTD',
+    bom_check    = ' ',
+    dokar        = ' ',
+    changed_date = @sy-datum,
+    changed_time = @sy-uzeit
+  WHERE ecr_no = @lv_ecr_no.
+
+  " Log
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZECM_LOG'
+    IMPORTING
+      number      = ls_log-log_id.
+
+  ls_log-mandt       = sy-mandt.
+  ls_log-ecr_no      = lv_ecr_no.
+  ls_log-action      = 'CANC'.
+  ls_log-old_status  = 'INWK'.
+  ls_log-new_status  = 'CRTD'.
+  ls_log-user_id     = GV_USER_ID.
+  ls_log-action_date = sy-datum.
+  ls_log-action_time = sy-uzeit.
+  ls_log-reason      = 'Drafter membatalkan pengerjaan ECR'.
+
+  INSERT zecm_log FROM @ls_log.
+
+  GV_MESSAGE = 'ECR berhasil dibatalkan. Status dikembalikan ke Draft.'.
+  GV_ICON    = 'success'.
+  CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+  navigation->goto_page( lv_url ).
+  RETURN.
+
+ENDIF.
+
+" ============================================================
+" UPLOAD DMS AJAX (BACKGROUND UPLOAD BROWSER - SINGLE FILE)
+" ============================================================
+IF lv_action = 'upload_dms_ajax'.
+  DATA: lv_ajax_dms_ecr_no   TYPE numc10,
+        lv_ajax_dms_matnr    TYPE matnr,
+        lv_ajax_dms_dokar    TYPE dokar,
+        lv_ajax_dms_filename TYPE string,
+        lv_ajax_dms_filebin  TYPE xstring,
+        lo_ajax_dms_entity   TYPE REF TO if_http_entity,
+        lv_ajax_dms_jobname  TYPE tbtcjob-jobname.
+
+  lv_ajax_dms_jobname = 'ZECM_DMS_UPLOAD'.
+  lv_ajax_dms_ecr_no = request->get_form_field( 'dms_ecr_no' ).
+
+  SELECT SINGLE matnr_fg, kategori FROM zecm_req 
+    INTO (@lv_ajax_dms_matnr, @lv_ajax_dms_dokar) 
+    WHERE ecr_no = @lv_ajax_dms_ecr_no.
+
+  IF sy-subrc <> 0.
+    _m_response->set_content_type( 'application/json' ).
+    _m_response->set_cdata( '{"status":"error","message":"Data ECR tidak valid."}' ).
+    navigation->response_complete( ).
+    RETURN.
+  ENDIF.
+
+  DATA: lv_ajax_numparts TYPE i,
+        lv_ajax_idx      TYPE i.
+  lv_ajax_numparts = request->num_multiparts( ).
+  lv_ajax_idx = 1.
+  WHILE lv_ajax_idx <= lv_ajax_numparts.
+    lo_ajax_dms_entity = request->get_multipart( lv_ajax_idx ).
+    IF lo_ajax_dms_entity->get_header_field( 'content-disposition' ) CS 'name="dms_file"'.
+    lv_ajax_dms_filebin = lo_ajax_dms_entity->get_data( ).
+    lv_ajax_dms_filename = lo_ajax_dms_entity->get_header_field( '~content_filename' ).
+
+    IF lv_ajax_dms_filename IS NOT INITIAL AND lv_ajax_dms_filebin IS INITIAL.
+      _m_response->set_content_type( 'application/json' ).
+      _m_response->set_cdata( '{"status":"error","message":"File kosong (0 bytes) tidak dapat diproses."}' ).
+      navigation->response_complete( ).
+      RETURN.
+    ENDIF.
+
+    IF lv_ajax_dms_filebin IS NOT INITIAL AND lv_ajax_dms_filename IS NOT INITIAL.
+      DATA: lv_ajax_final_filename TYPE string,
+            lv_ajax_al11_path      TYPE string.
+      
+      CONCATENATE lv_ajax_dms_dokar '_' lv_ajax_dms_matnr '_' lv_ajax_dms_filename INTO lv_ajax_final_filename.
+      CONCATENATE '/mnt/sap_media/engineering/' lv_ajax_final_filename INTO lv_ajax_al11_path.
+      
+      OPEN DATASET lv_ajax_al11_path FOR OUTPUT IN BINARY MODE.
+      IF sy-subrc = 0.
+        TRANSFER lv_ajax_dms_filebin TO lv_ajax_al11_path.
+        CLOSE DATASET lv_ajax_al11_path.
+
+        " Jalankan ZECM_DMS_UPLOAD untuk file ini
+        SUBMIT zecm_dms_upload
+          WITH p_dir = '/mnt/sap_media/engineering'
+          WITH p_test = space
+          WITH p_maxlv = 150
+          WITH p_werks = '1000'
+          WITH p_wer2 = '2000'
+          EXPORTING LIST TO MEMORY
+          AND RETURN.
+
+        TYPES: BEGIN OF ty_ajax_log,
+                 file   TYPE string,
+                 doknr  TYPE draw-doknr,
+                 dokvr  TYPE draw-dokvr,
+                 dokar  TYPE draw-dokar,
+                 ctcode TYPE c LENGTH 6,
+                 status TYPE c LENGTH 10,
+                 msgty  TYPE c LENGTH 1,
+                 msgid  TYPE symsgid,
+                 msgno  TYPE symsgno,
+                 msgv1  TYPE symsgv,
+                 msgv2  TYPE symsgv,
+                 msgv3  TYPE symsgv,
+                 msgv4  TYPE symsgv,
+                 msg    TYPE string,
+               END OF ty_ajax_log.
+        DATA: lt_ajax_log TYPE STANDARD TABLE OF ty_ajax_log,
+              ls_ajax_log TYPE ty_ajax_log.
+        
+        IMPORT log = lt_ajax_log FROM MEMORY ID 'ZECM_DMS_LOG'.
+        FREE MEMORY ID 'ZECM_DMS_LOG'.
+
+        IF lt_ajax_log IS INITIAL.
+          _m_response->set_content_type( 'application/json' ).
+          _m_response->set_cdata( '{"status":"error","message":"Gagal dieksekusi SAP (Tidak ada log)"}' ).
+          navigation->response_complete( ).
+          RETURN.
+        ELSE.
+          DATA: lv_ajax_err_msg TYPE string,
+                lv_ajax_success TYPE abap_bool VALUE abap_false,
+                lv_ajax_error   TYPE abap_bool VALUE abap_false,
+                  lv_ajax_ret_doknr TYPE string.
+
+          LOOP AT lt_ajax_log INTO ls_ajax_log.
+            " Hanya baca log yang berkaitan dengan file ini
+            IF ls_ajax_log-file CS lv_ajax_final_filename OR lv_ajax_final_filename CS ls_ajax_log-file.
+              IF ls_ajax_log-msgty = 'E' OR ls_ajax_log-status = 'ERROR' OR ls_ajax_log-status = 'SKIP'.
+                lv_ajax_error = abap_true.
+                lv_ajax_err_msg = ls_ajax_log-msg.
+              ELSE.
+                lv_ajax_success = abap_true.
+                  lv_ajax_ret_doknr = ls_ajax_log-doknr.
+                ENDIF.
+            ENDIF.
+          ENDLOOP.
+
+          IF lv_ajax_error = abap_true.
+            " Hilangkan karakter yang bisa merusak format JSON
+            REPLACE ALL OCCURRENCES OF '"' IN lv_ajax_err_msg WITH space.
+            REPLACE ALL OCCURRENCES OF '\' IN lv_ajax_err_msg WITH space.
+            DATA: lv_json_err TYPE string.
+            CONCATENATE '{"status":"error","message":"' lv_ajax_err_msg '"}' INTO lv_json_err.
+            _m_response->set_content_type( 'application/json' ).
+            _m_response->set_cdata( lv_json_err ).
+            navigation->response_complete( ).
+            RETURN.
+          ELSEIF lv_ajax_success = abap_true.
+            _m_response->set_content_type( 'application/json' ).
+            DATA: lv_json_succ TYPE string.
+              CONCATENATE '{"status":"success","message":"Berhasil","doknr":"' lv_ajax_ret_doknr '"}' INTO lv_json_succ.
+              _m_response->set_cdata( lv_json_succ ).
+            navigation->response_complete( ).
+            RETURN.
+          ELSE.
+            _m_response->set_content_type( 'application/json' ).
+            _m_response->set_cdata( '{"status":"error","message":"File tidak diproses oleh program SAP"}' ).
+            navigation->response_complete( ).
+            RETURN.
+          ENDIF.
+        ENDIF.
+      ELSE.
+        _m_response->set_content_type( 'application/json' ).
+        _m_response->set_cdata( '{"status":"error","message":"Gagal menulis file ke direktori SAP"}' ).
+        navigation->response_complete( ).
+        RETURN.
+      ENDIF.
+    ENDIF.
+    ENDIF.
+    lv_ajax_idx = lv_ajax_idx + 1.
+  ENDWHILE.
+ENDIF.
+
+" ============================================================
+" UPLOAD DMS (DIRECT UPLOAD TO KPRO & BOM VIA ZUPLOAD_CS_AUTO)
+" ============================================================
+IF lv_action = 'upload_dms'.
+  DATA: lv_dms_ecr_no   TYPE numc10,
+        lv_dms_matnr    TYPE matnr,
+        lv_dms_dokar    TYPE dokar,
+        lv_dms_filename TYPE string,
+        lv_dms_filebin  TYPE xstring,
+        lo_dms_entity   TYPE REF TO if_http_entity,
+        lv_dms_numparts TYPE i,
+        lv_dms_idx      TYPE i,
+        lv_dms_jobname  TYPE tbtcjob-jobname,
+        lv_dms_jobcount TYPE tbtcjob-jobcount.
+
+  lv_dms_jobname = 'ZECM_DMS_UPLOAD'.
+
+  lv_dms_ecr_no = request->get_form_field( 'dms_ecr_no' ).
+
+  " Ambil matnr dan dokar otomatis dari database ECR
+  SELECT SINGLE matnr_fg, kategori FROM zecm_req 
+    INTO (@lv_dms_matnr, @lv_dms_dokar) 
+    WHERE ecr_no = @lv_dms_ecr_no.
+
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Data ECR tidak valid atau tidak ditemukan.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Handle Multipart file
+  DATA: lv_success_file_cnt TYPE i VALUE 0.
+  
+  lv_dms_numparts = request->num_multiparts( ).
+  lv_dms_idx = 1.
+  WHILE lv_dms_idx <= lv_dms_numparts.
+    lo_dms_entity = request->get_multipart( lv_dms_idx ).
+    IF lo_dms_entity->get_header_field( 'content-disposition' ) CS 'name="dms_file"'.
+      lv_dms_filebin = lo_dms_entity->get_data( ).
+      lv_dms_filename = lo_dms_entity->get_header_field( '~content_filename' ).
+      
+      IF lv_dms_filebin IS NOT INITIAL AND lv_dms_filename IS NOT INITIAL.
+        " Format nama file agar sesuai standard ZUPLOAD_CS_AUTO (Contoh: DRW_30013196_filename.dwg)
+        DATA: lv_final_filename TYPE string,
+              lv_al11_path      TYPE string.
+        
+        CONCATENATE lv_dms_dokar '_' lv_dms_matnr '_' lv_dms_filename INTO lv_final_filename.
+        CONCATENATE '/mnt/sap_media/engineering/' lv_final_filename INTO lv_al11_path.
+      
+        " Simpan ke AL11
+        OPEN DATASET lv_al11_path FOR OUTPUT IN BINARY MODE.
+        IF sy-subrc = 0.
+          TRANSFER lv_dms_filebin TO lv_al11_path.
+          CLOSE DATASET lv_al11_path.
+          lv_success_file_cnt = lv_success_file_cnt + 1.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    lv_dms_idx = lv_dms_idx + 1.
+  ENDWHILE.
+
+  " Pengecekan
+  IF lv_success_file_cnt = 0.
+    GV_MESSAGE = 'File gagal ditangkap. Pastikan ukuran tidak melebihi batas server.'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
+  " Jalankan ZECM_DMS_UPLOAD secara SYNCHRONOUS untuk memproses semua file yang sudah dikirim ke AL11
+  SUBMIT zecm_dms_upload
+    WITH p_dir = '/mnt/sap_media/engineering'
+    WITH p_test = space
+    WITH p_maxlv = 150
+    WITH p_werks = '1000'
+    WITH p_wer2 = '2000'
+    EXPORTING LIST TO MEMORY
+    AND RETURN.
+
+  TYPES: BEGIN OF ty_log,
+           file   TYPE string,
+           doknr  TYPE draw-doknr,
+           dokvr  TYPE draw-dokvr,
+           dokar  TYPE draw-dokar,
+           ctcode TYPE c LENGTH 6,
+           status TYPE c LENGTH 10,
+           msgty  TYPE c LENGTH 1,
+           msgid  TYPE symsgid,
+           msgno  TYPE symsgno,
+           msgv1  TYPE symsgv,
+           msgv2  TYPE symsgv,
+           msgv3  TYPE symsgv,
+           msgv4  TYPE symsgv,
+           msg    TYPE string,
+         END OF ty_log.
+  DATA: lt_upload_log TYPE STANDARD TABLE OF ty_log,
+        ls_upload_log TYPE ty_log.
+
+  IMPORT log = lt_upload_log FROM MEMORY ID 'ZECM_DMS_LOG'.
+  FREE MEMORY ID 'ZECM_DMS_LOG'.
+
+  IF lt_upload_log IS INITIAL.
+    GV_MESSAGE = 'File gagal diproses SAP (ZECM_DMS_UPLOAD gagal dieksekusi atau tidak mengirim respon memori).'.
+    GV_ICON    = 'error'.
+  ELSE.
+    DATA: lv_err_cnt TYPE i VALUE 0,
+          lv_suc_cnt TYPE i VALUE 0,
+          lv_err_msg TYPE string.
+
+    LOOP AT lt_upload_log INTO ls_upload_log.
+      IF ls_upload_log-msgty = 'E' OR ls_upload_log-status = 'ERROR' OR ls_upload_log-status = 'SKIP'.
+        lv_err_cnt = lv_err_cnt + 1.
+        IF lv_err_msg IS INITIAL.
+          lv_err_msg = ls_upload_log-msg.
+        ENDIF.
+      ELSE.
+        lv_suc_cnt = lv_suc_cnt + 1.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_err_cnt > 0.
+      GV_MESSAGE = |Upload Selesai: { lv_suc_cnt } Sukses, { lv_err_cnt } Gagal ({ lv_err_msg })|.
+      GV_ICON    = 'warning'.
+    ELSE.
+      GV_MESSAGE = |{ lv_suc_cnt } File berhasil di-upload dan terintegrasi ke BOM!|.
+      GV_ICON    = 'success'.
+    ENDIF.
+  ENDIF.
+
+  " Bersihkan karakter kutip agar tidak merusak Syntax JavaScript di UI
+  REPLACE ALL OCCURRENCES OF '''' IN GV_MESSAGE WITH space.
+  REPLACE ALL OCCURRENCES OF '|' IN GV_MESSAGE WITH space.
+  REPLACE ALL OCCURRENCES OF '"' IN GV_MESSAGE WITH space.
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN GV_MESSAGE WITH space.
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN GV_MESSAGE WITH space.
+
+  CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+  navigation->goto_page( lv_url ). RETURN.
+ENDIF.
+
+CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME INTO lv_url.
+navigation->goto_page( lv_url ).
+
+
+
+

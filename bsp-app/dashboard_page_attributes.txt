@@ -1,0 +1,11 @@
+DATA:
+  GV_USER_ID     TYPE string,
+  GV_FULL_NAME   TYPE string,
+  GV_ROLE        TYPE string,
+  GV_TOTAL_USERS TYPE i,
+  GV_TOTAL_ECR   TYPE i,
+  GV_ECR_CRTD    TYPE i,
+  GV_ECR_INWK    TYPE i,
+  GV_ECR_APRV    TYPE i,
+  GV_ECR_CLSD    TYPE i,
+  GV_ECR_REJECTED TYPE i.

@@ -1,0 +1,46 @@
+﻿GV_USER_ID   = request->get_form_field( 'u' ).
+GV_FULL_NAME = request->get_form_field( 'n' ).
+GV_ROLE      = request->get_form_field( 'r' ).
+
+IF GV_USER_ID IS INITIAL.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+IF GV_ROLE <> 'SUPERADMIN' AND GV_ROLE <> 'ADMIN'.
+  DATA: lv_dash_url TYPE string.
+  IF GV_ROLE = 'REQUESTER'.
+    CONCATENATE 'requester_list.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO lv_dash_url.
+    navigation->goto_page( lv_dash_url ).
+  ELSEIF GV_ROLE = 'DRAFTER'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO lv_dash_url.
+    navigation->goto_page( lv_dash_url ).
+  ELSEIF GV_ROLE = 'MASTER_DATA'.
+    CONCATENATE 'master_data_dashboard.htm?u=' GV_USER_ID
+      '&r=' GV_ROLE '&n=' GV_FULL_NAME
+      INTO lv_dash_url.
+    navigation->goto_page( lv_dash_url ).
+  ELSE.
+    DATA: lv_err TYPE string,
+          lv_temp_err TYPE string.
+    lv_temp_err = 'Role tidak dikenali oleh dashboard: ' && GV_ROLE.
+    lv_err = cl_http_utility=>escape_url( unescaped = lv_temp_err ).
+    CONCATENATE 'login.htm?msg=' lv_err INTO DATA(lv_dash_err).
+    navigation->goto_page( lv_dash_err ).
+  ENDIF.
+  RETURN.
+ENDIF.
+
+SELECT COUNT( * ) INTO @GV_TOTAL_USERS
+  FROM zecm_user WHERE zecm_active = 'Y'.
+
+SELECT COUNT( * ) INTO @GV_TOTAL_ECR FROM zecm_req.
+SELECT COUNT( * ) INTO @GV_ECR_CRTD  FROM zecm_req WHERE status = 'CRTD'.
+SELECT COUNT( * ) INTO @GV_ECR_INWK  FROM zecm_req WHERE status = 'INWK'.
+SELECT COUNT( * ) INTO @GV_ECR_APRV  FROM zecm_req WHERE status = 'APPR'.
+SELECT COUNT( * ) INTO @GV_ECR_CLSD  FROM zecm_req WHERE status = 'CLSD'.
+SELECT COUNT( * ) INTO @GV_ECR_REJECTED FROM zecm_req WHERE status = 'REJT'.

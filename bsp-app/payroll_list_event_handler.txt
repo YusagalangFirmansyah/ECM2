@@ -1,0 +1,136 @@
+" =======================================================================
+" Event Handler — payroll_list.htm
+" V10_a: Costing Dashboard
+" =======================================================================
+
+DATA: LV_ACTION      TYPE string,
+      LV_IROUTING_ID TYPE string,
+      LV_REASON      TYPE string,
+      WA_ROUTING     TYPE zecm_req,
+      WA_LOG         TYPE zecm_log,
+      LV_DATE        TYPE d,
+      LV_TIME        TYPE t,
+      LV_URL         TYPE string.
+
+LV_ACTION = request->get_form_field( 'OnInputProcessing' ).
+LV_DATE = sy-datum.
+LV_TIME = sy-uzeit.
+
+IF LV_ACTION = 'logout'.
+  navigation->goto_page( 'login.htm' ).
+  RETURN.
+ENDIF.
+
+IF LV_ACTION = 'download_att'.
+  DATA: ls_dl_att TYPE zecm_bom_att,
+        lv_dl_att_id TYPE zecm_bom_att-att_id,
+        lv_dl_att_str TYPE string.
+        
+  lv_dl_att_str = request->get_form_field( 'ireq_id' ). 
+  lv_dl_att_id = lv_dl_att_str.
+  
+  SELECT SINGLE * FROM zecm_bom_att INTO @ls_dl_att WHERE att_id = @lv_dl_att_id.
+  IF sy-subrc = 0.
+    DATA: lv_content_type TYPE string.
+    lv_content_type = ls_dl_att-mime_type.
+    
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Type'
+        value = lv_content_type.
+        
+    CONCATENATE 'attachment; filename="' ls_dl_att-file_name '"' INTO DATA(lv_disp).
+    CALL METHOD _m_response->set_header_field
+      EXPORTING
+        name  = 'Content-Disposition'
+        value = lv_disp.
+        
+    CALL METHOD _m_response->set_data
+      EXPORTING
+        data = ls_dl_att-file_data.
+        
+    navigation->response_complete( ).
+    RETURN.
+  ENDIF.
+ENDIF.
+
+IF LV_ACTION = 'approve_routing' OR LV_ACTION = 'reject_routing'.
+  DATA: LV_ROUT_NUM TYPE numc10.
+  LV_IROUTING_ID = request->get_form_field( 'irouting_id' ).
+  " Convert to NUMC with leading zeros
+  LV_ROUT_NUM = LV_IROUTING_ID.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING input  = LV_ROUT_NUM
+    IMPORTING output = LV_ROUT_NUM.
+  LV_IROUTING_ID = LV_ROUT_NUM.
+  LV_REASON      = request->get_form_field( 'reject_reason' ).
+
+  IF LV_IROUTING_ID IS INITIAL.
+    GV_MESSAGE = 'ID Request tidak ditemukan.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  SELECT SINGLE * FROM zecm_req INTO WA_ROUTING WHERE ecr_no = LV_IROUTING_ID AND change_scope = 'ROUT'.
+  IF sy-subrc <> 0.
+    GV_MESSAGE = 'Data Request tidak ditemukan di database.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF WA_ROUTING-status <> 'COST'.
+    GV_MESSAGE = 'Request sudah diproses oleh user lain.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF LV_ACTION = 'reject_routing' AND LV_REASON IS INITIAL.
+    GV_MESSAGE = 'Alasan penolakan wajib diisi!'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Update status
+  DATA: lv_old_status TYPE string, lv_new_status TYPE string.
+  lv_old_status = WA_ROUTING-status.
+  
+  IF LV_ACTION = 'approve_routing'.
+    WA_ROUTING-status = 'PAYR'. " Passed Costing, waiting for Payroll
+    lv_new_status = 'PAYR'.
+    GV_MESSAGE = 'Request ' && LV_IROUTING_ID && ' disetujui (diteruskan ke Master Data).'.
+    GV_ICON = 'success'.
+  ELSE.
+    WA_ROUTING-status = 'REJC'.
+    lv_new_status = 'REJC'.
+    GV_MESSAGE = 'Request ' && LV_IROUTING_ID && ' ditolak.'.
+    GV_ICON = 'success'.
+  ENDIF.
+
+  UPDATE zecm_req FROM WA_ROUTING.
+
+  " Insert Log
+  CLEAR WA_LOG.
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING nr_range_nr = '01' object = 'ZECM_LOG'
+    IMPORTING number = WA_LOG-log_id
+    EXCEPTIONS OTHERS = 1.
+  WA_LOG-ecr_no       = LV_IROUTING_ID.
+  IF LV_ACTION = 'approve_routing'.
+    WA_LOG-action     = 'APPR'.
+    WA_LOG-reason     = 'Disetujui oleh Payroll'.
+  ELSE.
+    WA_LOG-action     = 'REJC'.
+    WA_LOG-reason     = LV_REASON.
+  ENDIF.
+  WA_LOG-old_status   = lv_old_status.
+  WA_LOG-new_status   = lv_new_status.
+  WA_LOG-user_id      = GV_USER_ID.
+  WA_LOG-action_date  = LV_DATE.
+  WA_LOG-action_time  = LV_TIME.
+  WA_LOG-is_ireq      = ''.  " Routing logs in ZECM_REQ
+  INSERT zecm_log FROM WA_LOG.
+
+  CONCATENATE 'payroll_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE INTO LV_URL.
+  navigation->goto_page( LV_URL ).
+  RETURN.
+ENDIF.

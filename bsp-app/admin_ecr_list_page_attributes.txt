@@ -1,0 +1,21 @@
+GV_USER_ID     TYPE string
+GV_FULL_NAME   TYPE string
+GV_ROLE        TYPE string
+GV_MESSAGE     TYPE string
+GV_ICON        TYPE string
+LV_FILTER      TYPE string
+LV_DATE_FILTER TYPE string
+LV_DATE_FROM   TYPE sy-datum
+LV_DATE_TO     TYPE sy-datum
+LV_ECR_DETAIL  TYPE numc10
+LV_LAST_DATE   TYPE sy-datum
+LS_ECR         TYPE ty_ecr_with_maktx
+LT_ECRS        TYPE tt_ecr_with_maktx
+LS_ECR_DETAIL  TYPE ty_ecr_with_maktx
+LT_LOGS        TYPE tt_log
+LS_LOG         TYPE ty_log
+
+" Material History Search
+GV_MAT_SEARCH         TYPE string
+GV_MAT_HISTORY_HTML   TYPE string
+GV_REQUESTER_OPTIONS  TYPE string

@@ -1,0 +1,1474 @@
+﻿<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approver Dashboard - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    window.GV_USER_ID = '<%= GV_USER_ID %>';
+    window.GV_ROLE = '<%= GV_ROLE %>';
+    window.GV_FULL_NAME = '<%= GV_FULL_NAME %>';
+    window.LV_FILTER = '<%= LV_FILTER %>';
+    window.GV_DATE_FROM = '<%= GV_DATE_FROM %>';
+    window.GV_DATE_TO = '<%= GV_DATE_TO %>';
+    window.MV_ICON = '<%= MV_ICON %>';
+    window.MV_MESSAGE = '<%= MV_MESSAGE %>';
+    window.GV_MAT_SEARCH = '<%= GV_MAT_SEARCH %>';
+    window.GV_FILTER_IREQ = '<%= GV_FILTER_IREQ %>';
+  </script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+    @keyframes badgeGlow {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.6);
+        border-color: #93c5fd;
+      }
+      50% {
+        box-shadow: 0 0 0 6px rgba(37, 99, 235, 0);
+        border-color: #bfdbfe;
+      }
+    }
+    .ecr-pulse-badge {
+      animation: badgeGlow 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+    @keyframes rowPulse {
+      0%, 100% {
+        background-color: #eff6ff;
+        box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6;
+      }
+      50% {
+        background-color: #dbeafe;
+        box-shadow: inset 0 2px 0 0 #93c5fd, inset 0 -2px 0 0 #93c5fd;
+      }
+    }
+    .ecr-need-approval td {
+      animation: rowPulse 2.5s infinite ease-in-out;
+      border: none !important;
+    }
+    .ecr-need-approval td:first-child {
+      box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset 3px 0 0 0 #3b82f6;
+      animation: none;
+      background-color: #eff6ff;
+      animation: rowPulseLeft 2.5s infinite ease-in-out;
+    }
+    .ecr-need-approval td:last-child {
+      box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset -3px 0 0 0 #3b82f6;
+      animation: none;
+      background-color: #eff6ff;
+      animation: rowPulseRight 2.5s infinite ease-in-out;
+    }
+    @keyframes rowPulseLeft {
+      0%, 100% {
+        background-color: #eff6ff;
+        box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset 3px 0 0 0 #3b82f6;
+      }
+      50% {
+        background-color: #dbeafe;
+        box-shadow: inset 0 2px 0 0 #93c5fd, inset 0 -2px 0 0 #93c5fd, inset 3px 0 0 0 #93c5fd;
+      }
+    }
+    @keyframes rowPulseRight {
+      0%, 100% {
+        background-color: #eff6ff;
+        box-shadow: inset 0 2px 0 0 #3b82f6, inset 0 -2px 0 0 #3b82f6, inset -3px 0 0 0 #3b82f6;
+      }
+      50% {
+        background-color: #dbeafe;
+        box-shadow: inset 0 2px 0 0 #93c5fd, inset 0 -2px 0 0 #93c5fd, inset -3px 0 0 0 #93c5fd;
+      }
+    }
+    .ecr-need-approval:hover td {
+      background-color: #bfdbfe !important;
+    }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+
+<!-- Form for IREQ Actions (Approve/Reject from List) -->
+<form id="actionFormIreq" method="post" style="display:none;">
+    <input type="hidden" name="OnInputProcessing" id="actionTypeIreq" value="">
+    <input type="hidden" name="ireq_id" id="actionIreqId" value="">
+    <input type="hidden" name="reject_reason" id="actionRejectReasonIreq" value="">
+</form>
+
+
+  <%@include file="approver_header.htm" %>
+
+  <main class="w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 space-y-6">
+
+    <!-- Header Banner -->
+    <div class="relative overflow-hidden rounded-xl p-6 mb-6 shadow-sm" style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+      <div class="absolute -top-[60px] -right-[30px] w-[200px] h-[200px] rounded-full" style="background: radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%);"></div>
+      <div class="flex items-center justify-between relative z-10">
+        <div>
+          <h1 class="text-xl font-bold text-white mb-1">Approver Dashboard</h1>
+          <p class="text-[0.76rem] text-brand-200 font-medium">Review Engineering Change Request & Monitor Perubahan Engineering</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Date Range Filter -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+      <form method="get" id="dateFilterForm">
+        <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+        <input type="hidden" name="r" value="<%= GV_ROLE %>">
+        <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-calendar-alt text-emerald-600"></i>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">Filter Tanggal</span>
+          </div>
+          <input type="date" name="date_from" value="<%= GV_DATE_FROM %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          <span class="text-xs text-slate-400">s/d</span>
+          <input type="date" name="date_to" value="<%= GV_DATE_TO %>" class="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
+            <i class="fas fa-filter text-[0.65rem]"></i> Terapkan
+          </button>
+          <a href="approver_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+            <i class="fas fa-rotate-left text-[0.65rem]"></i> Reset
+          </a>
+          <div class="flex items-center gap-1.5 ml-2 border-l border-slate-200 pl-3">
+            <span class="text-[0.65rem] text-slate-400 font-semibold">Shortcut:</span>
+            <button type="button" onclick="setRange(1)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">1 Bulan</button>
+            <button type="button" onclick="setRange(2)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">2 Bulan</button>
+            <button type="button" onclick="setRange(6)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold transition-all border border-emerald-200">6 Bulan</button>
+          </div>
+          <span class="text-[0.65rem] text-slate-400 ml-auto">
+            <i class="fas fa-info-circle"></i> Data dari <strong><%= GV_DATE_FROM %></strong> sampai <strong><%= GV_DATE_TO %></strong>
+          </span>
+        </div>
+      </form>
+    </div>
+
+    <!-- Status Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 transition-all">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#EFF6FF;color:#3B82F6">
+          <i class="fas fa-file-circle-plus"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">ECR Draft</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_CRTD %></p>
+          <p class="text-xs text-slate-400">Menunggu approval</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 transition-all">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FFF7ED;color:#F59E0B">
+          <i class="fas fa-gears"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Dalam Proses</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INWK %></p>
+          <p class="text-xs text-slate-400">ECO aktif</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 transition-all">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF3C7;color:#D97706">
+          <i class="fas fa-clock"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Pending</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMPR %></p>
+          <p class="text-xs text-slate-400">Tunggu Master Data</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 transition-all">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#D1FAE5;color:#059669">
+          <i class="fas fa-check-double"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">BOM Approved</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_BMAP %></p>
+          <p class="text-xs text-slate-400">Siap submit</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 transition-all">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEFCE8;color:#EAB308">
+          <i class="fas fa-magnifying-glass"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Inspection</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_INSP %></p>
+          <p class="text-xs text-slate-400">Tunggu review</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4 transition-all">
+        <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl shrink-0" style="background:#FEF2F2;color:#EF4444">
+          <i class="fas fa-circle-xmark"></i>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-0.5">Ditolak</p>
+          <p class="text-2xl font-extrabold text-slate-800"><%= GV_COUNT_REJC %></p>
+          <p class="text-xs text-slate-400">Rejected</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+      
+      <!-- Combined Chart Card (Volume & Status) -->
+      <div class="lg:col-span-6 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide mb-1" id="combinedChartTitle">
+              <i class="fas fa-chart-bar text-blue-500 mr-1"></i> Volume Perubahan
+            </h2>
+            <p class="text-xs text-slate-500" id="combinedChartDesc">Jumlah ECR/ECO per bulan</p>
+          </div>
+          <!-- Toggle Switch -->
+          <div class="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <button type="button" onclick="toggleChartMode('volume')" id="btnToggleVolume" class="px-3 py-1.5 text-xs font-bold rounded-md bg-white text-blue-600 shadow-sm transition-all">Volume</button>
+            <button type="button" onclick="toggleChartMode('status')" id="btnToggleStatus" class="px-3 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-700 transition-all">Status</button>
+          </div>
+        </div>
+        <div class="w-full h-[280px] relative">
+          <div id="volumeChartContainer" class="absolute inset-0 transition-opacity duration-300 opacity-100 pointer-events-auto">
+            <canvas id="volumeChart"></canvas>
+          </div>
+          <div id="statusChartContainer" class="absolute inset-0 transition-opacity duration-300 opacity-0 pointer-events-none">
+            <canvas id="statusChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kapasitas Drafter Chart Card -->
+      <div class="lg:col-span-6 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+        <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide mb-1">
+          <i class="fas fa-users-gear text-purple-500 mr-1"></i> Kapasitas Drafter
+        </h2>
+        <p class="text-xs text-slate-500 mb-4">Total beban kerja aktif per Drafter</p>
+        <div class="w-full h-[280px]">
+          <canvas id="kapasitasChart"></canvas>
+        </div>
+      </div>
+      
+    </div>
+
+    <!-- Alert Messages -->
+    <% IF MV_MESSAGE IS NOT INITIAL. %>
+    <div class="mb-5 px-5 py-3 rounded-xl text-sm font-medium flex items-center gap-2
+      <% IF MV_ICON = 'success'. %>bg-green-50 border border-green-200 text-green-700<% ENDIF. %>
+      <% IF MV_ICON = 'error'. %>bg-red-50 border border-red-200 text-red-700<% ENDIF. %>
+      <% IF MV_ICON = 'warning'. %>bg-amber-50 border border-amber-200 text-amber-700<% ENDIF. %>
+    ">
+      <%= MV_MESSAGE %>
+    </div>
+    <% ENDIF. %>
+
+
+    <!-- ===== PANEL REQUEST MASUK (IREQ) ===== -->
+    <div class="bg-white rounded-xl shadow-sm border border-emerald-200 overflow-hidden mb-6">
+        <div class="p-4 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-white">
+            <h2 class="text-sm font-extrabold text-slate-700 uppercase tracking-wide">
+                <i class="fas fa-inbox text-emerald-600 mr-1"></i> Request Masuk (Pre-ECR)
+            </h2>
+            <p class="text-xs text-slate-500 mt-1">Daftar permintaan perubahan sebelum menjadi dokumen ECR resmi.</p>
+        </div>
+
+                                <!-- Filters Tab -->
+        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+            <form id="filterFormIreq" method="get" class="flex items-center w-full">
+                <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+                <input type="hidden" name="r" value="<%= GV_ROLE %>">
+                <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+                
+                <!-- Filter Kategori (Left) -->
+                <div class="flex items-center gap-2 overflow-x-auto">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wide mr-2 flex-shrink-0 flex items-center gap-1"><i class="fas fa-filter text-emerald-500"></i> FILTER:</span>
+                    
+                    <button type="button" onclick="setIreqKategoriAndSubmit('ALL')" 
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 
+                        <% IF GV_FILTER_IREQ_KAT = 'ALL' OR GV_FILTER_IREQ_KAT IS INITIAL. %>bg-slate-700 text-white border-slate-700 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        All</button>
+                    
+                    <button type="button" onclick="setIreqKategoriAndSubmit('DRW')" 
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 <% IF GV_FILTER_IREQ_KAT = 'DRW'. %>bg-blue-50 text-blue-700 border-blue-200 shadow-sm<% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        WOOD</button>
+                        
+                    <button type="button" onclick="setIreqKategoriAndSubmit('DBX')" 
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 <% IF GV_FILTER_IREQ_KAT = 'DBX'. %>bg-orange-50 text-orange-700 border-orange-200 shadow-sm<% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        BOX</button>
+                        
+                    <button type="button" onclick="setIreqKategoriAndSubmit('DMT')" 
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 <% IF GV_FILTER_IREQ_KAT = 'DMT'. %>bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm<% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        METAL</button>
+                        
+                    <input type="hidden" name="filter_ireq_kat" id="hidden_filter_ireq_kat" value="<%= GV_FILTER_IREQ_KAT %>">
+                </div>
+
+                <!-- Filter Status (Right) -->
+                <div class="flex items-center gap-2 ml-auto pl-4 flex-wrap sm:flex-nowrap">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wide mr-2 flex-shrink-0 flex items-center gap-1">
+                        <i class="fas fa-tasks text-slate-400"></i> STATUS:
+                    </span>
+                    <button type="button" onclick="setIreqStatusAndSubmit('ALL')" 
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 
+                        <% IF GV_FILTER_IREQ = 'ALL' OR GV_FILTER_IREQ IS INITIAL. %>bg-slate-700 text-white border-slate-700 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        All</button>
+                    <button type="button" onclick="setIreqStatusAndSubmit('REQ')" 
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 
+                        <% IF GV_FILTER_IREQ = 'REQ'. %>bg-amber-500 text-white border-amber-500 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        Pending Approval</button>
+                    <button type="button" onclick="setIreqStatusAndSubmit('APPR')" 
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 
+                        <% IF GV_FILTER_IREQ = 'APPR'. %>bg-blue-500 text-white border-blue-500 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        Approved</button>
+                    <button type="button" onclick="setIreqStatusAndSubmit('PROC')" 
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 
+                        <% IF GV_FILTER_IREQ = 'PROC'. %>bg-sky-500 text-white border-sky-500 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        In Process</button>
+                    <button type="button" onclick="setIreqStatusAndSubmit('ECO')" 
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 
+                        <% IF GV_FILTER_IREQ = 'ECO'. %>bg-emerald-600 text-white border-emerald-600 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        ECO Created</button>
+                    <button type="button" onclick="setIreqStatusAndSubmit('REJC')" 
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 
+                        <% IF GV_FILTER_IREQ = 'REJC'. %>bg-red-500 text-white border-red-500 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        Rejected</button>
+                    <input type="hidden" name="filter_ireq" id="hidden_filter_ireq" value="<%= GV_FILTER_IREQ %>">
+                </div>
+            </form>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-slate-50">
+                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">IREQ ID</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Judul</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Material</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Requester</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Status</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Tanggal</th>
+                        
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <%= GV_IREQ_HTML %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ECR Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-amber-500 mr-2"></span>Daftar Engineering Change Request
+        </h3>
+        <div class="flex items-center gap-3">
+
+          <span class="text-xs text-slate-400 font-mono"><%= lines( LT_ECR ) %> ECR</span>
+          <!-- ECR Search -->
+          <div class="relative">
+            <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[0.65rem]"></i>
+            <input type="text" id="ecrSearch" placeholder="Cari ECR..."
+              onkeyup="filterEcrTable()"
+              class="pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+          </div>
+        </div>
+      </div>
+      <!-- Filter Dropdowns -->
+      <div class="px-5 py-3 border-b border-slate-100 bg-white flex items-center gap-2 flex-wrap">
+        <span class="text-[0.65rem] font-bold text-slate-500 uppercase tracking-wide mr-1">
+          <i class="fas fa-filter text-emerald-500 mr-1"></i>Filter:
+        </span>
+        <select id="filterKat" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Kategori</option>
+          <option value="DRW">WOOD</option>
+          <option value="DBX">BOX</option>
+          <option value="DMT">METAL</option>
+        </select>
+        <select id="filterPri" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Prioritas</option>
+          <option value="CRITICAL">Critical</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
+        </select>
+        <select id="filterStatus" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Status</option>
+          <option value="CRTD">Draft</option>
+          <option value="INWK">In Work</option>
+          <option value="INSP">Inspection</option>
+          <option value="CLSD">Closed</option>
+          <option value="REJC">Rejected</option>
+        </select>
+        <select id="filterReq" onchange="filterEcrTable()"
+          class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+          <option value="">Semua Requester</option>
+          <%= GV_REQUESTER_OPTIONS %>
+        </select>
+        <button onclick="resetFilters()" class="px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
+          <i class="fas fa-rotate-left mr-1"></i>Reset
+        </button>
+        <div class="ml-auto flex items-center gap-2">
+          <span class="text-[0.65rem] font-bold text-slate-500 uppercase tracking-wide">Tampilkan:</span>
+          <select id="filterRows" onchange="changePageSize()"
+            class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
+            <option value="10">10 Baris</option>
+            <option value="25">25 Baris</option>
+            <option value="50">50 Baris</option>
+            <option value="100">100 Baris</option>
+            <option value="all">Semua</option>
+          </select>
+        </div>
+      </div>
+
+      <% IF LT_ECR IS INITIAL. %>
+        <div class="py-16 text-center">
+          <svg class="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <p class="text-sm text-slate-400">Tidak ada ECR</p>
+        </div>
+      <% ELSE. %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200">
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">ECR No</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Judul</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Material</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Kategori</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Prioritas</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Requester</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tanggal</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DMS</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Aksi</th>
+
+              </tr>
+            </thead>
+            <tbody id="ecrTableBody" class="divide-y divide-slate-100">
+              <% LOOP AT LT_ECR INTO LS_ECR. %>
+              <tr data-kat="<%= LS_ECR-kategori %>"
+                  data-pri="<%= LS_ECR-priority %>"
+                  data-sts="<%= LS_ECR-status %>"
+                  data-req="<%= LS_ECR-requester %>"
+                  class="<% IF LS_ECR-status = 'CRTD'. %>ecr-need-approval hover:bg-blue-50/80
+                         <% ELSE. %>hover:bg-slate-50<% ENDIF. %> transition-colors cursor-pointer"
+                  onclick="openDetail('<%= LS_ECR-ecr_no %>')">
+                <td class="px-4 py-3 font-bold
+                           <% IF LS_ECR-status = 'CRTD'. %>text-blue-700<% ELSE. %>text-brand-600<% ENDIF. %>
+                           font-mono"><%= LS_ECR-ecr_no %></td>
+                <td class="px-4 py-3 text-sm font-semibold text-slate-700 max-w-[200px] truncate" title="<%= LS_ECR-title %>"><%= LS_ECR-title %></td>
+                <td class="px-4 py-3">
+                  <div>
+                    <span class="font-semibold text-slate-700 text-xs"><%= LS_ECR-matnr_fg_no_zero %></span>
+                    <div class="text-[0.7rem] text-slate-500 truncate max-w-[180px]" title="<%= LS_ECR-maktx %>"><%= LS_ECR-maktx %></div>
+                  </div>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="inline-block px-2 py-1 rounded-md text-xs font-bold
+                    <% IF LS_ECR-kategori = 'DRW'. %>bg-emerald-50 text-emerald-700 border border-emerald-200
+                    <% ELSEIF LS_ECR-kategori = 'DBX'. %>bg-blue-50 text-blue-700 border border-blue-200
+                    <% ELSEIF LS_ECR-kategori = 'DMT'. %>bg-orange-50 text-orange-700 border border-orange-200
+                    <% ELSE. %>bg-slate-100 text-slate-600<% ENDIF. %>">
+                    <%= LS_ECR-kategori %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="inline-block px-2 py-1 rounded-md text-xs font-bold
+                    <% IF LS_ECR-priority = 'CRITICAL'. %>bg-red-50 text-red-700
+                    <% ELSEIF LS_ECR-priority = 'HIGH'. %>bg-orange-50 text-orange-700
+                    <% ELSEIF LS_ECR-priority = 'MEDIUM'. %>bg-blue-50 text-blue-700
+                    <% ELSE. %>bg-slate-100 text-slate-600<% ENDIF. %>">
+                    <%= LS_ECR-priority %>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <% IF LS_ECR-status = 'CRTD'. %>
+                    <span class="ecr-pulse-badge inline-flex items-center gap-1.5 px-2.5 py-0.5
+                                 rounded-full text-[0.68rem] font-bold text-white bg-blue-600
+                                 border border-blue-300 shadow-sm whitespace-nowrap"
+                          title="Perlu Persetujuan">
+                      <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75">
+                        </span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                      </span>
+                      Draft
+                    </span>
+                  <% ELSEIF LS_ECR-status = 'INWK'. %>
+                    <span class="inline-block px-2 py-0.5 rounded text-[0.68rem] font-semibold bg-orange-50 text-orange-700">In Work</span>
+                  <% ELSEIF LS_ECR-status = 'BMPR'. %>
+                    <span class="inline-block px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[0.68rem] font-semibold
+                                 uppercase tracking-wide border border-amber-200" title="BOM Pending">BOM Pending</span>
+                  <% ELSEIF LS_ECR-status = 'BMAP'. %>
+                    <span class="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[0.68rem] font-semibold
+                                 uppercase tracking-wide border border-emerald-200" title="BOM Ready">BOM Ready</span>
+                  <% ELSEIF LS_ECR-status = 'INSP'. %>
+                    <span class="inline-block px-2 py-0.5 rounded text-[0.68rem] font-semibold bg-amber-50 text-amber-700">Inspection</span>
+                  <% ELSEIF LS_ECR-status = 'CLSD'. %>
+                    <span class="inline-block px-2 py-0.5 rounded text-[0.68rem] font-semibold bg-green-50 text-green-700">Closed</span>
+                  <% ELSEIF LS_ECR-status = 'REJC'. %>
+                    <span class="inline-block px-2 py-0.5 rounded text-[0.68rem] font-semibold bg-red-50 text-red-700">Rejected</span>
+                  <% ELSE. %>
+                    <span class="inline-block px-2 py-0.5 rounded text-[0.68rem] font-semibold bg-slate-100 text-slate-600"><%= LS_ECR-status %></span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3 text-slate-700 text-xs"><%= LS_ECR-requester_name %></td>
+                <td class="px-4 py-3">
+                  <div class="text-xs text-slate-500 font-mono"><%= LS_ECR-created_date+6(2) %>/<%= LS_ECR-created_date+4(2) %>/<%= LS_ECR-created_date(4) %></div>
+                </td>
+                <td class="px-4 py-3" onclick="event.stopPropagation()">
+                  <% IF LS_ECR-dms_found = abap_true. %>
+                    <div class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors" onclick="viewDms('<%= LS_ECR-dms_dokar %>', '<%= LS_ECR-dms_doknr %>', '<%= LS_ECR-dms_dokvr %>', '<%= LS_ECR-dms_doktl %>')">
+                      <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                      <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dms_doknr %></span>
+                    </div>
+                  <% ELSEIF LS_ECR-dir_number_clean IS NOT INITIAL. %>
+                    <div class="flex items-center gap-1.5 cursor-pointer hover:bg-green-50 px-2 py-1 rounded-md transition-colors" onclick="viewDms('', '<%= LS_ECR-dir_number_clean %>', '', '')">
+                      <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                      <span class="text-xs font-semibold text-green-700"><%= LS_ECR-dir_number_clean %></span>
+                    </div>
+                  <% ELSE. %>
+                    <span class="text-xs text-slate-400">-</span>
+                  <% ENDIF. %>
+                </td>
+                <td class="px-4 py-3" onclick="event.stopPropagation()">
+                  <% IF LS_ECR-status = 'CRTD'. %>
+                  <div class="flex gap-1 justify-center">
+                    <button onclick="confirmApproveDraft('<%= LS_ECR-ecr_no %>')"
+                      class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                      Approve
+                    </button>
+                    <button onclick="confirmRejectDraft('<%= LS_ECR-ecr_no %>')"
+                      class="px-2.5 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                      Tolak
+                    </button>
+                  </div>
+                  <% ELSEIF LS_ECR-status = 'INSP'. %>
+                  <div class="flex gap-1 justify-center">
+                    <button onclick="confirmApprove('<%= LS_ECR-ecr_no %>')"
+                      class="px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                      Approve
+                    </button>
+                    <button onclick="confirmRevisi('<%= LS_ECR-ecr_no %>')"
+                      class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                      Revisi
+                    </button>
+                    <button onclick="confirmReject('<%= LS_ECR-ecr_no %>')"
+                      class="px-2.5 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md text-xs font-semibold transition-all shadow-sm">
+                      Tolak
+                    </button>
+                  </div>
+                  <% ELSE. %>
+                    <span class="text-xs text-slate-400">-</span>
+                  <% ENDIF. %>
+                </td>
+              </tr>
+              <% ENDLOOP. %>
+            </tbody>
+          </table>
+        </div>
+      <% ENDIF. %>
+    </div>
+
+    <!-- Material History Search -->
+    <div id="matHistory" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center">
+          <span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+          <i class="fas fa-history text-purple-500 mr-2"></i>Riwayat Perubahan Material
+        </h3>
+        <p class="text-xs text-slate-500 mt-1">Cari material untuk melihat semua riwayat perubahan ECR</p>
+      </div>
+      <div class="p-5">
+        <form method="get" class="flex items-center gap-3 mb-4">
+          <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+          <input type="hidden" name="r" value="<%= GV_ROLE %>">
+          <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+          <div class="relative flex-1 max-w-xl">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input type="text" name="mat_search" value="<%= GV_MAT_SEARCH %>"
+              placeholder="Ketik nomor material atau deskripsi..."
+              class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500">
+          </div>
+          <button type="submit" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-bold transition-all flex items-center gap-1.5">
+            <i class="fas fa-search text-[0.65rem]"></i> Cari
+          </button>
+          <% IF GV_MAT_SEARCH IS NOT INITIAL. %>
+          <a href="approver_list.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>"
+            class="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-all">
+            <i class="fas fa-times text-[0.65rem]"></i> Reset
+          </a>
+          <% ENDIF. %>
+        </form>
+
+        <% IF GV_MAT_SEARCH IS NOT INITIAL. %>
+          <% IF GV_MAT_HISTORY_HTML IS INITIAL. %>
+            <div class="py-12 text-center">
+              <svg class="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <p class="text-sm text-slate-400">Tidak ditemukan riwayat untuk "<strong><%= GV_MAT_SEARCH %></strong>"</p>
+            </div>
+          <% ELSE. %>
+            <div class="space-y-4">
+              <%= GV_MAT_HISTORY_HTML %>
+            </div>
+          <% ENDIF. %>
+        <% ENDIF. %>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Hidden Form -->
+  <form id="actionForm" method="post" style="display:none;">
+    <input type="hidden" id="actionType" name="OnInputProcessing">
+    <input type="hidden" id="actionEcrNo" name="ecr_no">
+    <input type="hidden" id="actionReason" name="revisi_reason">
+    <input type="hidden" id="actionRejectReason" name="reject_reason">
+    <input type="hidden" id="actionImplPo" name="impl_po">
+    <input type="hidden" id="actionImplDate" name="impl_date">
+    <input type="hidden" id="actionImplReason" name="impl_reason">
+  </form>
+
+  <!-- Chart.js -->
+<script>
+    const COLORS = { IREQ:'#1E3A5F', CRTD:'#3B82F6', INWK:'#F59E0B', BMPR:'#D97706', BMAP:'#059669', INSP:'#EAB308', REJC:'#EF4444' };
+
+    const barValuePlugin = {
+        id: 'barValuePlugin',
+        afterDraw: function(chart) {
+            var ctx = chart.ctx; ctx.save();
+            chart.data.datasets.forEach(function(dataset, i) {
+                var meta = chart.getDatasetMeta(i);
+                if (!meta.hidden) { meta.data.forEach(function(bar, index) {
+                    var val = dataset.data[index];
+                    if (val > 0) { ctx.fillStyle='#1e293b'; ctx.font='bold 12px Plus Jakarta Sans'; ctx.textBaseline='middle';
+                        if (chart.options.indexAxis==='y') { ctx.textAlign='left'; ctx.fillText(val,bar.x+6,bar.y); }
+                        else { ctx.textAlign='center'; ctx.fillText(val,bar.x,bar.y-10); }
+                    }
+                }); }
+            }); ctx.restore();
+        }
+    };
+    // Date range shortcut
+    function setRange(months) {
+      var today = new Date();
+      var from = new Date(today.getFullYear(), today.getMonth() - (months - 1), 1);
+      var fromStr = from.getFullYear() + '-' + String(from.getMonth() + 1).padStart(2, '0') + '-' + String(from.getDate()).padStart(2, '0');
+      var toStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+      document.querySelector('input[name="date_from"]').value = fromStr;
+      document.querySelector('input[name="date_to"]').value = toStr;
+      document.getElementById('dateFilterForm').submit();
+    }
+
+    Chart.register(barValuePlugin);
+
+    new Chart(document.getElementById('volumeChart'), {
+        type:'bar', data:{ labels:<%= GV_MONTHS_LABELS %>, datasets:[
+            {label:'Request Masuk (IREQ)',data:<%= GV_MONTHS_IREQ %>,backgroundColor:COLORS.IREQ,borderRadius:4},
+            {label:'Draft (ECR)',data:<%= GV_MONTHS_CRTD %>,backgroundColor:COLORS.CRTD,borderRadius:4},
+            {label:'In Work (ECO)',data:<%= GV_MONTHS_INWK %>,backgroundColor:COLORS.INWK,borderRadius:4},
+            {label:'Inspection',data:<%= GV_MONTHS_INSP %>,backgroundColor:COLORS.INSP,borderRadius:4},
+            {label:'Rejected',data:<%= GV_MONTHS_REJC %>,backgroundColor:COLORS.REJC,borderRadius:4}
+        ]}, options:{ responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:11,family:'Plus Jakarta Sans'}}} },
+            scales:{ x:{stacked:true,grid:{display:false}}, y:{stacked:true,beginAtZero:true,grid:{color:"#f1f5f9"},ticks:{display:false}} }
+        }
+    });
+
+    new Chart(document.getElementById('statusChart'), {
+        type:'bar', data:{ labels:['Request Masuk','Draft','In Work','Inspection','Rejected'], datasets:[{
+            data:[<%= GV_COUNT_IREQ %>,<%= GV_COUNT_CRTD %>,<%= GV_COUNT_INWK %>,<%= GV_COUNT_INSP %>,<%= GV_COUNT_REJC %>],
+            backgroundColor:[COLORS.IREQ,COLORS.CRTD,COLORS.INWK,COLORS.INSP,COLORS.REJC], borderRadius:4, barThickness:28
+        }]}, options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{display:false} },
+            scales:{ x:{beginAtZero:true,grid:{display:false},ticks:{display:false}}, y:{grid:{display:false},ticks:{font:{family:'Plus Jakarta Sans',size:12,weight:'600'}}} }
+        }
+    });
+
+    // Kapasitas Drafter Chart
+    new Chart(document.getElementById('kapasitasChart'), {
+        type:'bar', data:{ labels:<%= GV_CAPA_LABELS %>, datasets:[
+            {label:'In Work',data:<%= GV_CAPA_INWK %>,backgroundColor:COLORS.INWK,borderRadius:4},
+            {label:'BOM Pending',data:<%= GV_CAPA_BMPR %>,backgroundColor:COLORS.BMPR,borderRadius:4},
+            {label:'BOM Ready',data:<%= GV_CAPA_BMAP %>,backgroundColor:COLORS.BMAP,borderRadius:4},
+            {label:'Inspection',data:<%= GV_CAPA_INSP %>,backgroundColor:COLORS.INSP,borderRadius:4}
+        ]}, options:{ responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:11,family:'Plus Jakarta Sans'}}} },
+            scales:{ 
+                x: {
+                    stacked:true,
+                    grid:{display:false},
+                    ticks:{
+                        font:{size:10, family:'Plus Jakarta Sans'},
+                        maxRotation: 45,
+                        minRotation: 45,
+                        callback: function(val) {
+                            var label = this.getLabelForValue(val) || '';
+                            return label.length > 15 ? label.substring(0, 15) + '...' : label;
+                        }
+                    }
+                }, 
+                y:{stacked:true,beginAtZero:true,grid:{color:"#f1f5f9"},ticks:{display:false}} 
+            }
+        }
+    });
+
+    function toggleChartMode(mode) {
+      var vC = document.getElementById('volumeChartContainer');
+      var sC = document.getElementById('statusChartContainer');
+      var btnV = document.getElementById('btnToggleVolume');
+      var btnS = document.getElementById('btnToggleStatus');
+      var title = document.getElementById('combinedChartTitle');
+      var desc = document.getElementById('combinedChartDesc');
+
+      if (mode === 'volume') {
+        vC.classList.remove('opacity-0', 'pointer-events-none');
+        vC.classList.add('opacity-100', 'pointer-events-auto');
+        sC.classList.remove('opacity-100', 'pointer-events-auto');
+        sC.classList.add('opacity-0', 'pointer-events-none');
+
+        btnV.className = 'px-3 py-1.5 text-xs font-bold rounded-md bg-white text-blue-600 shadow-sm transition-all';
+        btnS.className = 'px-3 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-700 transition-all';
+        title.innerHTML = '<i class="fas fa-chart-bar text-blue-500 mr-1"></i> Volume Perubahan';
+        desc.textContent = 'Jumlah ECR/ECO per bulan';
+      } else {
+        sC.classList.remove('opacity-0', 'pointer-events-none');
+        sC.classList.add('opacity-100', 'pointer-events-auto');
+        vC.classList.remove('opacity-100', 'pointer-events-auto');
+        vC.classList.add('opacity-0', 'pointer-events-none');
+
+        btnS.className = 'px-3 py-1.5 text-xs font-bold rounded-md bg-white text-emerald-600 shadow-sm transition-all';
+        btnV.className = 'px-3 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-700 transition-all';
+        title.innerHTML = '<i class="fas fa-chart-simple text-emerald-500 mr-1"></i> Status Change Request';
+        desc.textContent = 'Distribusi status saat ini';
+      }
+    }
+</script>
+<script>
+    function setActionIreq(ireqId, action) {
+        if (action === "approve_ireq") {
+            Swal.fire({
+                title: "Setujui Request?",
+                text: "Request ini akan disetujui dan diteruskan ke Admin untuk penugasan Drafter & estimasi rilis.",
+                icon: "question",
+                showCancelButton: true,
+                confirmButtonColor: "#10b981",
+                cancelButtonColor: "#94a3b8",
+                confirmButtonText: "<i class=\"fas fa-check mr-1\"></i> Ya, Setujui",
+                cancelButtonText: "Batal"
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    document.getElementById("actionTypeIreq").value = "approve_ireq";
+                    document.getElementById("actionIreqId").value = ireqId;
+                    
+                    // Menjaga scroll position tetap di tempatnya sebelum form di-submit
+                    const currentScrollY = window.scrollY;
+                    let scrollInput = document.createElement("input");
+                    scrollInput.type = "hidden";
+                    scrollInput.name = "scroll_pos";
+                    scrollInput.value = currentScrollY;
+                    
+                    const form = document.getElementById("actionFormIreq");
+                    form.appendChild(scrollInput);
+                    form.submit();
+                }
+            });
+        } else if (action === 'cancel_approve_ireq') {
+            Swal.fire({
+                title: 'Batalkan Approval?',
+                text: 'Request ini akan dikembalikan ke status Menunggu Approval.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Ya, Batalkan!',
+                cancelButtonText: 'Kembali'
+            }).then(function(result) {
+                if (result.isConfirmed) {
+                    document.getElementById('actionTypeIreq').value = 'cancel_approve_ireq';
+                    document.getElementById('actionIreqId').value = ireqId;
+                    document.getElementById('actionFormIreq').submit();
+                }
+            });
+        } else if (action === 'reject_ireq') {
+            Swal.fire({
+                title: 'Tolak Request',
+                text: "Masukkan alasan penolakan untuk Request " + ireqId + ":",
+                input: 'textarea',
+                inputPlaceholder: 'Alasan reject...',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#94a3b8',
+                confirmButtonText: 'Tolak',
+                cancelButtonText: 'Batal',
+                inputValidator: function(value) {
+                    if (!value) {
+                        return 'Alasan harus diisi!';
+                    }
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    document.getElementById('actionTypeIreq').value = 'reject_ireq';
+                    document.getElementById('actionIreqId').value = ireqId;
+                    document.getElementById('actionRejectReasonIreq').value = result.value;
+                    document.getElementById('actionFormIreq').submit();
+                }
+            });
+        }
+    }
+
+    function cancelApproveIreq(ireqId) {
+        setActionIreq(ireqId, 'cancel_approve_ireq');
+    }
+
+    function openReviewModal(ireqId) {
+        var modal = document.getElementById('reviewModal');
+        var iframe = document.getElementById('reviewIframe');
+        var loader = document.getElementById('reviewLoader');
+        var titleEl = document.getElementById('reviewModalTitle');
+        
+        if (titleEl) {
+            titleEl.innerHTML = '<i class="fas fa-clipboard-check text-brand-600 mr-2"></i>' +
+                'Review Request <span class="px-2.5 py-0.5 bg-yellow-100 text-yellow-800 ' +
+                'text-xs font-bold rounded-full font-mono ml-2">IREQ: ' + ireqId + '</span>';
+        }
+        
+        loader.style.display = 'flex';
+        iframe.style.opacity = '0';
+        
+        var url = 'admin_req_review.htm?u=' + encodeURIComponent(window.GV_USER_ID) +
+                  '&r=' + encodeURIComponent(window.GV_ROLE) +
+                  '&n=' + encodeURIComponent(window.GV_FULL_NAME) +
+                  '&ireq_id=' + encodeURIComponent(ireqId) +
+                  '&is_modal=1';
+                  
+        iframe.src = url;
+        
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        // Trigger reflow
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        modal.querySelector('div').classList.remove('scale-95');
+    }
+
+    function closeReviewModal() {
+        var modal = document.getElementById('reviewModal');
+        modal.classList.add('opacity-0');
+        modal.querySelector('div').classList.add('scale-95');
+        setTimeout(function() {
+            modal.classList.add('hidden');
+            modal.style.display = '';
+            document.getElementById('reviewIframe').src = 'about:blank';
+        }, 300);
+    }
+    
+    function onReviewIframeLoad(iframe) {
+        var loader = document.getElementById('reviewLoader');
+        if (iframe.src === 'about:blank' || iframe.src === '') return;
+        
+        loader.style.display = 'none';
+        iframe.style.opacity = '1';
+        
+        try {
+            var iframeUrl = iframe.contentWindow.location.href;
+            if (iframeUrl.indexOf('approver_list.htm') !== -1 || iframeUrl.indexOf('admin_dashboard.htm') !== -1) {
+                // Success submit and redirect -> reload parent
+                window.location.reload();
+            }
+        } catch (e) {
+            // cross-origin error is ignored
+        }
+    }
+
+    async function fetchAndShowAudit(url, titleText) {
+        var modal = document.getElementById('auditModal');
+        var content = document.getElementById('auditContent');
+        var title = document.getElementById('auditEcrNo');
+        var loader = document.getElementById('auditLoader');
+        
+        title.textContent = titleText;
+        loader.classList.remove('hidden');
+        
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        modal.querySelector('div').classList.remove('scale-95');
+        
+        try {
+            var response = await fetch(url);
+            var text = await response.text();
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(text, 'text/html');
+            
+            var fetchedContent = doc.getElementById('auditContent');
+            if (fetchedContent) {
+                content.innerHTML = fetchedContent.innerHTML;
+            } else {
+                content.innerHTML = '<div class="p-4 text-red-500">Gagal memuat data audit.</div>';
+            }
+        } catch (e) {
+            content.innerHTML = '<div class="p-4 text-red-500">Error jaringan, gagal memuat audit trail.</div>';
+        }
+        loader.classList.add('hidden');
+    }
+
+    function showIreqAudit(ireqId) {
+        var url = window.location.pathname + '?u=' + encodeURIComponent(window.GV_USER_ID) +
+                  '&r=' + encodeURIComponent(window.GV_ROLE) +
+                  '&n=' + encodeURIComponent(window.GV_FULL_NAME) +
+                  '&filter_ireq=' + encodeURIComponent(window.GV_FILTER_IREQ || '') +
+                  '&ireq_audit=' + encodeURIComponent(ireqId);
+        fetchAndShowAudit(url, 'Request Masuk ' + ireqId);
+    }
+
+    function openDetail(ecrNo) {
+        var url = 'approver_list.htm?u=' + encodeURIComponent(window.GV_USER_ID) +
+                  '&r=' + encodeURIComponent(window.GV_ROLE) +
+                  '&n=' + encodeURIComponent(window.GV_FULL_NAME) +
+                  '&filter=' + encodeURIComponent(window.LV_FILTER || '') +
+                  '&ecr_detail=' + encodeURIComponent(ecrNo);
+        if (window.GV_DATE_FROM) {
+            url += '&date_from=' + encodeURIComponent(window.GV_DATE_FROM);
+        }
+        if (window.GV_DATE_TO) {
+            url += '&date_to=' + encodeURIComponent(window.GV_DATE_TO);
+        }
+        fetchAndShowAudit(url, 'ECR ' + ecrNo);
+    }
+    
+    function closeAuditModal() {
+        var modal = document.getElementById('auditModal');
+        modal.classList.add('opacity-0');
+        modal.querySelector('div').classList.add('scale-95');
+        setTimeout(function() {
+            modal.classList.add('hidden');
+            modal.style.display = '';
+        }, 300);
+        
+        if (window.history.replaceState) {
+            var cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            var urlParams = new URLSearchParams(window.location.search);
+            urlParams.delete('ecr_detail');
+            urlParams.delete('ireq_audit');
+            var qs = urlParams.toString();
+            if (qs) { cleanUrl += "?" + qs; }
+            window.history.replaceState({path: cleanUrl}, '', cleanUrl);
+        }
+    }
+
+    function showAudit(ecrNo) {
+      openDetail(ecrNo);
+    }
+
+
+    // Restore scroll position after submit & auto-open modal
+    document.addEventListener("DOMContentLoaded", function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var scrollPos = urlParams.get('scroll_pos');
+        if(scrollPos) {
+            window.scrollTo(0, parseInt(scrollPos));
+            
+            // Clean up the URL parameter
+            var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            urlParams.delete('scroll_pos');
+            var qs = urlParams.toString();
+            if(qs) {
+                newUrl += "?" + qs;
+            }
+            window.history.replaceState({path: newUrl}, '', newUrl);
+        }
+
+        // Auto-open modal if ecr_detail or ireq_audit in URL
+        if (urlParams.get('ecr_detail') || urlParams.get('ireq_audit')) {
+            var modal = document.getElementById('auditModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            void modal.offsetWidth;
+            modal.classList.remove('opacity-0');
+            modal.querySelector('div').classList.remove('scale-95');
+        }
+    });
+
+    function viewDms(dokar, doknr, dokvr, doktl) {
+      var dmsUrl = 'dms_detail.htm?u=' + encodeURIComponent(window.GV_USER_ID) +
+                   '&r=' + encodeURIComponent(window.GV_ROLE) +
+                   '&n=' + encodeURIComponent(window.GV_FULL_NAME) +
+                   '&DOKAR=' + encodeURIComponent(dokar || '') +
+                   '&DOKNR=' + encodeURIComponent(doknr || '') +
+                   '&DOKVR=' + encodeURIComponent(dokvr || '') +
+                   '&DOKTL=' + encodeURIComponent(doktl || '');
+      window.location.href = dmsUrl;
+    }
+
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0',
+              500: '#10b981', 600: '#059669', 700: '#047857', 800: '#064e3b'
+            }
+          },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+        }
+      }
+    }
+    function confirmApproveDraft(ecrNo) {
+      var swalHtml = "";
+      swalHtml += "<div class=\"text-left mt-2\">";
+      swalHtml += "<p class=\"text-sm text-slate-500 mb-3\">Setujui ECR menjadi ECO baru. Mohon lengkapi rencana implementasi (wajib):</p>";
+      swalHtml += "<label class=\"block text-xs font-bold text-slate-700 mb-1\">Target Berjalan (PO) <span class=\"text-red-500\">*</span></label>";
+      swalHtml += "<input type=\"text\" id=\"swal-ecr-po\" class=\"w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 mb-3\" placeholder=\"Contoh: Next PO / PO 45000123\">";
+      swalHtml += "<label class=\"block text-xs font-bold text-slate-700 mb-1\">Tanggal Estimasi Jalan <span class=\"text-red-500\">*</span></label>";
+      swalHtml += "<input type=\"date\" id=\"swal-ecr-date\" class=\"w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 mb-3\">";
+      swalHtml += "<label class=\"block text-xs font-bold text-slate-700 mb-1\">Keterangan / Alasan Lapangan <span class=\"text-red-500\">*</span></label>";
+      swalHtml += "<textarea id=\"swal-ecr-reason\" rows=\"2\" class=\"w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500\" placeholder=\"Alasan pemilihan rilis berdasarkan kondisi lapangan...\"></textarea>";
+      swalHtml += "</div>";
+
+      Swal.fire({
+        title: 'Approve ECR & Buat ECO',
+        html: swalHtml,
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: '<i class="fas fa-check mr-1"></i> Setujui & Buat ECO',
+        confirmButtonColor: '#10B981',
+        cancelButtonText: 'Batal',
+        cancelButtonColor: '#94A3B8',
+        preConfirm: function() {
+          var po = document.getElementById('swal-ecr-po').value.trim();
+          var date = document.getElementById('swal-ecr-date').value.trim();
+          var reason = document.getElementById('swal-ecr-reason').value.trim();
+          if (!po || !date || !reason) {
+            Swal.showValidationMessage('Target PO, Tanggal, dan Alasan Lapangan wajib diisi!');
+            return false;
+          }
+          return { po: po, date: date, reason: reason };
+        }
+      }).then(function(result) {
+        if (result.isConfirmed) {
+          document.getElementById('actionType').value = 'approve_draft';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          document.getElementById('actionImplPo').value = result.value.po;
+          document.getElementById('actionImplDate').value = result.value.date;
+          document.getElementById('actionImplReason').value = result.value.reason;
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    function confirmRejectDraft(ecrNo) {
+      Swal.fire({
+        title: 'Tolak Draft ECR ' + ecrNo + '?',
+        input: 'textarea',
+        inputPlaceholder: 'Jelaskan kenapa ECR ini ditolak...',
+        inputValidator: function(v) {
+          if (!v) {
+            return 'Alasan reject wajib diisi!';
+          }
+        },
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Tolak!'
+      }).then(function(r) {
+        if (r.isConfirmed) {
+          document.getElementById('actionType').value = 'reject_draft';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          document.getElementById('actionRejectReason').value = r.value;
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    function confirmApprove(ecrNo) {
+      Swal.fire({
+        title: 'Approve ECR ' + ecrNo + '?',
+        text: 'ECR akan di-close dan DMS akan di-Release.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Approve!'
+      }).then(function(r) {
+        if (r.isConfirmed) {
+          document.getElementById('actionType').value = 'approve_ecr';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    function confirmRevisi(ecrNo) {
+      Swal.fire({
+        title: 'Revisi ECR ' + ecrNo + '?',
+        input: 'textarea',
+        inputPlaceholder: 'Jelaskan apa yang perlu diperbaiki...',
+        inputValidator: function(v) {
+          if (!v) {
+            return 'Catatan revisi wajib diisi!';
+          }
+        },
+        showCancelButton: true,
+        confirmButtonColor: '#f59e0b',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Kembalikan!'
+      }).then(function(r) {
+        if (r.isConfirmed) {
+          document.getElementById('actionType').value = 'revisi_ecr';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          document.getElementById('actionReason').value = r.value;
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    function confirmReject(ecrNo) {
+      Swal.fire({
+        title: 'Tolak ECR ' + ecrNo + '?',
+        input: 'textarea',
+        inputPlaceholder: 'Jelaskan kenapa ECR ini ditolak...',
+        inputValidator: function(v) {
+          if (!v) {
+            return 'Alasan reject wajib diisi!';
+          }
+        },
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Ya, Tolak!'
+      }).then(function(r) {
+        if (r.isConfirmed) {
+          document.getElementById('actionType').value = 'reject_ecr';
+          document.getElementById('actionEcrNo').value = ecrNo;
+          document.getElementById('actionRejectReason').value = r.value;
+          document.getElementById('actionForm').submit();
+        }
+      });
+    }
+
+    if (window.MV_ICON === 'success') {
+        Swal.fire({ icon:'success', title:'Berhasil!', text:window.MV_MESSAGE, timer:3000, showConfirmButton:false, customClass:{popup:'rounded-xl shadow-lg'} });
+        if (window.history.replaceState) {
+            var cleanUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
+            var urlParams = new URLSearchParams(window.location.search);
+            urlParams.delete('msg');
+            urlParams.delete('icon');
+            var qs = urlParams.toString();
+            if(qs) { cleanUrl += '?' + qs; }
+            window.history.replaceState({path: cleanUrl}, '', cleanUrl);
+        }
+    } else if (window.MV_ICON === 'error') {
+        Swal.fire({ icon:'error', title:'Gagal!', text:window.MV_MESSAGE, customClass:{popup:'rounded-xl shadow-lg'} });
+        if (window.history.replaceState) {
+            var cleanUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
+            var urlParams = new URLSearchParams(window.location.search);
+            urlParams.delete('msg');
+            urlParams.delete('icon');
+            var qs = urlParams.toString();
+            if(qs) { cleanUrl += '?' + qs; }
+            window.history.replaceState({path: cleanUrl}, '', cleanUrl);
+        }
+    } else if (window.MV_ICON === 'warning') {
+        Swal.fire({ icon:'warning', title:'Perhatian', text:window.MV_MESSAGE, customClass:{popup:'rounded-xl shadow-lg'} });
+        if (window.history.replaceState) {
+            var cleanUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
+            var urlParams = new URLSearchParams(window.location.search);
+            urlParams.delete('msg');
+            urlParams.delete('icon');
+            var qs = urlParams.toString();
+            if(qs) { cleanUrl += '?' + qs; }
+            window.history.replaceState({path: cleanUrl}, '', cleanUrl);
+        }
+    }
+
+    // Auto-scroll logic: Keep track of scroll position and restore after submit
+    // Save scroll position before any form submit
+    document.addEventListener("submit", function() {
+        sessionStorage.setItem("approverListScrollY", window.scrollY);
+    });
+
+    // Restore scroll position when page loads
+    window.addEventListener("DOMContentLoaded", function() {
+        let scrollY = sessionStorage.getItem("approverListScrollY");
+        
+        // If there is an active search, scroll to MatHistory (overrides saved scroll)
+        if (window.GV_MAT_SEARCH !== '') {
+            let matSection = document.getElementById('matHistory');
+            if (matSection) { 
+                matSection.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
+                sessionStorage.removeItem('approverListScrollY'); 
+            }
+        } else {
+            if (scrollY !== null && scrollY !== '') {
+                window.scrollTo(0, parseInt(scrollY));
+                sessionStorage.removeItem('approverListScrollY');
+            }
+        }
+    });
+
+
+    // ECR table filter (client-side: text + dropdowns)
+
+
+    var currentPage = 1;
+    var filteredRows = [];
+
+    function changePageSize() {
+      currentPage = 1;
+      applyPagination();
+    }
+
+    function renderPagination() {
+      var controlsContainer = document.getElementById('paginationControls');
+      if (!controlsContainer) {
+        var tableContainer = document.querySelector('#ecrTableBody').closest('.overflow-x-auto');
+        var div = document.createElement('div');
+        div.id = 'paginationControls';
+        div.className = 'px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between';
+        tableContainer.parentNode.insertBefore(div, tableContainer.nextSibling);
+        controlsContainer = div;
+      }
+
+      var pageSize = document.getElementById('filterRows').value;
+      if (pageSize === 'all' || filteredRows.length === 0) {
+        controlsContainer.innerHTML = '';
+        controlsContainer.style.display = 'none';
+        return;
+      }
+      controlsContainer.style.display = 'flex';
+
+      pageSize = parseInt(pageSize);
+      var totalPages = Math.ceil(filteredRows.length / pageSize);
+      var startRow = (currentPage - 1) * pageSize + 1;
+      var endRow = Math.min(currentPage * pageSize, filteredRows.length);
+
+      var html = '<div class="text-xs text-slate-500">Menampilkan <strong>' + startRow + ' - ' + endRow + '</strong> dari <strong>' + filteredRows.length + '</strong> data</div>';
+      
+      html += '<div class="flex items-center gap-1">';
+      html += '<button onclick="goToPage(' + (currentPage - 1) + ')" ' +
+              'class="px-2 py-1 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50" ' +
+              (currentPage === 1 ? 'disabled' : '') + '><i class="fas fa-chevron-left text-xs"></i></button>';
+      
+      var startPage = Math.max(1, currentPage - 2);
+      var endPage = Math.min(totalPages, currentPage + 2);
+      
+      if (startPage > 1) {
+        html += '<button onclick="goToPage(1)" class="px-2.5 py-1 rounded border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50">1</button>';
+        if (startPage > 2) html += '<span class="px-1 text-slate-400">...</span>';
+      }
+      
+      for (var i = startPage; i <= endPage; i++) {
+        var activeClass = i === currentPage ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50';
+        html += '<button onclick="goToPage(' + i + ')" class="px-2.5 py-1 rounded border ' + activeClass + ' text-xs font-semibold">' + i + '</button>';
+      }
+      
+      if (endPage < totalPages) {
+        if (endPage < totalPages - 1) html += '<span class="px-1 text-slate-400">...</span>';
+        html += '<button onclick="goToPage(' + totalPages + ')" class="px-2.5 py-1 rounded border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50">' + totalPages + '</button>';
+      }
+      
+      html += '<button onclick="goToPage(' + (currentPage + 1) + ')" ' +
+              'class="px-2 py-1 rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50" ' +
+              (currentPage === totalPages ? 'disabled' : '') + '><i class="fas fa-chevron-right text-xs"></i></button>';
+      html += '</div>';
+
+      controlsContainer.innerHTML = html;
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      applyPagination();
+    }
+
+    function applyPagination() {
+      var pageSize = document.getElementById('filterRows').value;
+      
+      // Sembunyikan semua row di tabel ECR
+      document.querySelectorAll('#ecrTableBody tr').forEach(function(row) {
+        row.style.display = 'none';
+      });
+
+      if (pageSize === 'all') {
+        filteredRows.forEach(function(row) {
+          row.style.display = '';
+        });
+      } else {
+        pageSize = parseInt(pageSize);
+        var startIndex = (currentPage - 1) * pageSize;
+        var endIndex = startIndex + pageSize;
+        
+        for (var i = 0; i < filteredRows.length; i++) {
+          if (i >= startIndex && i < endIndex) {
+            filteredRows[i].style.display = '';
+          }
+        }
+      }
+      
+      renderPagination();
+    }
+
+    function filterEcrTable() {
+      var kw = (document.getElementById('ecrSearch').value || '').toLowerCase();
+      var kat = document.getElementById('filterKat').value;
+      var pri = document.getElementById('filterPri').value;
+      var sts = document.getElementById('filterStatus').value;
+      var req = document.getElementById('filterReq').value;
+      
+      filteredRows = [];
+      document.querySelectorAll('#ecrTableBody tr').forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        var matchKw = !kw || text.indexOf(kw) > -1;
+        var matchKat = !kat || row.getAttribute('data-kat') === kat;
+        var matchPri = !pri || row.getAttribute('data-pri') === pri;
+        var matchSts = !sts || row.getAttribute('data-sts') === sts;
+        var matchReq = !req || (row.getAttribute('data-req') || '') === req;
+        
+        if (matchKw && matchKat && matchPri && matchSts && matchReq) {
+            filteredRows.push(row);
+        }
+      });
+      
+      currentPage = 1;
+      applyPagination();
+    }
+
+    function resetFilters() {
+      document.getElementById('ecrSearch').value = '';
+      document.getElementById('filterKat').value = '';
+      document.getElementById('filterPri').value = '';
+      document.getElementById('filterStatus').value = '';
+      document.getElementById('filterReq').value = '';
+      document.getElementById('filterRows').value = '10';
+      filterEcrTable();
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        if(document.getElementById('ecrTableBody')) {
+            filterEcrTable();
+        }
+    });
+
+    
+    
+    function setIreqKategoriAndSubmit(kategori) {
+        document.getElementById('hidden_filter_ireq_kat').value = kategori;
+        document.getElementById('filterFormIreq').submit();
+    }
+
+    function setIreqStatusAndSubmit(status) {
+        document.getElementById('hidden_filter_ireq').value = status;
+        document.getElementById('filterFormIreq').submit();
+    }
+
+    // DMS link click handler (material history cards)
+    document.addEventListener('click', function(e) {
+      var dmsEl = e.target.closest('.dms-link');
+      if (dmsEl) {
+        var doknr = dmsEl.getAttribute('data-dmsnr');
+        if (doknr) {
+          var dmsUrl = 'dms_detail.htm?u=' + encodeURIComponent(window.GV_USER_ID) +
+                       '&r=' + encodeURIComponent(window.GV_ROLE) +
+                       '&n=' + encodeURIComponent(window.GV_FULL_NAME) +
+                       '&DOKAR=&DOKNR=' + encodeURIComponent(doknr) + '&DOKVR=&DOKTL=';
+          window.location.href = dmsUrl;
+        }
+      }
+    });
+
+  </script>
+
+  <!-- Audit Trail / Detail Modal Overlay -->
+  <div id="auditModal"
+       class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm items-center justify-center hidden
+              opacity-0 transition-opacity duration-300"
+       style="z-index: 99999; margin: 0 !important; top: 0 !important; left: 0 !important;"
+       onclick="if(event.target===this)closeAuditModal()">
+    <div class="bg-white rounded-2xl max-w-[600px] w-[90%] max-h-[85vh] overflow-hidden shadow-2xl
+                transform scale-95 transition-transform duration-300 relative flex flex-col"
+         onclick="event.stopPropagation()">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between shrink-0"
+           style="background: linear-gradient(135deg, #064e3b 0%, #059669 100%);">
+        <div>
+          <h2 class="text-lg font-bold text-white">Audit Trail</h2>
+          <p class="text-[0.78rem] text-emerald-200" id="auditEcrNo">
+            <% IF LV_ECR_DETAIL IS NOT INITIAL. %>ECR <%= LV_ECR_DETAIL %>
+            <% ELSEIF GV_SELECTED_IREQ_AUDIT IS NOT INITIAL. %>Request Masuk <%= GV_SELECTED_IREQ_AUDIT %>
+            <% ENDIF. %>
+          </p>
+        </div>
+        <button onclick="closeAuditModal()"
+                class="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30">
+          <span class="text-base font-bold">&times;</span>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 relative">
+        <div id="auditLoader"
+             class="absolute inset-0 flex items-center justify-center bg-white/80 z-10 hidden">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+        </div>
+        <div class="relative pl-8 before:content-[''] before:absolute before:left-3 before:top-0 before:w-0.5"
+             id="auditContent">
+          <%= GV_ECR_DETAIL_HTML %>
+          <%= GV_AUDIT_HTML %>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review Modal Overlay (Iframe) -->
+  <div id="reviewModal"
+       class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm items-center justify-center hidden
+              opacity-0 transition-opacity duration-300"
+       style="z-index: 99999; margin: 0 !important; top: 0 !important; left: 0 !important;"
+       onclick="if(event.target===this)closeReviewModal()">
+    <div class="bg-white rounded-2xl w-[95%] max-w-[1200px] h-[90vh] shadow-2xl
+                transform scale-95 transition-transform duration-300 relative flex flex-col"
+         onclick="event.stopPropagation()">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+        <h2 class="text-lg font-bold text-slate-800 flex items-center" id="reviewModalTitle">
+          <i class="fas fa-clipboard-check text-brand-600 mr-2"></i>Review Request
+        </h2>
+        <button onclick="closeReviewModal()"
+                class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+                style="display: flex; align-items: center; justify-content: center;">
+          <i class="fas fa-times text-sm"></i>
+        </button>
+      </div>
+      <div class="flex-1 w-full bg-slate-50 relative rounded-b-2xl overflow-hidden">
+        <div id="reviewLoader"
+             class="absolute inset-0 flex items-center justify-center bg-white z-10">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+        </div>
+        <iframe id="reviewIframe"
+                src="about:blank"
+                class="w-full h-full border-0"
+                onload="onReviewIframeLoad(this)"></iframe>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

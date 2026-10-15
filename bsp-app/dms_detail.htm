@@ -1,0 +1,439 @@
+<%@page language="abap"%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detail DMS - ECM System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0',
+              500: '#10b981', 600: '#059669', 700: '#047857', 800: '#064e3b'
+            }
+          },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .h-timeline {
+      display: flex;
+      align-items: flex-start;
+      gap: 0;
+      min-width: max-content;
+      position: relative;
+    }
+    .h-timeline-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      min-width: 180px;
+    }
+    .h-timeline-item:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: calc(50% + 14px);
+      right: 0;
+      height: 2px;
+      background: #e2e8f0;
+      width: calc(100% - 28px);
+    }
+    .h-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #94a3b8;
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 2px #e2e8f0;
+    }
+    .h-timeline-item:first-child .h-dot {
+      width: 16px;
+      height: 16px;
+      background: #059669;
+      box-shadow: 0 0 0 3px rgba(5,150,105,0.2);
+    }
+    .h-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px 14px;
+      width: 164px;
+      text-align: left;
+    }
+    .h-timeline-item:first-child .h-card {
+      border-color: rgba(5,150,105,0.3);
+      background: #ecfdf5;
+    }
+  </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+
+  <%@include file="app_header.htm" %>
+
+  <div class="px-8 py-7 max-w-[1200px] mx-auto">
+
+    <!-- Back Link -->
+    <a href="javascript:history.back()"
+       class="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-brand-600 transition-colors mb-5">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      Kembali
+    </a>
+
+    <!-- Action Alert -->
+      <% IF MV_MSG IS NOT INITIAL. %>
+        <% IF MV_MSG CS 'Gagal'. %>
+          <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm font-medium">
+            <i class="fas fa-exclamation-triangle mr-1"></i> <%= MV_MSG %>
+          </div>
+        <% ELSE. %>
+          <div class="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl mb-5 text-sm font-medium">
+            <i class="fas fa-check-circle mr-1"></i> <%= MV_MSG %>
+          </div>
+        <% ENDIF. %>
+      <% ENDIF. %>
+
+    <!-- Error Alert -->
+    <% IF MV_ERROR IS NOT INITIAL. %>
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm font-medium">
+      <%= MV_ERROR %>
+    </div>
+    <% ENDIF. %>
+
+    <% IF MV_ERROR IS INITIAL. %>
+
+    <!-- Status Badge Helper -->
+    <%
+      DATA: lv_status_class TYPE string,
+            lv_status_label TYPE string.
+      CASE ms_header-statusintern.
+        WHEN 'IA'. lv_status_class = 'bg-blue-50 text-blue-700 border-blue-200'.   lv_status_label = 'In Work'.
+        WHEN 'AP'. lv_status_class = 'bg-purple-50 text-purple-700 border-purple-200'. lv_status_label = 'Inspection Req.'.
+        WHEN 'FR'. lv_status_class = 'bg-green-50 text-green-700 border-green-200'.  lv_status_label = 'Released'.
+        WHEN 'H4'. lv_status_class = 'bg-slate-100 text-slate-600 border-slate-200'. lv_status_label = 'Obsolete'.
+        WHEN 'ZG'. lv_status_class = 'bg-red-50 text-red-700 border-red-200'.       lv_status_label = 'Rejected'.
+        WHEN OTHERS. lv_status_class = 'bg-slate-100 text-slate-600 border-slate-200'. lv_status_label = ms_header-statusintern.
+      ENDCASE.
+
+      DATA: lv_doknr_disp TYPE string.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING  input  = ms_header-documentnumber
+        IMPORTING  output = lv_doknr_disp.
+    %>
+
+    <!-- ① Document Header Card -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div class="px-6 py-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Nomor Dokumen</div>
+          <div class="text-2xl font-bold text-brand-600 font-mono"><%= lv_doknr_disp %></div>
+        </div>
+        <span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold border <%= lv_status_class %>">
+          <%= lv_status_label %>
+        </span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200">
+        <div class="px-6 py-4">
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Tipe Dokumen</div>
+          <div class="text-sm font-semibold text-slate-700 font-mono"><%= ms_header-documenttype %></div>
+        </div>
+        <div class="px-6 py-4">
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Versi</div>
+          <div class="text-sm font-semibold text-slate-700 font-mono"><%= ms_header-documentversion %></div>
+        </div>
+        <div class="px-6 py-4">
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Part</div>
+          <div class="text-sm font-semibold text-slate-700 font-mono"><%= ms_header-documentpart %></div>
+        </div>
+        <div class="px-6 py-4">
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Status Internal</div>
+          <div class="text-sm font-semibold text-slate-700 font-mono"><%= ms_header-statusintern %></div>
+        </div>
+        <div class="px-6 py-4">
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Dibuat Oleh</div>
+          <div class="text-sm font-semibold text-slate-700"><%= ms_header-username %></div>
+        </div>
+        <div class="px-6 py-4">
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Tanggal Buat</div>
+          <div class="text-sm font-semibold text-slate-700 font-mono"><%= ms_header-createdate %></div>
+        </div>
+        <div class="px-6 py-4 md:col-span-3 border-t md:border-t-0 border-slate-200">
+          <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Deskripsi</div>
+          <div class="text-sm text-slate-600">
+            <% IF ms_header-description IS INITIAL. %>
+              <span class="text-slate-400 italic">- tidak ada deskripsi -</span>
+            <% ELSE. %>
+              <%= ms_header-description %>
+            <% ENDIF. %>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② Object Links (Material) -->
+    <%
+      DATA: ls_obj_link TYPE ty_obj_link,
+            lv_obj_idx  TYPE i,
+            lv_obj_count TYPE i.
+      DESCRIBE TABLE mt_obj_links LINES lv_obj_count.
+    %>
+    <% IF mt_obj_links IS NOT INITIAL. %>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
+        <span class="w-6 h-6 rounded bg-purple-600 text-white flex items-center justify-center text-xs font-bold">M</span>
+        <h3 class="text-sm font-bold text-slate-800">Object Link &mdash; Material</h3>
+        <span class="ml-auto text-xs text-slate-400 font-mono"><%= lv_obj_count %> material</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200">
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-12">#</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Material</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Level</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Deskripsi</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% lv_obj_idx = 0. %>
+            <% LOOP AT mt_obj_links INTO ls_obj_link. %>
+            <%   lv_obj_idx = lv_obj_idx + 1. %>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-4 py-3 text-slate-400 text-xs font-mono"><%= lv_obj_idx %></td>
+              <td class="px-4 py-3 font-mono text-sm text-purple-700 font-semibold"><%= ls_obj_link-objky %></td>
+              <td class="px-4 py-3">
+                <% IF ls_obj_link-mtart = 'FERT'. %>
+                  <span class="inline-block px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200">Finish Goods</span>
+                <% ELSEIF ls_obj_link-mtart = 'HALB'. %>
+                  <span class="inline-block px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">Semifinish Goods</span>
+                <% ELSEIF ls_obj_link-mtart = 'HALM'. %>
+                  <span class="inline-block px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">Semifinish Metal</span>
+                <% ELSE. %>
+                  <span class="text-slate-400 text-xs"><%= ls_obj_link-mtart %></span>
+                <% ENDIF. %>
+              </td>
+              <td class="px-4 py-3 text-slate-600">
+                <% IF ls_obj_link-maktx IS NOT INITIAL. %>
+                  <%= ls_obj_link-maktx %>
+                <% ELSE. %>
+                  <span class="text-slate-400 italic">-</span>
+                <% ENDIF. %>
+              </td>
+            </tr>
+            <% ENDLOOP. %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <% ENDIF. %>
+
+    <!-- [FILES SECTION] -->
+    <%
+      DATA: ls_file      TYPE cvapi_doc_file,
+            lv_file_idx  TYPE i,
+            lv_file_url  TYPE string,
+            lv_file_name TYPE string,
+            lt_fname     TYPE TABLE OF string,
+            lv_fname_cnt TYPE i,
+            lv_can_delete TYPE abap_bool.
+    %>
+    <% IF mt_files IS NOT INITIAL. %>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 p-5">
+      <h3 class="text-sm font-bold text-slate-700 uppercase tracking-wide mb-4">
+        <i class="fas fa-paperclip mr-2 text-slate-400"></i> File Original (Lampiran)
+      </h3>
+      <div class="flex flex-col gap-3">
+    <% LOOP AT mt_files INTO ls_file. %>
+    <%   lv_file_idx = sy-tabix. %>
+    <%
+         CLEAR: lt_fname, lv_file_name.
+         SPLIT ls_file-filename AT '/' INTO TABLE lt_fname.
+         DESCRIBE TABLE lt_fname LINES lv_fname_cnt.
+         READ TABLE lt_fname INDEX lv_fname_cnt INTO lv_file_name.
+         IF lv_file_name IS INITIAL.
+           lv_file_name = ls_file-description.
+         ENDIF.
+         IF lv_file_name IS INITIAL.
+           lv_file_name = |File { lv_file_idx }|.
+         ENDIF.
+
+         lv_file_url = |dms_detail_download.htm?DOKNR={ lv_doknr_disp }| &&
+                       |&DOKAR={ ms_header-documenttype }| &&
+                       |&DOKVR={ ms_header-documentversion }| &&
+                       |&DOKTL={ ms_header-documentpart }| &&
+                       |&ORIGTP={ lv_file_idx }| &&
+                       |&t={ sy-uzeit }|.
+    %>
+        <div class="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 shrink-0">
+              <i class="fas fa-file-alt text-xl"></i>
+            </div>
+            <div>
+              <div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-0.5">File <%= lv_file_idx %></div>
+              <div class="text-sm font-semibold text-slate-700 break-all"><%= lv_file_name %></div>
+            </div>
+          </div>
+          <div class="shrink-0 ml-4 flex items-center gap-2">
+            <a href="<%= lv_file_url %>" target="_blank" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm inline-flex items-center gap-2">
+              <i class="fas fa-download"></i> Download
+            </a>
+            <%
+              lv_can_delete = abap_false.
+              IF ( GV_ROLE = 'DRAFTER' OR GV_ROLE = 'ADMIN' OR GV_ROLE = 'APPROVER' ).
+                IF ms_header-statusintern = 'IA' OR ms_header-statusintern = 'AA' OR ms_header-statusintern = 'ZG'.
+                  lv_can_delete = abap_true.
+                ENDIF.
+              ENDIF.
+            %>
+            <% IF lv_can_delete = abap_true. %>
+            <form id="deleteForm_<%= lv_file_idx %>" method="post" action="dms_detail.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&DOKAR=<%= MV_DOKAR %>&DOKNR=<%= MV_DOKNR %>&DOKVR=<%= MV_DOKVR %>&DOKTL=<%= MV_DOKTL %>" class="inline">
+              <input type="hidden" name="OnInputProcessing" value="delete_file">
+              <input type="hidden" name="file_idx" value="<%= lv_file_idx %>">
+              <button type="button" onclick="confirmDelete('<%= lv_file_idx %>', '<%= lv_file_name %>')" class="px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 text-sm font-medium rounded-lg transition-colors shadow-sm inline-flex items-center gap-2" title="Hapus Lampiran">
+                <i class="fas fa-trash-alt"></i> Delete
+              </button>
+            </form>
+            <% ENDIF. %>
+          </div>
+        </div>
+    <% ENDLOOP. %>
+      </div>
+    </div>
+    <% ENDIF. %>
+
+    <!-- ③ Status Log Timeline -->
+    <%
+      DATA: ls_log       TYPE drap,
+            lv_log_sc    TYPE string,
+            lv_log_sl    TYPE string,
+            lv_log_date  TYPE string,
+            lv_log_time  TYPE string,
+            lv_log_count TYPE i,
+            lv_log_idx   TYPE i,
+            lt_log_rev   TYPE STANDARD TABLE OF drap,
+            ls_log_rev   TYPE drap.
+
+      lt_log_rev = mt_status_log.
+      SORT lt_log_rev BY stzae ASCENDING.
+      DESCRIBE TABLE lt_log_rev LINES lv_log_count.
+    %>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
+        <span class="w-6 h-6 rounded bg-brand-600 text-white flex items-center justify-center text-xs font-bold">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </span>
+        <h3 class="text-sm font-bold text-slate-800">Riwayat Status</h3>
+        <span class="ml-auto text-xs text-slate-400 font-mono"><%= lv_log_count %> entri</span>
+      </div>
+
+      <% IF lt_log_rev IS INITIAL. %>
+      <div class="py-12 text-center text-sm text-slate-400 italic">
+        Belum ada riwayat perubahan status.
+      </div>
+      <% ELSE. %>
+      <div class="px-5 py-6 overflow-x-auto">
+        <div class="h-timeline">
+          <% lv_log_idx = 0. %>
+          <% LOOP AT lt_log_rev INTO ls_log_rev. %>
+          <%   lv_log_idx = lv_log_idx + 1. %>
+          <%
+               CASE ls_log_rev-dokst.
+                 WHEN 'AA'. lv_log_sc = 'bg-amber-50 text-amber-700 border-amber-200'.   lv_log_sl = 'Work Request'.
+                 WHEN 'IA'. lv_log_sc = 'bg-blue-50 text-blue-700 border-blue-200'.      lv_log_sl = 'In Work'.
+                 WHEN 'AE'. lv_log_sc = 'bg-cyan-50 text-cyan-700 border-cyan-200'.      lv_log_sl = 'Change Request'.
+                 WHEN 'AP'. lv_log_sc = 'bg-purple-50 text-purple-700 border-purple-200'. lv_log_sl = 'Inspection Req.'.
+                 WHEN 'FR'. lv_log_sc = 'bg-green-50 text-green-700 border-green-200'.   lv_log_sl = 'Released'.
+                 WHEN 'H4'. lv_log_sc = 'bg-slate-100 text-slate-600 border-slate-200'.  lv_log_sl = 'Obsolete'.
+                 WHEN 'ZG'. lv_log_sc = 'bg-red-50 text-red-700 border-red-200'.         lv_log_sl = 'Rejected'.
+                 WHEN OTHERS. lv_log_sc = 'bg-slate-100 text-slate-600 border-slate-200'. lv_log_sl = ls_log_rev-dokst.
+               ENDCASE.
+
+               IF ls_log_rev-datum IS NOT INITIAL AND ls_log_rev-datum <> '00000000'.
+                 lv_log_date = ls_log_rev-datum+6(2) && '.' &&
+                               ls_log_rev-datum+4(2) && '.' &&
+                               ls_log_rev-datum(4).
+               ELSE.
+                 lv_log_date = '-'.
+               ENDIF.
+
+               IF ls_log_rev-pzeit IS NOT INITIAL.
+                 lv_log_time = ls_log_rev-pzeit(2) && ':' &&
+                               ls_log_rev-pzeit+2(2) && ':' &&
+                               ls_log_rev-pzeit+4(2).
+               ELSE.
+                 lv_log_time = '-'.
+               ENDIF.
+          %>
+          <div class="h-timeline-item">
+            <div class="flex items-center justify-center mb-3 z-10">
+              <div class="h-dot"></div>
+            </div>
+            <div class="h-card">
+              <div class="mb-2">
+                <span class="text-[0.6rem] font-bold text-slate-400 font-mono bg-slate-200 px-1.5 py-0.5 rounded">
+                  #<%= ls_log_rev-stzae %>
+                </span>
+              </div>
+              <div class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[0.68rem] font-bold border mb-2 <%= lv_log_sc %>">
+                <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+                <%= ls_log_rev-dokst %> - <%= lv_log_sl %>
+              </div>
+              <div class="text-xs text-slate-600 mb-1">
+                Oleh <span class="font-bold font-mono"><%= ls_log_rev-prnam %></span>
+              </div>
+              <div class="text-[0.68rem] text-slate-400 font-mono">
+                <div><%= lv_log_date %></div>
+                <div><%= lv_log_time %></div>
+              </div>
+            </div>
+          </div>
+          <% ENDLOOP. %>
+        </div>
+      </div>
+      <% ENDIF. %>
+    </div>
+
+    <% ENDIF. %>
+
+  </div>
+
+  <script>
+    function confirmDelete(idx, filename) {
+      Swal.fire({
+        title: 'Hapus File?',
+        html: "Anda yakin ingin menghapus <b>" + filename + "</b> dari SAP DMS?<br><br><span class='text-sm text-red-500'>Tindakan ini tidak dapat dibatalkan!</span>",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: '<i class="fas fa-trash-alt mr-1"></i> Ya, Hapus!',
+        cancelButtonText: 'Batal'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          document.getElementById('deleteForm_' + idx).submit();
+        }
+      });
+    }
+  </script>
+</body>
+</html>

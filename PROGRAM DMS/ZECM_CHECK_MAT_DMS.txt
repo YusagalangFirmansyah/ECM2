@@ -1,0 +1,692 @@
+*&---------------------------------------------------------------------*
+*& Report  ZECM_CHECK_MAT_DMS
+*&---------------------------------------------------------------------*
+*& Program Diagnostik Koneksi Material Master (MARA) ke SAP DMS
+*& Dibuat untuk menganalisa error:
+*&   "The SAP object MARA allows only one document link"
+*&---------------------------------------------------------------------*
+REPORT zecm_check_mat_dms NO STANDARD PAGE HEADING LINE-SIZE 160 LINE-COUNT 65.
+
+TABLES: mara, draw, drad.
+
+*----------------------------------------------------------------------*
+* SELECTION SCREEN
+*----------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE blk1.
+PARAMETERS: p_matnr TYPE matnr OBLIGATORY.
+PARAMETERS: p_dokar TYPE draw-dokar DEFAULT 'DMT' OBLIGATORY.
+PARAMETERS: p_doktl TYPE draw-doktl DEFAULT '000'.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE blk2.
+PARAMETERS: p_werks TYPE werks_d DEFAULT '3000'.
+PARAMETERS: p_wer2  TYPE werks_d DEFAULT '2000'.
+PARAMETERS: p_stlan TYPE stlan   DEFAULT '1'.
+PARAMETERS: p_simul TYPE c AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b2.
+
+*----------------------------------------------------------------------*
+* INITIALIZATION
+*----------------------------------------------------------------------*
+INITIALIZATION.
+  blk1 = 'Parameter Pengecekan Material'.
+  blk2 = 'Opsi Simulasi & Plant BOM'.
+
+*----------------------------------------------------------------------*
+* START-OF-SELECTION
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+
+  DATA: lv_matnr_int TYPE matnr,
+        lv_matnr_ext TYPE string,
+        ls_mara      TYPE mara,
+        lv_maktx     TYPE makt-maktx.
+
+  " 1. Format Material Number (Internal 18-char & External clean)
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_matnr
+    IMPORTING
+      output = lv_matnr_int.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING
+      input  = lv_matnr_int
+    IMPORTING
+      output = lv_matnr_ext.
+
+  " 2. Cek apakah Material ada di MARA
+  SELECT SINGLE * FROM mara INTO ls_mara WHERE matnr = lv_matnr_int.
+  IF sy-subrc <> 0.
+    " Coba tanpa konversi ALPHA
+    SELECT SINGLE * FROM mara INTO ls_mara WHERE matnr = p_matnr.
+    IF sy-subrc = 0.
+      lv_matnr_int = p_matnr.
+    ELSE.
+      WRITE: / 'ERROR: Material', p_matnr, 'tidak ditemukan di tabel MARA!' COLOR COL_NEGATIVE.
+      STOP.
+    ENDIF.
+  ENDIF.
+
+  " Ambil deskripsi material
+  SELECT SINGLE maktx FROM makt INTO lv_maktx
+    WHERE matnr = lv_matnr_int AND spras = sy-langu.
+  IF sy-subrc <> 0.
+    SELECT SINGLE maktx FROM makt INTO lv_maktx
+      WHERE matnr = lv_matnr_int.
+  ENDIF.
+
+  "----------------------------------------------------------------------
+  " HEADER OUTPUT
+  "----------------------------------------------------------------------
+  FORMAT COLOR COL_HEADING INTENSIFIED ON.
+  ULINE.
+  WRITE: / sy-vline, (156) 'HASIL DIAGNOSTIK KONEKSI MATERIAL KE SAP DMS (ZECM_CHECK_MAT_DMS)' CENTERED, sy-vline.
+  ULINE.
+  FORMAT COLOR OFF.
+
+  WRITE: / 'Tanggal / Jam :', sy-datum DD/MM/YYYY, sy-uzeit ENVIRONMENT TIME FORMAT,
+           '| User:', sy-uname,
+           '| System:', sy-sysid.
+  WRITE: / 'Material Input :', p_matnr,
+           '| Internal (18-char):', lv_matnr_int.
+  WRITE: / 'Deskripsi      :', lv_maktx.
+  WRITE: / 'Tipe Material  :', ls_mara-mtart,
+           '| Material Group:', ls_mara-matkl,
+           '| Base Unit:', ls_mara-meins.
+  ULINE.
+
+  "----------------------------------------------------------------------
+  " BAGIAN 1: CEK PLANT EXTENSION (MARC)
+  "----------------------------------------------------------------------
+  FORMAT COLOR COL_KEY INTENSIFIED ON.
+  WRITE: / '1. STATUS EXTENSION MATERIAL DI PLANT (TABEL MARC)'.
+  FORMAT COLOR OFF.
+
+  DATA: lt_marc TYPE STANDARD TABLE OF marc,
+        ls_marc TYPE marc.
+  SELECT * FROM marc INTO TABLE lt_marc WHERE matnr = lv_matnr_int.
+
+  IF lt_marc IS INITIAL.
+    WRITE: / '   [PERINGATAN] Material ini BELUM di-extend ke Plant manapun!' COLOR COL_NEGATIVE.
+  ELSE.
+    WRITE: / '   Material aktif di Plant:'.
+    LOOP AT lt_marc INTO ls_marc.
+      IF ls_marc-werks = '3000'.
+        WRITE: ls_marc-werks COLOR COL_POSITIVE INTENSIFIED ON, '(Metal Factory)'.
+      ELSEIF ls_marc-werks = '2000'.
+        WRITE: ls_marc-werks COLOR COL_NORMAL INTENSIFIED ON, '(Wood Factory)'.
+      ELSEIF ls_marc-werks = '1000'.
+        WRITE: ls_marc-werks COLOR COL_NORMAL, '(HQ / Trading)'.
+      ELSE.
+        WRITE: ls_marc-werks.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+  SKIP 1.
+
+  "----------------------------------------------------------------------
+  " BAGIAN 2: CEK DOKUMEN DMS YANG SUDAH TERIKAT KE MATERIAL INI (DRAD & DRAW)
+  "----------------------------------------------------------------------
+  FORMAT COLOR COL_KEY INTENSIFIED ON.
+  WRITE: / '2. DOKUMEN DMS YANG SUDAH TERHUBUNG KE MATERIAL INI (TABEL DRAD & DRAW)'.
+  FORMAT COLOR OFF.
+
+  TYPES: BEGIN OF ty_dms_link,
+           dokar  TYPE drad-dokar,
+           doknr  TYPE drad-doknr,
+           dokvr  TYPE drad-dokvr,
+           doktl  TYPE drad-doktl,
+           dokob  TYPE drad-dokob,
+           objky  TYPE drad-objky,
+           dokst  TYPE draw-dokst,
+           dktxt  TYPE drat-dktxt,
+           adatum TYPE draw-adatum,
+         END OF ty_dms_link.
+
+  DATA: lt_dms_link TYPE STANDARD TABLE OF ty_dms_link,
+        ls_dms_link TYPE ty_dms_link.
+
+  SELECT a~dokar a~doknr a~dokvr a~doktl a~dokob a~objky
+         b~dokst c~dktxt b~adatum
+    INTO TABLE lt_dms_link
+    FROM drad AS a
+    INNER JOIN draw AS b
+      ON  a~dokar = b~dokar
+      AND a~doknr = b~doknr
+      AND a~dokvr = b~dokvr
+      AND a~doktl = b~doktl
+    LEFT OUTER JOIN drat AS c
+      ON  a~dokar = c~dokar
+      AND a~doknr = c~doknr
+      AND a~dokvr = c~dokvr
+      AND a~doktl = c~doktl
+      AND c~langu = sy-langu
+    WHERE a~dokob = 'MARA'
+      AND ( a~objky = lv_matnr_int OR a~objky = p_matnr OR a~objky = lv_matnr_ext ).
+
+  IF lt_dms_link IS INITIAL.
+    WRITE: / '   [INFO] Material ini BELUM PERNAH terikat ke dokumen DMS manapun di tabel DRAD.' COLOR COL_POSITIVE.
+  ELSE.
+    WRITE: / '   DITEMUKAN', lines( lt_dms_link ), 'DOKUMEN DMS YANG SEDANG MENGAPIT MATERIAL INI:' COLOR COL_TOTAL.
+    ULINE (150).
+    FORMAT COLOR COL_HEADING.
+    WRITE: / sy-vline, (6)  'TIPE',
+             sy-vline, (18) 'NOMOR DMS',
+             sy-vline, (5)  'VER',
+             sy-vline, (5)  'PART',
+             sy-vline, (6)  'STATUS',
+             sy-vline, (55) 'DESKRIPSI DOKUMEN',
+             sy-vline, (12) 'TGL BUAT',
+             sy-vline, (30) 'CATATAN ANALISA', sy-vline.
+    FORMAT COLOR OFF.
+    ULINE (150).
+
+    LOOP AT lt_dms_link INTO ls_dms_link.
+      DATA: lv_doknr_clean TYPE string,
+            lv_catatan     TYPE string.
+      CLEAR: lv_doknr_clean, lv_catatan.
+
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING
+          input  = ls_dms_link-doknr
+        IMPORTING
+          output = lv_doknr_clean.
+
+      IF ls_dms_link-dokar = 'DRW'.
+        lv_catatan = 'DOKUMEN WOOD (DRW)'.
+      ELSEIF ls_dms_link-dokar = 'DMT'.
+        lv_catatan = 'DOKUMEN METAL (DMT)'.
+      ELSEIF ls_dms_link-dokar = 'DBX'.
+        lv_catatan = 'DOKUMEN BOX (DBX)'.
+      ELSEIF ls_dms_link-dokar = 'TDS'.
+        lv_catatan = 'DOKUMEN TDS'.
+      ELSE.
+        lv_catatan = 'LAINNYA'.
+      ENDIF.
+
+      IF ls_dms_link-dokst = 'FR'.
+        CONCATENATE lv_catatan '[LOCKED: FR]' INTO lv_catatan SEPARATED BY space.
+      ELSEIF ls_dms_link-dokst = 'IA'.
+        CONCATENATE lv_catatan '[DRAFT: IA]' INTO lv_catatan SEPARATED BY space.
+      ENDIF.
+
+      WRITE: / sy-vline, ls_dms_link-dokar,
+               sy-vline, lv_doknr_clean,
+               sy-vline, ls_dms_link-dokvr,
+               sy-vline, ls_dms_link-doktl,
+               sy-vline, ls_dms_link-dokst,
+               sy-vline, (55) ls_dms_link-dktxt,
+               sy-vline, ls_dms_link-adatum DD/MM/YYYY,
+               sy-vline, (30) lv_catatan COLOR COL_KEY, sy-vline.
+    ENDLOOP.
+    ULINE (150).
+  ENDIF.
+  SKIP 1.
+
+  "----------------------------------------------------------------------
+  " BAGIAN 3: ANALISA BOM & LINK KOMPONEN ANAK
+  "----------------------------------------------------------------------
+  FORMAT COLOR COL_KEY INTENSIFIED ON.
+  WRITE: / '3. PENGECEKAN STRUKTUR BOM & KOMPONEN ANAK (MAST & STPO)'.
+  FORMAT COLOR OFF.
+
+  DATA: lv_stlnr     TYPE mast-stlnr,
+        lv_stlal     TYPE mast-stlal,
+        lv_bom_plant TYPE werks_d.
+  CLEAR: lv_stlnr, lv_stlal, lv_bom_plant.
+
+  " Cek BOM Plant 3000 (Metal)
+  SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal)
+    FROM mast WHERE matnr = lv_matnr_int AND werks = p_werks AND stlan = p_stlan.
+  IF sy-subrc = 0.
+    lv_bom_plant = p_werks.
+  ELSE.
+    " Cek BOM Plant 2000 (Wood)
+    SELECT SINGLE stlnr stlal INTO (lv_stlnr, lv_stlal)
+      FROM mast WHERE matnr = lv_matnr_int AND werks = p_wer2 AND stlan = p_stlan.
+    IF sy-subrc = 0.
+      lv_bom_plant = p_wer2.
+    ENDIF.
+  ENDIF.
+
+  IF lv_stlnr IS INITIAL.
+    WRITE: / '   [INFO] Material ini TIDAK MEMILIKI BOM di Plant', p_werks, 'maupun Plant', p_wer2.
+  ELSE.
+    WRITE: / '   BOM Ditemukan di Plant:', lv_bom_plant COLOR COL_POSITIVE,
+             '| BOM Number (STLNR):', lv_stlnr,
+             '| Alternative (STLAL):', lv_stlal.
+
+    " Ambil daftar item BOM Level 1
+    DATA: lt_stpo TYPE STANDARD TABLE OF stpo,
+          ls_stpo TYPE stpo.
+    SELECT * FROM stpo INTO TABLE lt_stpo WHERE stlnr = lv_stlnr.
+
+    WRITE: / '   Jumlah Komponen Anak Level 1 di BOM:', lines( lt_stpo ).
+    SKIP 1.
+
+    " Tabel Detail Komponen Anak Level 1
+    FORMAT COLOR COL_HEADING INTENSIFIED ON.
+    WRITE: / sy-vline, (6)  'ITEM',
+             sy-vline, (18) 'MATERIAL ANAK',
+             sy-vline, (45) 'DESKRIPSI',
+             sy-vline, (12) 'QTY & UNIT',
+             sy-vline, (15) 'STATUS DRAD',
+             sy-vline, (25) 'DOKUMEN TERIKAT', sy-vline.
+    FORMAT COLOR OFF.
+    ULINE (135).
+
+    DATA: lv_conflict_count TYPE i VALUE 0.
+    LOOP AT lt_stpo INTO ls_stpo.
+      DATA: lv_child_ext  TYPE string,
+            lv_child_desc TYPE makt-maktx,
+            lv_child_dms  TYPE draw-doknr,
+            lv_child_dk   TYPE draw-dokar,
+            lv_child_st   TYPE string,
+            lv_child_doc  TYPE string,
+            lv_qty_str    TYPE c LENGTH 25.
+
+      CLEAR: lv_child_ext, lv_child_desc, lv_child_dms, lv_child_dk,
+             lv_child_st, lv_child_doc, lv_qty_str.
+
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING input  = ls_stpo-idnrk
+        IMPORTING output = lv_child_ext.
+
+      SELECT SINGLE maktx FROM makt INTO lv_child_desc
+        WHERE matnr = ls_stpo-idnrk AND spras = sy-langu.
+      IF sy-subrc <> 0.
+        SELECT SINGLE maktx FROM makt INTO lv_child_desc
+          WHERE matnr = ls_stpo-idnrk.
+      ENDIF.
+
+      " Cek apakah komponen ini sudah ada di DRAD
+      SELECT SINGLE a~doknr a~dokar INTO (lv_child_dms, lv_child_dk)
+        FROM drad AS a
+        WHERE a~dokob = 'MARA' AND a~objky = ls_stpo-idnrk.
+
+      IF sy-subrc = 0.
+        lv_conflict_count = lv_conflict_count + 1.
+        lv_child_st = 'TERIKAT'.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+          EXPORTING input  = lv_child_dms
+          IMPORTING output = lv_child_doc.
+        CONCATENATE lv_child_dk '/' lv_child_doc INTO lv_child_doc.
+      ELSE.
+        lv_child_st = 'BERSIH (OK)'.
+        lv_child_doc = '-'.
+      ENDIF.
+
+      WRITE ls_stpo-menge TO lv_qty_str UNIT ls_stpo-meins.
+      CONDENSE lv_qty_str.
+      CONCATENATE lv_qty_str ls_stpo-meins INTO lv_qty_str SEPARATED BY space.
+
+      IF lv_child_st CS 'TERIKAT'.
+        WRITE: / sy-vline, ls_stpo-posnr,
+                 sy-vline, (18) lv_child_ext,
+                 sy-vline, (45) lv_child_desc,
+                 sy-vline, (12) lv_qty_str,
+                 sy-vline, (15) lv_child_st COLOR COL_NEGATIVE INTENSIFIED ON,
+                 sy-vline, (25) lv_child_doc, sy-vline.
+      ELSE.
+        WRITE: / sy-vline, ls_stpo-posnr,
+                 sy-vline, (18) lv_child_ext,
+                 sy-vline, (45) lv_child_desc,
+                 sy-vline, (12) lv_qty_str,
+                 sy-vline, (15) lv_child_st COLOR COL_POSITIVE,
+                 sy-vline, (25) lv_child_doc, sy-vline.
+      ENDIF.
+    ENDLOOP.
+    ULINE (135).
+
+    " Kumpulkan semua komponen rekursif (multi-level) seperti ZECM_DMS_UPLOAD
+    DATA: lt_all_children TYPE TABLE OF matnr,
+          lv_tot_children TYPE i,
+          lt_clean_child  TYPE TABLE OF matnr,
+          lt_conf_child   TYPE TABLE OF matnr,
+          lv_m_scan       TYPE matnr,
+          lv_chk_dms      TYPE draw-doknr,
+          lv_chk_dk       TYPE draw-dokar.
+
+    REFRESH: lt_all_children, lt_clean_child, lt_conf_child.
+    PERFORM collect_all_bom_materials USING lv_matnr_int 0 CHANGING lt_all_children.
+    lv_tot_children = lines( lt_all_children ).
+
+    " Scan seluruh 92 komponen rekursif ke tabel DRAD
+    LOOP AT lt_all_children INTO lv_m_scan.
+      IF lv_m_scan = lv_matnr_int. CONTINUE. ENDIF.
+      CLEAR: lv_chk_dms, lv_chk_dk.
+      SELECT SINGLE a~doknr a~dokar INTO (lv_chk_dms, lv_chk_dk)
+        FROM drad AS a
+        WHERE a~dokob = 'MARA' AND a~objky = lv_m_scan.
+      IF sy-subrc = 0.
+        APPEND lv_m_scan TO lt_conf_child.
+      ELSE.
+        APPEND lv_m_scan TO lt_clean_child.
+      ENDIF.
+    ENDLOOP.
+
+    WRITE: / '   Total Material Terkumpul dari Ledakan BOM Rekursif:', lv_tot_children COLOR COL_KEY.
+    WRITE: / '     - Komponen BERSIH (Belum ada Dokumen di DRAD)    :', lines( lt_clean_child ) COLOR COL_POSITIVE.
+    WRITE: / '     - Komponen TERIKAT (Sudah Punya Dokumen di DRAD) :', lines( lt_conf_child ) COLOR COL_NEGATIVE.
+
+    IF lt_conf_child IS NOT INITIAL.
+      WRITE: / '   [DAFTAR KOMPONEN YANG MEMICU KONFLIK DI DRAD]:' COLOR COL_NEGATIVE INTENSIFIED ON.
+      LOOP AT lt_conf_child INTO lv_m_scan.
+        DATA: lv_scan_ext  TYPE string,
+              lv_scan_desc TYPE makt-maktx,
+              lv_scan_dms  TYPE draw-doknr,
+              lv_scan_dk   TYPE draw-dokar,
+              lv_scan_doc  TYPE string.
+        CLEAR: lv_scan_ext, lv_scan_desc, lv_scan_dms, lv_scan_dk, lv_scan_doc.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+          EXPORTING input = lv_m_scan IMPORTING output = lv_scan_ext.
+        SELECT SINGLE maktx FROM makt INTO lv_scan_desc WHERE matnr = lv_m_scan.
+        SELECT SINGLE a~doknr a~dokar INTO (lv_scan_dms, lv_scan_dk)
+          FROM drad AS a WHERE a~dokob = 'MARA' AND a~objky = lv_m_scan.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+          EXPORTING input = lv_scan_dms IMPORTING output = lv_scan_doc.
+        CONCATENATE lv_scan_dk '/' lv_scan_doc INTO lv_scan_doc.
+        WRITE: / '     -> Material:', lv_scan_ext, (40) lv_scan_desc, 'SUDAH TERIKAT KE:', lv_scan_doc COLOR COL_NEGATIVE.
+      ENDLOOP.
+    ENDIF.
+  ENDIF.
+  SKIP 1.
+
+  "----------------------------------------------------------------------
+  " BAGIAN 4: SIMULASI BAPI_DOCUMENT_CREATE2 DENGAN 5 SKENARIO PENGUJIAN
+  "----------------------------------------------------------------------
+  IF p_simul = 'X'.
+    FORMAT COLOR COL_KEY INTENSIFIED ON.
+    WRITE: / '4. SIMULASI PEMANGGILAN BAPI_DOCUMENT_CREATE2 (TEST RUN - ROLLBACK OTOMATIS)'.
+    FORMAT COLOR OFF.
+    WRITE: / '   Pengujian dilakukan bertahap untuk memvalidasi Opsi B (Filter DRAD & Auto-Fallback):'.
+    SKIP 1.
+
+    "=== SKENARIO 4A: Header MARA saja (Single Link) ===
+    DATA: ls_doc_a TYPE bapi_doc_draw2,
+          lt_lnk_a TYPE STANDARD TABLE OF bapi_doc_drad,
+          ls_lnk_a TYPE bapi_doc_drad,
+          ls_ret_a TYPE bapiret2,
+          lv_num_a TYPE draw-doknr.
+    CLEAR: ls_doc_a, lt_lnk_a, ls_ret_a, lv_num_a.
+
+    ls_doc_a-documenttype    = p_dokar.
+    ls_doc_a-documentpart    = p_doktl.
+    ls_doc_a-documentversion = '00'.
+    ls_doc_a-description     = 'TEST SINGLE HEADER LINK'.
+    ls_doc_a-statusextern    = 'AA'.
+
+    ls_lnk_a-objecttype = 'MARA'.
+    ls_lnk_a-objectkey  = lv_matnr_int.
+    APPEND ls_lnk_a TO lt_lnk_a.
+
+    CALL FUNCTION 'BAPI_DOCUMENT_CREATE2'
+      EXPORTING documentdata = ls_doc_a
+      IMPORTING documentnumber = lv_num_a return = ls_ret_a
+      TABLES    objectlinks    = lt_lnk_a.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+    WRITE: / '[SKENARIO 4A] SINGLE LINK: Hanya Header MARA (' && lv_matnr_ext && ')'.
+    IF ls_ret_a-type = 'E' OR ls_ret_a-type = 'A'.
+      WRITE: '--> GAGAL | Msg:', ls_ret_a-id, ls_ret_a-number, ls_ret_a-message COLOR COL_NEGATIVE.
+    ELSE.
+      WRITE: '--> SUKSES (DIR Dummy:', lv_num_a, ') | Tidak ada error' COLOR COL_POSITIVE.
+    ENDIF.
+
+    "=== SKENARIO 4B: Header MARA + BOM Header (STKO_DOC) ===
+    IF lv_stlnr IS NOT INITIAL.
+      DATA: ls_doc_b TYPE bapi_doc_draw2,
+            lt_lnk_b TYPE STANDARD TABLE OF bapi_doc_drad,
+            ls_lnk_b TYPE bapi_doc_drad,
+            ls_ret_b TYPE bapiret2,
+            lv_num_b TYPE draw-doknr.
+      CLEAR: ls_doc_b, lt_lnk_b, ls_ret_b, lv_num_b.
+
+      ls_doc_b-documenttype    = p_dokar.
+      ls_doc_b-documentpart    = p_doktl.
+      ls_doc_b-documentversion = '00'.
+      ls_doc_b-description     = 'TEST HEADER + STKO_DOC'.
+      ls_doc_b-statusextern    = 'AA'.
+
+      ls_lnk_b-objecttype = 'MARA'.
+      ls_lnk_b-objectkey  = lv_matnr_int.
+      APPEND ls_lnk_b TO lt_lnk_b.
+
+      ls_lnk_b-objecttype = 'STKO_DOC'.
+      CONCATENATE 'M' lv_stlnr INTO ls_lnk_b-objectkey.
+      APPEND ls_lnk_b TO lt_lnk_b.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CREATE2'
+        EXPORTING documentdata = ls_doc_b
+        IMPORTING documentnumber = lv_num_b return = ls_ret_b
+        TABLES    objectlinks    = lt_lnk_b.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+      WRITE: / '[SKENARIO 4B] HEADER + STKO_DOC: MARA + BOM Header M' && lv_stlnr.
+      IF ls_ret_b-type = 'E' OR ls_ret_b-type = 'A'.
+        WRITE: '--> GAGAL | Msg:', ls_ret_b-id, ls_ret_b-number, ls_ret_b-message COLOR COL_NEGATIVE.
+      ELSE.
+        WRITE: '--> SUKSES (DIR Dummy:', lv_num_b, ') | BOM Header diterima' COLOR COL_POSITIVE.
+      ENDIF.
+    ENDIF.
+
+    "=== SKENARIO 4C-1: Baseline Tanpa Filter (Header + 92 Anak Rekursif) ===
+    IF lt_all_children IS NOT INITIAL.
+      DATA: ls_doc_c1 TYPE bapi_doc_draw2,
+            lt_lnk_c1 TYPE STANDARD TABLE OF bapi_doc_drad,
+            ls_lnk_c1 TYPE bapi_doc_drad,
+            ls_ret_c1 TYPE bapiret2,
+            lv_num_c1 TYPE draw-doknr,
+            lv_m_c1   TYPE matnr.
+      CLEAR: ls_doc_c1, lt_lnk_c1, ls_ret_c1, lv_num_c1.
+
+      ls_doc_c1-documenttype    = p_dokar.
+      ls_doc_c1-documentpart    = p_doktl.
+      ls_doc_c1-documentversion = '00'.
+      ls_doc_c1-description     = 'TEST MULTIPLE MARA RAW'.
+      ls_doc_c1-statusextern    = 'AA'.
+
+      ls_lnk_c1-objecttype = 'MARA'.
+      ls_lnk_c1-objectkey  = lv_matnr_int.
+      APPEND ls_lnk_c1 TO lt_lnk_c1.
+
+      LOOP AT lt_all_children INTO lv_m_c1.
+        IF lv_m_c1 <> lv_matnr_int.
+          ls_lnk_c1-objecttype = 'MARA'.
+          ls_lnk_c1-objectkey  = lv_m_c1.
+          APPEND ls_lnk_c1 TO lt_lnk_c1.
+        ENDIF.
+      ENDLOOP.
+
+      SORT lt_lnk_c1 BY objecttype objectkey.
+      DELETE ADJACENT DUPLICATES FROM lt_lnk_c1 COMPARING objecttype objectkey.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CREATE2'
+        EXPORTING documentdata = ls_doc_c1
+        IMPORTING documentnumber = lv_num_c1 return = ls_ret_c1
+        TABLES    objectlinks    = lt_lnk_c1.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+      WRITE: / '[SKENARIO 4C-1] TANPA FILTER (RAW): Header +', lines( lt_all_children ), 'Semua Komponen Anak'.
+      IF ls_ret_c1-type = 'E' OR ls_ret_c1-type = 'A'.
+        WRITE: '--> GAGAL | Msg:', ls_ret_c1-id, ls_ret_c1-number, ls_ret_c1-message COLOR COL_NEGATIVE.
+      ELSE.
+        WRITE: '--> SUKSES (DIR Dummy:', lv_num_c1, ')' COLOR COL_POSITIVE.
+      ENDIF.
+    ENDIF.
+
+    "=== SKENARIO 4C-2: DENGAN FILTER DRAD (Opsi B: Hanya Anak yang Belum Terikat) ===
+    IF lt_clean_child IS NOT INITIAL.
+      DATA: ls_doc_c2 TYPE bapi_doc_draw2,
+            lt_lnk_c2 TYPE STANDARD TABLE OF bapi_doc_drad,
+            ls_lnk_c2 TYPE bapi_doc_drad,
+            ls_ret_c2 TYPE bapiret2,
+            lv_num_c2 TYPE draw-doknr,
+            lv_m_c2   TYPE matnr.
+      CLEAR: ls_doc_c2, lt_lnk_c2, ls_ret_c2, lv_num_c2.
+
+      ls_doc_c2-documenttype    = p_dokar.
+      ls_doc_c2-documentpart    = p_doktl.
+      ls_doc_c2-documentversion = '00'.
+      ls_doc_c2-description     = 'TEST FILTERED MARA LINKS'.
+      ls_doc_c2-statusextern    = 'AA'.
+
+      ls_lnk_c2-objecttype = 'MARA'.
+      ls_lnk_c2-objectkey  = lv_matnr_int.
+      APPEND ls_lnk_c2 TO lt_lnk_c2.
+
+      LOOP AT lt_clean_child INTO lv_m_c2.
+        ls_lnk_c2-objecttype = 'MARA'.
+        ls_lnk_c2-objectkey  = lv_m_c2.
+        APPEND ls_lnk_c2 TO lt_lnk_c2.
+      ENDLOOP.
+
+      SORT lt_lnk_c2 BY objecttype objectkey.
+      DELETE ADJACENT DUPLICATES FROM lt_lnk_c2 COMPARING objecttype objectkey.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CREATE2'
+        EXPORTING documentdata = ls_doc_c2
+        IMPORTING documentnumber = lv_num_c2 return = ls_ret_c2
+        TABLES    objectlinks    = lt_lnk_c2.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+      WRITE: / '[SKENARIO 4C-2] DENGAN FILTER DRAD (OPSI B): Header +', lines( lt_clean_child ), 'Anak Bersih'.
+      IF ls_ret_c2-type = 'E' OR ls_ret_c2-type = 'A'.
+        WRITE: '--> GAGAL | Msg:', ls_ret_c2-id, ls_ret_c2-number, ls_ret_c2-message COLOR COL_NEGATIVE INTENSIFIED ON.
+        IF ls_ret_c2-message CS 'allows only one document link'.
+          WRITE: / '     ===> FAKTA: SAP DMT membatasi dokumen hanya boleh 1 MARA. Perlu Auto-Fallback ke Header+STKO!' COLOR COL_NEGATIVE.
+        ENDIF.
+      ELSE.
+        WRITE: '--> SUKSES (DIR Dummy:', lv_num_c2, ') | Opsi B Filter Berhasil!' COLOR COL_POSITIVE INTENSIFIED ON.
+      ENDIF.
+    ENDIF.
+
+    "=== SKENARIO 4D: FULL SOLUSI ZECM_DMS_UPLOAD (Filter + Auto-Fallback) ===
+    IF lv_stlnr IS NOT INITIAL.
+      DATA: ls_doc_d TYPE bapi_doc_draw2,
+            lt_lnk_d TYPE STANDARD TABLE OF bapi_doc_drad,
+            ls_lnk_d TYPE bapi_doc_drad,
+            ls_ret_d TYPE bapiret2,
+            lv_num_d TYPE draw-doknr,
+            lv_m_d   TYPE matnr.
+      CLEAR: ls_doc_d, lt_lnk_d, ls_ret_d, lv_num_d.
+
+      ls_doc_d-documenttype    = p_dokar.
+      ls_doc_d-documentpart    = p_doktl.
+      ls_doc_d-documentversion = '00'.
+      ls_doc_d-description     = 'TEST FULL RESILIENT SOLUSI'.
+      ls_doc_d-statusextern    = 'AA'.
+
+      ls_lnk_d-objecttype = 'MARA'.
+      ls_lnk_d-objectkey  = lv_matnr_int.
+      APPEND ls_lnk_d TO lt_lnk_d.
+
+      ls_lnk_d-objecttype = 'STKO_DOC'.
+      CONCATENATE 'M' lv_stlnr INTO ls_lnk_d-objectkey.
+      APPEND ls_lnk_d TO lt_lnk_d.
+
+      " Masukkan anak yang bersih (Opsi B)
+      LOOP AT lt_clean_child INTO lv_m_d.
+        ls_lnk_d-objecttype = 'MARA'.
+        ls_lnk_d-objectkey  = lv_m_d.
+        APPEND ls_lnk_d TO lt_lnk_d.
+      ENDLOOP.
+
+      SORT lt_lnk_d BY objecttype objectkey.
+      DELETE ADJACENT DUPLICATES FROM lt_lnk_d COMPARING objecttype objectkey.
+
+      CALL FUNCTION 'BAPI_DOCUMENT_CREATE2'
+        EXPORTING documentdata = ls_doc_d
+        IMPORTING documentnumber = lv_num_d return = ls_ret_d
+        TABLES    objectlinks    = lt_lnk_d.
+
+      DATA: lv_is_fallback TYPE abap_bool VALUE abap_false.
+      IF ( ls_ret_d-type = 'E' OR ls_ret_d-type = 'A' )
+         AND ( ( ls_ret_d-id = '26' AND ls_ret_d-number = '285' )
+               OR ls_ret_d-message CS 'allows only one' ).
+        " Auto-Fallback: Buat hanya dengan Header MARA + STKO_DOC
+        REFRESH lt_lnk_d.
+        CLEAR ls_lnk_d.
+        ls_lnk_d-objecttype = 'MARA'.
+        ls_lnk_d-objectkey  = lv_matnr_int.
+        APPEND ls_lnk_d TO lt_lnk_d.
+        ls_lnk_d-objecttype = 'STKO_DOC'.
+        CONCATENATE 'M' lv_stlnr INTO ls_lnk_d-objectkey.
+        APPEND ls_lnk_d TO lt_lnk_d.
+
+        CLEAR: ls_ret_d, lv_num_d.
+        CALL FUNCTION 'BAPI_DOCUMENT_CREATE2'
+          EXPORTING documentdata = ls_doc_d
+          IMPORTING documentnumber = lv_num_d return = ls_ret_d
+          TABLES    objectlinks    = lt_lnk_d.
+        lv_is_fallback = abap_true.
+      ENDIF.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+      WRITE: / '[SKENARIO 4D] FULL SOLUSI ZECM_DMS_UPLOAD (Filter DRAD + Auto-Fallback)'.
+      IF ls_ret_d-type = 'E' OR ls_ret_d-type = 'A'.
+        WRITE: '--> GAGAL | Msg:', ls_ret_d-id, ls_ret_d-number, ls_ret_d-message COLOR COL_NEGATIVE.
+      ELSE.
+        IF lv_is_fallback = abap_true.
+          WRITE: '--> SUKSES DENGAN AUTO-FALLBACK (DIR:', lv_num_d, ') [Header + STKO_DOC Terhubung]' COLOR COL_POSITIVE INTENSIFIED ON.
+        ELSE.
+          WRITE: '--> SUKSES PENUH (DIR:', lv_num_d, ') [Header + STKO_DOC + Anak Bersih Terhubung]' COLOR COL_POSITIVE INTENSIFIED ON.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    ULINE (150).
+  ENDIF.
+
+*----------------------------------------------------------------------*
+* FORM: collect_all_bom_materials (Identik dengan ZECM_DMS_UPLOAD)
+*----------------------------------------------------------------------*
+FORM collect_all_bom_materials
+  USING    pv_matnr TYPE matnr
+           pv_level TYPE i
+  CHANGING pt_matnr TYPE STANDARD TABLE.
+
+  DATA: lt_idnrk  TYPE TABLE OF stpo-idnrk,
+        lt_idnrk2 TYPE TABLE OF stpo-idnrk,
+        lv_idnrk  TYPE stpo-idnrk,
+        lv_exists TYPE abap_bool,
+        lv_child  TYPE matnr,
+        lv_next   TYPE i,
+        lv_chk    TYPE matnr.
+
+  IF pv_level >= 20. RETURN. ENDIF.
+
+  " Plant 1
+  IF p_werks IS NOT INITIAL.
+    SELECT p~idnrk INTO TABLE lt_idnrk
+      FROM mast AS m INNER JOIN stpo AS p ON m~stlnr = p~stlnr
+      WHERE m~matnr = pv_matnr AND m~werks = p_werks
+        AND m~stlan = p_stlan AND p~idnrk <> space.
+  ENDIF.
+
+  " Plant 2
+  IF p_wer2 IS NOT INITIAL.
+    SELECT p~idnrk INTO TABLE lt_idnrk2
+      FROM mast AS m INNER JOIN stpo AS p ON m~stlnr = p~stlnr
+      WHERE m~matnr = pv_matnr AND m~werks = p_wer2
+        AND m~stlan = p_stlan AND p~idnrk <> space.
+    APPEND LINES OF lt_idnrk2 TO lt_idnrk.
+  ENDIF.
+
+  SORT lt_idnrk.
+  DELETE ADJACENT DUPLICATES FROM lt_idnrk.
+
+  LOOP AT lt_idnrk INTO lv_idnrk.
+    lv_exists = abap_false.
+    LOOP AT pt_matnr INTO lv_chk.
+      IF lv_chk = lv_idnrk. lv_exists = abap_true. EXIT. ENDIF.
+    ENDLOOP.
+    IF lv_exists = abap_true. CONTINUE. ENDIF.
+    APPEND lv_idnrk TO pt_matnr.
+    lv_child = lv_idnrk.
+    lv_next  = pv_level + 1.
+    PERFORM collect_all_bom_materials USING lv_child lv_next CHANGING pt_matnr.
+  ENDLOOP.
+
+ENDFORM.
