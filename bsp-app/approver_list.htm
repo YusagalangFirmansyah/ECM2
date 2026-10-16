@@ -1,4 +1,4 @@
-﻿<%@page language="abap"%>
+<%@page language="abap"%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -299,17 +299,27 @@
                         <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
                         All</button>
                     
+                    <% IF GV_ROLE <> 'APPROVER_METAL'. %>
                     <button type="button" onclick="setIreqKategoriAndSubmit('DRW')" 
-                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 <% IF GV_FILTER_IREQ_KAT = 'DRW'. %>bg-blue-50 text-blue-700 border-blue-200 shadow-sm<% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 
+                        <% IF GV_FILTER_IREQ_KAT = 'DRW'. %>bg-blue-50 text-blue-700 border-blue-200 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
                         WOOD</button>
                         
                     <button type="button" onclick="setIreqKategoriAndSubmit('DBX')" 
-                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 <% IF GV_FILTER_IREQ_KAT = 'DBX'. %>bg-orange-50 text-orange-700 border-orange-200 shadow-sm<% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 
+                        <% IF GV_FILTER_IREQ_KAT = 'DBX'. %>bg-orange-50 text-orange-700 border-orange-200 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
                         BOX</button>
+                    <% ENDIF. %>
                         
+                    <% IF GV_ROLE <> 'APPROVER_WOOD'. %>
                     <button type="button" onclick="setIreqKategoriAndSubmit('DMT')" 
-                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 <% IF GV_FILTER_IREQ_KAT = 'DMT'. %>bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm<% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex-shrink-0 
+                        <% IF GV_FILTER_IREQ_KAT = 'DMT'. %>bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm
+                        <% ELSE. %>bg-white text-slate-500 border-slate-200 hover:bg-slate-100<% ENDIF. %>">
                         METAL</button>
+                    <% ENDIF. %>
                         
                     <input type="hidden" name="filter_ireq_kat" id="hidden_filter_ireq_kat" value="<%= GV_FILTER_IREQ_KAT %>">
                 </div>
@@ -400,9 +410,16 @@
         <select id="filterKat" onchange="filterEcrTable()"
           class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
           <option value="">Semua Kategori</option>
+          <% IF GV_ROLE = 'APPROVER_WOOD'. %>
+          <option value="DRW">WOOD</option>
+          <option value="DBX">BOX</option>
+          <% ELSEIF GV_ROLE = 'APPROVER_METAL'. %>
+          <option value="DMT">METAL</option>
+          <% ELSE. %>
           <option value="DRW">WOOD</option>
           <option value="DBX">BOX</option>
           <option value="DMT">METAL</option>
+          <% ENDIF. %>
         </select>
         <select id="filterPri" onchange="filterEcrTable()"
           class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">

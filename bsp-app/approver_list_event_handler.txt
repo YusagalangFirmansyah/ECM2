@@ -23,7 +23,8 @@ DATA: lv_action      TYPE string,
       lv_dir_number   TYPE zecm_req-dir_number,
       lv_dokst        TYPE dokst,
       lt_dir_parts    TYPE STANDARD TABLE OF string,
-      lv_dir_lines    TYPE i.
+      lv_dir_lines    TYPE i,
+      lv_ecr_kat      TYPE zecm_req-kategori.
 
 lv_action = request->get_form_field( 'OnInputProcessing' ).
 
@@ -35,6 +36,22 @@ IF lv_action = 'approve_ireq'.
   DATA: wa_ireq_dash TYPE zecm_ireq.
   SELECT SINGLE * FROM zecm_ireq INTO @wa_ireq_dash WHERE ireq_id = @lv_ireq_id_app.
   IF sy-subrc = 0 AND wa_ireq_dash-status = 'REQ'.
+    IF GV_ROLE = 'APPROVER_WOOD' AND wa_ireq_dash-kategori <> 'DRW' AND wa_ireq_dash-kategori <> 'DBX'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh approve request Wood/Box.'.
+      MV_ICON    = 'error'.
+      CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE
+        '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON
+        INTO lv_url.
+      navigation->goto_page( lv_url ). RETURN.
+    ENDIF.
+    IF GV_ROLE = 'APPROVER_METAL' AND wa_ireq_dash-kategori <> 'DMT'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh approve request Metal.'.
+      MV_ICON    = 'error'.
+      CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE
+        '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON
+        INTO lv_url.
+      navigation->goto_page( lv_url ). RETURN.
+    ENDIF.
     wa_ireq_dash-status = 'APPR'.
     UPDATE zecm_ireq FROM wa_ireq_dash.
   ENDIF.
@@ -92,6 +109,27 @@ ELSEIF lv_action = 'reject_ireq'.
   lv_ireq_id_rej = request->get_form_field( 'ireq_id' ).
   lv_ireq_reason = request->get_form_field( 'reject_reason' ).
   
+  DATA: wa_ireq_rej TYPE zecm_ireq.
+  SELECT SINGLE * FROM zecm_ireq INTO @wa_ireq_rej WHERE ireq_id = @lv_ireq_id_rej.
+  IF sy-subrc = 0.
+    IF GV_ROLE = 'APPROVER_WOOD' AND wa_ireq_rej-kategori <> 'DRW' AND wa_ireq_rej-kategori <> 'DBX'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh menolak request Wood/Box.'.
+      MV_ICON    = 'error'.
+      CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE
+        '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON
+        INTO lv_url.
+      navigation->goto_page( lv_url ). RETURN.
+    ENDIF.
+    IF GV_ROLE = 'APPROVER_METAL' AND wa_ireq_rej-kategori <> 'DMT'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh menolak request Metal.'.
+      MV_ICON    = 'error'.
+      CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE
+        '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON
+        INTO lv_url.
+      navigation->goto_page( lv_url ). RETURN.
+    ENDIF.
+  ENDIF.
+
   UPDATE zecm_ireq SET status = 'REJC', admin_note = @lv_ireq_reason WHERE ireq_id = @lv_ireq_id_rej.
   
   CALL FUNCTION 'NUMBER_GET_NEXT'
@@ -143,6 +181,19 @@ ELSEIF lv_action = 'approve_draft'.
   REPLACE ALL OCCURRENCES OF '-' IN lv_impl_date WITH ''.
 
   IF lv_ecr_no IS NOT INITIAL AND lv_impl_po IS NOT INITIAL AND lv_impl_date IS NOT INITIAL AND lv_impl_reason IS NOT INITIAL.
+    CLEAR lv_ecr_kat.
+    SELECT SINGLE kategori FROM zecm_req INTO @lv_ecr_kat WHERE ecr_no = @lv_ecr_no.
+    IF GV_ROLE = 'APPROVER_WOOD' AND lv_ecr_kat <> 'DRW' AND lv_ecr_kat <> 'DBX'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh approve Draft Wood/Box.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+    IF GV_ROLE = 'APPROVER_METAL' AND lv_ecr_kat <> 'DMT'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh approve Draft Metal.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+
     UPDATE zecm_req SET status = 'INWK',
                         impl_po = @lv_impl_po,
                         impl_date = @lv_impl_date,
@@ -189,6 +240,19 @@ ELSEIF lv_action = 'reject_draft'.
   lv_reason = request->get_form_field( 'reject_reason' ).
   
   IF lv_ecr_no IS NOT INITIAL AND lv_reason IS NOT INITIAL.
+    CLEAR lv_ecr_kat.
+    SELECT SINGLE kategori FROM zecm_req INTO @lv_ecr_kat WHERE ecr_no = @lv_ecr_no.
+    IF GV_ROLE = 'APPROVER_WOOD' AND lv_ecr_kat <> 'DRW' AND lv_ecr_kat <> 'DBX'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh menolak Draft Wood/Box.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+    IF GV_ROLE = 'APPROVER_METAL' AND lv_ecr_kat <> 'DMT'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh menolak Draft Metal.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+
     UPDATE zecm_req SET status = 'REJC',
                         reject_reason = @lv_reason,
                         changed_date = @sy-datum,
@@ -237,10 +301,21 @@ ELSEIF lv_action = 'approve_ecr'.
   ENDIF.
 
   " Ambil data ECR (termasuk dir_number jika sudah terdaftar)
-  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
-  SELECT SINGLE matnr_fg, dir_number FROM zecm_req
-    INTO (@lv_matnr_conv, @lv_dir_number)
+  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst, lv_ecr_kat.
+  SELECT SINGLE matnr_fg, dir_number, kategori FROM zecm_req
+    INTO (@lv_matnr_conv, @lv_dir_number, @lv_ecr_kat)
     WHERE ecr_no = @lv_ecr_no.
+
+  IF GV_ROLE = 'APPROVER_WOOD' AND lv_ecr_kat <> 'DRW' AND lv_ecr_kat <> 'DBX'.
+    MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh approve ECR Wood/Box.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'APPROVER_METAL' AND lv_ecr_kat <> 'DMT'.
+    MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh approve ECR Metal.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
 
   " 1. Prioritas Utama: Ambil langsung dari DIR_NUMBER yang tersimpan di ECR
   IF lv_dir_number IS NOT INITIAL.
@@ -420,10 +495,21 @@ ELSEIF lv_action = 'revisi_ecr'.
   ENDIF.
 
   " Ambil data ECR (termasuk dir_number jika sudah terdaftar)
-  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
-  SELECT SINGLE matnr_fg, dir_number FROM zecm_req
-    INTO (@lv_matnr_conv, @lv_dir_number)
+  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst, lv_ecr_kat.
+  SELECT SINGLE matnr_fg, dir_number, kategori FROM zecm_req
+    INTO (@lv_matnr_conv, @lv_dir_number, @lv_ecr_kat)
     WHERE ecr_no = @lv_ecr_no.
+
+  IF GV_ROLE = 'APPROVER_WOOD' AND lv_ecr_kat <> 'DRW' AND lv_ecr_kat <> 'DBX'.
+    MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh revisi ECR Wood/Box.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'APPROVER_METAL' AND lv_ecr_kat <> 'DMT'.
+    MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh revisi ECR Metal.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
 
   " 1. Prioritas Utama: Ambil langsung dari DIR_NUMBER yang tersimpan di ECR
   IF lv_dir_number IS NOT INITIAL.
@@ -623,10 +709,21 @@ ELSEIF lv_action = 'reject_ecr'.
 
   " Ambil data ECR
   " Ambil data ECR (termasuk dir_number jika sudah terdaftar)
-  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
-  SELECT SINGLE matnr_fg, dir_number FROM zecm_req
-    INTO (@lv_matnr_conv, @lv_dir_number)
+  CLEAR: lv_matnr_conv, lv_dir_number, lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst, lv_ecr_kat.
+  SELECT SINGLE matnr_fg, dir_number, kategori FROM zecm_req
+    INTO (@lv_matnr_conv, @lv_dir_number, @lv_ecr_kat)
     WHERE ecr_no = @lv_ecr_no.
+
+  IF GV_ROLE = 'APPROVER_WOOD' AND lv_ecr_kat <> 'DRW' AND lv_ecr_kat <> 'DBX'.
+    MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh menolak ECR Wood/Box.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'APPROVER_METAL' AND lv_ecr_kat <> 'DMT'.
+    MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh menolak ECR Metal.'.
+    MV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
 
   " 1. Prioritas Utama: Ambil langsung dari DIR_NUMBER yang tersimpan di ECR
   IF lv_dir_number IS NOT INITIAL.
@@ -773,6 +870,18 @@ ELSEIF lv_action = 'approve_ireq'.
   
   DATA: wa_ireq_appr TYPE zecm_ireq.
   SELECT SINGLE * FROM zecm_ireq INTO @wa_ireq_appr WHERE ireq_id = @lv_ireq_id.
+  IF sy-subrc = 0.
+    IF GV_ROLE = 'APPROVER_WOOD' AND wa_ireq_appr-kategori <> 'DRW' AND wa_ireq_appr-kategori <> 'DBX'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh approve request Wood/Box.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+    IF GV_ROLE = 'APPROVER_METAL' AND wa_ireq_appr-kategori <> 'DMT'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh approve request Metal.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+  ENDIF.
   IF sy-subrc = 0 AND wa_ireq_appr-status = 'REQ'.
     wa_ireq_appr-status = 'APPR'.
     UPDATE zecm_ireq FROM wa_ireq_appr.
@@ -822,6 +931,21 @@ ELSEIF lv_action = 'reject_ireq'.
     lv_reason = 'Ditolak oleh approver'.
   ENDIF.
 
+  DATA: wa_ireq_rej2 TYPE zecm_ireq.
+  SELECT SINGLE * FROM zecm_ireq INTO @wa_ireq_rej2 WHERE ireq_id = @lv_ireq_id.
+  IF sy-subrc = 0.
+    IF GV_ROLE = 'APPROVER_WOOD' AND wa_ireq_rej2-kategori <> 'DRW' AND wa_ireq_rej2-kategori <> 'DBX'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh menolak request Wood/Box.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+    IF GV_ROLE = 'APPROVER_METAL' AND wa_ireq_rej2-kategori <> 'DMT'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh menolak request Metal.'.
+      MV_ICON    = 'error'.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
   " Update IREQ Status: REQ -> REJC
   UPDATE zecm_ireq SET status = 'REJC', admin_note = @lv_reason
     WHERE ireq_id = @lv_ireq_id AND status = 'REQ'.
@@ -866,11 +990,35 @@ ELSEIF lv_action = 'cancel_approve_ireq'.
   " Prevent if already processed by admin 
   DATA: ls_ireq_chk TYPE zecm_ireq.
   SELECT SINGLE * FROM zecm_ireq INTO @ls_ireq_chk WHERE ireq_id = @lv_ireq_id_cancel.
+  IF sy-subrc = 0.
+    IF GV_ROLE = 'APPROVER_WOOD' AND ls_ireq_chk-kategori <> 'DRW' AND ls_ireq_chk-kategori <> 'DBX'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Wood hanya boleh membatalkan approval Wood/Box.'.
+      MV_ICON    = 'error'.
+      CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE
+        '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON
+        '&filter_ireq=APPR' INTO lv_url.
+      _M_RESPONSE->set_status( code = 302 reason = 'Found' ).
+      _M_RESPONSE->set_header_field( name = 'Location' value = lv_url ).
+      RETURN.
+    ENDIF.
+    IF GV_ROLE = 'APPROVER_METAL' AND ls_ireq_chk-kategori <> 'DMT'.
+      MV_MESSAGE = 'Akses Ditolak: Approver Metal hanya boleh membatalkan approval Metal.'.
+      MV_ICON    = 'error'.
+      CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE
+        '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON
+        '&filter_ireq=APPR' INTO lv_url.
+      _M_RESPONSE->set_status( code = 302 reason = 'Found' ).
+      _M_RESPONSE->set_header_field( name = 'Location' value = lv_url ).
+      RETURN.
+    ENDIF.
+  ENDIF.
   IF ls_ireq_chk-ecr_no IS NOT INITIAL.
     MV_MESSAGE = 'Gagal membatalkan. ECO sudah dibuat oleh Admin.'.
     MV_ICON    = 'error'.
     
-    CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON '&filter_ireq=APPR' INTO lv_url.
+    CONCATENATE 'approver_list.htm?u=' GV_USER_ID '&r=' GV_ROLE
+      '&n=' GV_FULL_NAME '&msg=' MV_MESSAGE '&icon=' MV_ICON
+      '&filter_ireq=APPR' INTO lv_url.
     _M_RESPONSE->set_status( code = 302 reason = 'Found' ).
     _M_RESPONSE->set_header_field( name = 'Location' value = lv_url ).
     RETURN.
