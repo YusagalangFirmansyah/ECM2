@@ -1,4 +1,4 @@
-﻿<%@page language="abap"%>
+<%@page language="abap"%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -278,15 +278,21 @@
         '<select class="swal-custom-select" id="swal-role">' +
         '  <option value="">Pilih Role...</option>' +
         '  <option value="SUPERADMIN">SUPERADMIN</option>' +
-        '  <option value="ADMIN">ADMIN</option>' +
+        '  <option value="ADMIN">ADMIN (Semua)</option>' +
+        '  <option value="ADMIN_WOOD">ADMIN WOOD</option>' +
+        '  <option value="ADMIN_METAL">ADMIN METAL</option>' +
         '  <option value="REQUESTER">REQUESTER</option>' +
-        '  <option value="DRAFTER">DRAFTER</option>' +
-        '  <option value="APPROVER">APPROVER</option>' +
+        '  <option value="DRAFTER">DRAFTER (Semua)</option>' +
+        '  <option value="DRAFTER_WOOD">DRAFTER WOOD</option>' +
+        '  <option value="DRAFTER_METAL">DRAFTER METAL</option>' +
+        '  <option value="APPROVER">APPROVER (Semua)</option>' +
+        '  <option value="APPROVER_WOOD">APPROVER WOOD</option>' +
+        '  <option value="APPROVER_METAL">APPROVER METAL</option>' +
         '  <option value="VIEWER">VIEWER</option>' +
         '  <option value="MASTER_DATA">MASTER_DATA</option>' +
         '  <option value="PRODUKSI">PRODUKSI</option>' +
         '  <option value="COSTING">COSTING</option>' +
-          '  <option value="COST_ENG">COSTING ENG</option>' +
+        '  <option value="COST_ENG">COSTING ENG</option>' +
         '  <option value="PAYROLL">PAYROLL</option>' +
         '</select>',
       showCancelButton: true,
@@ -335,15 +341,21 @@
         '<input class="swal-custom-input" id="swal-edit-pw" type="password" placeholder="Password baru (kosongkan jika tidak diganti)" autocomplete="new-password">' +
         '<select class="swal-custom-select" id="swal-edit-role">' +
         '  <option value="SUPERADMIN"' + (role === 'SUPERADMIN' ? ' selected' : '') + '>SUPERADMIN</option>' +
-        '  <option value="ADMIN"' + (role === 'ADMIN' ? ' selected' : '') + '>ADMIN</option>' +
+        '  <option value="ADMIN"' + (role === 'ADMIN' ? ' selected' : '') + '>ADMIN (Semua)</option>' +
+        '  <option value="ADMIN_WOOD"' + (role === 'ADMIN_WOOD' ? ' selected' : '') + '>ADMIN WOOD</option>' +
+        '  <option value="ADMIN_METAL"' + (role === 'ADMIN_METAL' ? ' selected' : '') + '>ADMIN METAL</option>' +
         '  <option value="REQUESTER"' + (role === 'REQUESTER' ? ' selected' : '') + '>REQUESTER</option>' +
-        '  <option value="DRAFTER"' + (role === 'DRAFTER' ? ' selected' : '') + '>DRAFTER</option>' +
-        '  <option value="APPROVER"' + (role === 'APPROVER' ? ' selected' : '') + '>APPROVER</option>' +
+        '  <option value="DRAFTER"' + (role === 'DRAFTER' ? ' selected' : '') + '>DRAFTER (Semua)</option>' +
+        '  <option value="DRAFTER_WOOD"' + (role === 'DRAFTER_WOOD' ? ' selected' : '') + '>DRAFTER WOOD</option>' +
+        '  <option value="DRAFTER_METAL"' + (role === 'DRAFTER_METAL' ? ' selected' : '') + '>DRAFTER METAL</option>' +
+        '  <option value="APPROVER"' + (role === 'APPROVER' ? ' selected' : '') + '>APPROVER (Semua)</option>' +
+        '  <option value="APPROVER_WOOD"' + (role === 'APPROVER_WOOD' ? ' selected' : '') + '>APPROVER WOOD</option>' +
+        '  <option value="APPROVER_METAL"' + (role === 'APPROVER_METAL' ? ' selected' : '') + '>APPROVER METAL</option>' +
         '  <option value="VIEWER"' + (role === 'VIEWER' ? ' selected' : '') + '>VIEWER</option>' +
         '  <option value="MASTER_DATA"' + (role === 'MASTER_DATA' ? ' selected' : '') + '>MASTER_DATA</option>' +
         '  <option value="PRODUKSI"' + (role === 'PRODUKSI' ? ' selected' : '') + '>PRODUKSI</option>' +
         '  <option value="COSTING"' + (role === 'COSTING' ? ' selected' : '') + '>COSTING</option>' +
-          '  <option value="COST_ENG"' + (role === 'COST_ENG' ? ' selected' : '') + '>COSTING ENG</option>' +
+        '  <option value="COST_ENG"' + (role === 'COST_ENG' ? ' selected' : '') + '>COSTING ENG</option>' +
         '  <option value="PAYROLL"' + (role === 'PAYROLL' ? ' selected' : '') + '>PAYROLL</option>' +
         '</select>',
       showCancelButton: true,

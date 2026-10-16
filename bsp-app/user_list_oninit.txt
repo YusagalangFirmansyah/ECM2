@@ -7,7 +7,7 @@ IF GV_USER_ID IS INITIAL.
   EXIT.
 ENDIF.
 
-IF GV_ROLE <> 'SUPERADMIN' AND GV_ROLE <> 'ADMIN'.
+IF GV_ROLE <> 'SUPERADMIN' AND NOT ( GV_ROLE CS 'ADMIN' ).
   navigation->goto_page( 'login.htm' ).
   EXIT.
 ENDIF.

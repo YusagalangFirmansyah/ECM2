@@ -1,4 +1,4 @@
-﻿" login Event Handler - V11
+" login Event Handler - V11
 " Routing per role
 
 DATA: LV_USER_ID  TYPE string,
@@ -59,11 +59,14 @@ ELSE.
       CONDENSE LS_USER-zecm_role.
       IF LS_USER-zecm_role = 'SUPERADMIN'.
         CONCATENATE 'dashboard.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
-      ELSEIF LS_USER-zecm_role = 'DRAFTER'.
+      ELSEIF LS_USER-zecm_role = 'DRAFTER' OR LS_USER-zecm_role = 'DRAFTER_WOOD'
+          OR LS_USER-zecm_role = 'DRAFTER_METAL'.
         CONCATENATE 'drafter_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
-      ELSEIF LS_USER-zecm_role = 'ADMIN'.
+      ELSEIF LS_USER-zecm_role = 'ADMIN' OR LS_USER-zecm_role = 'ADMIN_WOOD'
+          OR LS_USER-zecm_role = 'ADMIN_METAL'.
         CONCATENATE 'admin_dashboard.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
-      ELSEIF LS_USER-zecm_role = 'APPROVER'.
+      ELSEIF LS_USER-zecm_role = 'APPROVER' OR LS_USER-zecm_role = 'APPROVER_WOOD'
+          OR LS_USER-zecm_role = 'APPROVER_METAL'.
         CONCATENATE 'approver_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
       ELSEIF LS_USER-zecm_role = 'REQUESTER'.
         CONCATENATE 'requester_list.htm?u=' LS_USER-zecm_user_id '&r=' LS_USER-zecm_role '&n=' lv_name_esc INTO LV_URL.
