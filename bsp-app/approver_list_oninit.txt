@@ -123,6 +123,12 @@ DATA: BEGIN OF ls_raw,
       END OF ls_raw,
       lt_raw LIKE STANDARD TABLE OF ls_raw.
 
+DATA: BEGIN OF ls_raw_ireq,
+        req_date TYPE zecm_ireq-req_date,
+        status   TYPE zecm_ireq-status,
+      END OF ls_raw_ireq,
+      lt_raw_ireq LIKE STANDARD TABLE OF ls_raw_ireq.
+
 IF GV_ROLE = 'APPROVER_WOOD'.
   SELECT created_date, status
     INTO TABLE @lt_raw
@@ -445,7 +451,7 @@ IF GV_MAT_SEARCH IS NOT INITIAL.
     WHERE ( a~matnr_fg LIKE @lv_kw OR b~maktx LIKE @lv_kw )
     ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
 
-  DELETE lt_mat_hist WHERE change_scope = 'ROUT' OR title CS 'Routing' OR title CS 'alur proses'.
+  DELETE lt_mat_hist WHERE title CS 'Routing' OR title CS 'alur proses'.
   IF GV_ROLE = 'APPROVER_WOOD'.
     DELETE lt_mat_hist WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
   ELSEIF GV_ROLE = 'APPROVER_METAL'.
@@ -879,7 +885,7 @@ ENDIF.
         ON a~drafter = d~zecm_user_id
       ORDER BY a~created_date DESCENDING, a~created_time DESCENDING.
 
-  DELETE LT_ECR WHERE change_scope = 'ROUT' OR title CS 'Routing' OR title CS 'alur proses'.
+  DELETE LT_ECR WHERE title CS 'Routing' OR title CS 'alur proses'.
   IF GV_ROLE = 'APPROVER_WOOD'.
     DELETE LT_ECR WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
   ELSEIF GV_ROLE = 'APPROVER_METAL'.
