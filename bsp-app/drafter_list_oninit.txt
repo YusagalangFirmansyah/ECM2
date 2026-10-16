@@ -57,12 +57,30 @@ ENDIF.
 DATA: lt_drafter_status TYPE STANDARD TABLE OF ty_status_count,
       ls_drafter_status TYPE ty_status_count.
 
-SELECT status, COUNT(*) AS cnt
-  INTO TABLE @lt_drafter_status
-  FROM zecm_req
-  WHERE drafter = @GV_USER_ID
-    AND created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
-  GROUP BY status.
+IF GV_ROLE = 'DRAFTER_WOOD'.
+  SELECT status, COUNT(*) AS cnt
+    INTO TABLE @lt_drafter_status
+    FROM zecm_req
+    WHERE drafter = @GV_USER_ID
+      AND created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+      AND ( kategori = 'DRW' OR kategori = 'DBX' )
+    GROUP BY status.
+ELSEIF GV_ROLE = 'DRAFTER_METAL'.
+  SELECT status, COUNT(*) AS cnt
+    INTO TABLE @lt_drafter_status
+    FROM zecm_req
+    WHERE drafter = @GV_USER_ID
+      AND created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+      AND kategori = 'DMT'
+    GROUP BY status.
+ELSE.
+  SELECT status, COUNT(*) AS cnt
+    INTO TABLE @lt_drafter_status
+    FROM zecm_req
+    WHERE drafter = @GV_USER_ID
+      AND created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+    GROUP BY status.
+ENDIF.
 
 LOOP AT lt_drafter_status INTO ls_drafter_status.
   CASE ls_drafter_status-status.
@@ -382,6 +400,13 @@ ELSE.
                AND a~created_date >= @lv_df_internal AND a~created_date <= @lv_dt_internal
              ORDER BY a~created_date DESCENDING.
     ENDIF.
+  ENDIF.
+
+  " Filter division for Wood and Metal Drafters
+  IF GV_ROLE = 'DRAFTER_WOOD'.
+    DELETE LT_ECRS WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
+  ELSEIF GV_ROLE = 'DRAFTER_METAL'.
+    DELETE LT_ECRS WHERE kategori <> 'DMT'.
   ENDIF.
 
   " Remove leading zeros + DMS detection — search DRAD by material

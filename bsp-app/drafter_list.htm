@@ -1149,18 +1149,34 @@ class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outli
           <div class="mb-4">
             <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Kategori <span class="text-red-500">*</span></label>
             <div class="flex gap-3">
-              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
-                <input type="radio" name="kategori" value="DRW" class="accent-emerald-600">
-                <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
-              </label>
-              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
-                <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
-                <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
-              </label>
-              <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
-                <input type="radio" name="kategori" value="DMT" class="accent-emerald-600">
-                <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
-              </label>
+              <% IF GV_ROLE = 'DRAFTER_METAL'. %>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DMT" class="accent-emerald-600" checked>
+                  <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
+                </label>
+              <% ELSEIF GV_ROLE = 'DRAFTER_WOOD'. %>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DRW" class="accent-emerald-600" checked>
+                  <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
+                  <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
+                </label>
+              <% ELSE. %>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DRW" class="accent-emerald-600">
+                  <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
+                  <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
+                </label>
+                <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
+                  <input type="radio" name="kategori" value="DMT" class="accent-emerald-600">
+                  <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
+                </label>
+              <% ENDIF. %>
             </div>
           </div>
 

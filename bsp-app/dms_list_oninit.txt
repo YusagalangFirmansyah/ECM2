@@ -1,4 +1,4 @@
-﻿* dms_list OnInit (Client-Side Pagination)
+* dms_list OnInit (Client-Side Pagination)
 CLEAR: LT_DOCS, LT_DISPLAY.
 
 GV_USER_ID    = request->get_form_field( 'u' ).
@@ -23,6 +23,13 @@ SELECT a~dokar, a~doknr, a~dokvr, a~doktl, a~dokst, a~adatum,
 
 " Deterministic sort
 SORT LT_DOCS BY adatum DESCENDING doknr DESCENDING.
+
+" Division filter by role
+IF GV_ROLE = 'DRAFTER_WOOD' OR GV_ROLE = 'ADMIN_WOOD' OR GV_ROLE = 'APPROVER_WOOD'.
+  DELETE LT_DOCS WHERE dokar <> 'DRW' AND dokar <> 'DBX'.
+ELSEIF GV_ROLE = 'DRAFTER_METAL' OR GV_ROLE = 'ADMIN_METAL' OR GV_ROLE = 'APPROVER_METAL'.
+  DELETE LT_DOCS WHERE dokar <> 'DMT'.
+ENDIF.
 
 " ── Linked Material: prioritas FERT > HALB > HALM > apapun ──
 " FIX: SELECT SINGLE → SELECT ... UP TO 1 ROWS ... ORDER BY (deterministic)

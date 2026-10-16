@@ -357,6 +357,20 @@ IF lv_action = 'create_ecr'.
   lv_reason    = request->get_form_field( 'reason' ).
   lv_matnr_str = request->get_form_field( 'materials' ).
 
+  " Security: Validate kategori per drafter role
+  IF GV_ROLE = 'DRAFTER_WOOD' AND lv_kat <> 'DRW' AND lv_kat <> 'DBX'.
+    GV_MESSAGE = 'Role DRAFTER WOOD hanya boleh membuat ECR kategori DRW (Wood) atau DBX (Box).'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+  IF GV_ROLE = 'DRAFTER_METAL' AND lv_kat <> 'DMT'.
+    GV_MESSAGE = 'Role DRAFTER METAL hanya boleh membuat ECR kategori DMT (Metal).'.
+    GV_ICON    = 'error'.
+    CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
+    navigation->goto_page( lv_url ). RETURN.
+  ENDIF.
+
   " Validate user session (prevent empty requester/drafter)
   IF GV_USER_ID IS INITIAL.
     GV_USER_ID = request->get_form_field( 'u' ).
