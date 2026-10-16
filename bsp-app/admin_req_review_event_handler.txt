@@ -67,6 +67,15 @@ IF LV_ACTION = 'approve_aprv'.
     RETURN.
   ENDIF.
 
+  IF GV_ROLE = 'ADMIN_WOOD' AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh approve request Wood & Box.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'ADMIN_METAL' AND WA_IREQ-kategori <> 'DMT'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh approve request Metal.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
   " Prevent double approve
   IF WA_IREQ-status <> 'REQ'.
     GV_MESSAGE = 'Request sudah diproses sebelumnya.'. GV_ICON = 'error'.
@@ -144,6 +153,33 @@ IF LV_ACTION = 'approve'.
 
   IF sy-subrc <> 0.
     GV_MESSAGE = 'Request tidak ditemukan.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Division security check on IREQ
+  IF GV_ROLE = 'ADMIN_WOOD' AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh memproses request Wood & Box.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'ADMIN_METAL' AND WA_IREQ-kategori <> 'DMT'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh memproses request Metal.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
+  " Division security check on Assigned Drafter
+  DATA: lv_dr_role TYPE zecm_user-zecm_role.
+  SELECT SINGLE zecm_role FROM zecm_user INTO @lv_dr_role
+    WHERE zecm_user_id = @LV_ASSIGNED_DRAFTER.
+  IF GV_ROLE = 'ADMIN_WOOD' AND lv_dr_role = 'DRAFTER_METAL'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Wood tidak boleh menugaskan request ke Drafter Metal.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'ADMIN_METAL' AND lv_dr_role = 'DRAFTER_WOOD'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Metal tidak boleh menugaskan request ke Drafter Wood.'.
+    GV_ICON    = 'error'.
     RETURN.
   ENDIF.
 
@@ -321,6 +357,17 @@ IF LV_ACTION = 'reject'.
     RETURN.
   ENDIF.
 
+  IF GV_ROLE = 'ADMIN_WOOD' AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh menolak request Wood & Box.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'ADMIN_METAL' AND WA_IREQ-kategori <> 'DMT'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh menolak request Metal.'.
+    GV_ICON    = 'error'.
+    RETURN.
+  ENDIF.
+
   " Prevent double reject (Boleh menolak jika statusnya APPR atau INWK)
   IF WA_IREQ-status = 'ECO' OR WA_IREQ-status = 'REJ' OR WA_IREQ-status = 'REJC'.
     GV_MESSAGE = 'Request sudah ditolak atau sudah diproses menjadi ECO.'. GV_ICON = 'error'.
@@ -424,6 +471,15 @@ IF LV_ACTION = 'update'.
 
   IF sy-subrc <> 0.
     GV_MESSAGE = 'Request tidak ditemukan.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
+  IF GV_ROLE = 'ADMIN_WOOD' AND ( WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX' OR LV_KATEGORI = 'DMT' ).
+    GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh mengedit request Wood & Box.'. GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'ADMIN_METAL' AND ( WA_IREQ-kategori <> 'DMT' OR LV_KATEGORI <> 'DMT' ).
+    GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh mengedit request Metal.'. GV_ICON = 'error'.
     RETURN.
   ENDIF.
 

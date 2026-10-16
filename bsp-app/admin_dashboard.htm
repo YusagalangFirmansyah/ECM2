@@ -1,4 +1,4 @@
-﻿<%@page language="abap"%>
+<%@page language="abap"%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -273,9 +273,13 @@
                     <!-- Filter Kategori IREQ (JS-based) -->
                     <div class="flex items-center bg-white rounded-lg border border-slate-200 p-1 shadow-sm" id="filterIreqKat">
                         <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-emerald-50 text-emerald-700 border border-emerald-200 active" data-val="ALL">Semua</button>
+                        <% IF GV_ROLE <> 'ADMIN_METAL'. %>
                         <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-white text-slate-500 hover:bg-slate-50" data-val="DRW">DRW</button>
                         <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-white text-slate-500 hover:bg-slate-50" data-val="DBX">DBX</button>
+                        <% ENDIF. %>
+                        <% IF GV_ROLE <> 'ADMIN_WOOD'. %>
                         <button class="ireq-kat-btn px-3 py-1 text-xs font-bold rounded-md transition-colors bg-white text-slate-500 hover:bg-slate-50" data-val="DMT">DMT</button>
+                        <% ENDIF. %>
                     </div>
                     
                     <span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm" id="ireqCounter"><%= GV_COUNT_IREQ %> pending</span>
@@ -899,6 +903,7 @@
             <div class="mb-4">
               <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Kategori <span class="text-red-500">*</span></label>
               <div class="flex gap-3">
+                <% IF GV_ROLE <> 'ADMIN_METAL'. %>
                 <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
                   <input type="radio" name="kategori" value="DRW" class="accent-emerald-600">
                   <div><div class="font-semibold text-sm">DRW</div><div class="text-xs text-slate-500">Drawing Wood</div></div>
@@ -907,10 +912,13 @@
                   <input type="radio" name="kategori" value="DBX" class="accent-emerald-600">
                   <div><div class="font-semibold text-sm">DBX</div><div class="text-xs text-slate-500">Drawing Box</div></div>
                 </label>
+                <% ENDIF. %>
+                <% IF GV_ROLE <> 'ADMIN_WOOD'. %>
                 <label class="radio-card flex-1 flex items-center gap-2 p-3 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-emerald-500">
                   <input type="radio" name="kategori" value="DMT" class="accent-emerald-600">
                   <div><div class="font-semibold text-sm">DMT</div><div class="text-xs text-slate-500">Drawing Metal</div></div>
                 </label>
+                <% ENDIF. %>
               </div>
             </div>
 

@@ -87,6 +87,18 @@ IF lv_action = 'create_ecr_admin'.
     RETURN.
   ENDIF.
 
+  " Division security validation
+  IF GV_ROLE = 'ADMIN_WOOD' AND lv_kategori <> 'DRW' AND lv_kategori <> 'DBX'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh membuat ECR kategori Wood atau Box.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+  IF GV_ROLE = 'ADMIN_METAL' AND lv_kategori <> 'DMT'.
+    GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh membuat ECR kategori Metal.'.
+    GV_ICON = 'error'.
+    RETURN.
+  ENDIF.
+
   " Generate ECR number
   DATA: lv_new_ecr_no TYPE zecm_req-ecr_no.
   CALL FUNCTION 'NUMBER_GET_NEXT'
@@ -325,10 +337,22 @@ ENDIF.
 DATA: lt_drafter TYPE STANDARD TABLE OF zecm_user,
       ls_drafter TYPE zecm_user,
       lv_dopt    TYPE string.
-SELECT zecm_user_id, zecm_full_name FROM zecm_user
-  INTO CORRESPONDING FIELDS OF TABLE @lt_drafter
-  WHERE zecm_role = 'DRAFTER'
-  ORDER BY zecm_full_name.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT zecm_user_id, zecm_full_name FROM zecm_user
+    INTO CORRESPONDING FIELDS OF TABLE @lt_drafter
+    WHERE ( zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT zecm_user_id, zecm_full_name FROM zecm_user
+    INTO CORRESPONDING FIELDS OF TABLE @lt_drafter
+    WHERE ( zecm_role = 'DRAFTER_METAL' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name.
+ELSE.
+  SELECT zecm_user_id, zecm_full_name FROM zecm_user
+    INTO CORRESPONDING FIELDS OF TABLE @lt_drafter
+    WHERE ( zecm_role = 'DRAFTER' OR zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER_METAL' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name.
+ENDIF.
 
 CLEAR GV_DRAFTER_OPTIONS.
 LOOP AT lt_drafter INTO ls_drafter.
@@ -343,14 +367,34 @@ ENDLOOP.
 DATA: ls_req_opt   TYPE zecm_user,
       lv_req_html  TYPE string.
 CLEAR lv_req_html.
-SELECT zecm_user_id, zecm_full_name FROM zecm_user
-  INTO (@ls_req_opt-zecm_user_id, @ls_req_opt-zecm_full_name)
-  WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'
-  ORDER BY zecm_full_name ASCENDING.
-  CONCATENATE lv_req_html '<option value="' ls_req_opt-zecm_user_id '">'
-    ls_req_opt-zecm_user_id ' - ' ls_req_opt-zecm_full_name '</option>'
-    INTO lv_req_html.
-ENDSELECT.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT zecm_user_id, zecm_full_name FROM zecm_user
+    INTO (@ls_req_opt-zecm_user_id, @ls_req_opt-zecm_full_name)
+    WHERE ( zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+    CONCATENATE lv_req_html '<option value="' ls_req_opt-zecm_user_id '">'
+      ls_req_opt-zecm_user_id ' - ' ls_req_opt-zecm_full_name '</option>'
+      INTO lv_req_html.
+  ENDSELECT.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT zecm_user_id, zecm_full_name FROM zecm_user
+    INTO (@ls_req_opt-zecm_user_id, @ls_req_opt-zecm_full_name)
+    WHERE ( zecm_role = 'DRAFTER_METAL' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+    CONCATENATE lv_req_html '<option value="' ls_req_opt-zecm_user_id '">'
+      ls_req_opt-zecm_user_id ' - ' ls_req_opt-zecm_full_name '</option>'
+      INTO lv_req_html.
+  ENDSELECT.
+ELSE.
+  SELECT zecm_user_id, zecm_full_name FROM zecm_user
+    INTO (@ls_req_opt-zecm_user_id, @ls_req_opt-zecm_full_name)
+    WHERE ( zecm_role = 'DRAFTER' OR zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER_METAL' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+    CONCATENATE lv_req_html '<option value="' ls_req_opt-zecm_user_id '">'
+      ls_req_opt-zecm_user_id ' - ' ls_req_opt-zecm_full_name '</option>'
+      INTO lv_req_html.
+  ENDSELECT.
+ENDIF.
 GV_REQUESTER_OPTIONS = lv_req_html.
 
 " ================================================================
@@ -361,11 +405,27 @@ DATA: lt_status TYPE tt_status_count,
 
 " Filter: only current month
 
-SELECT status, COUNT(*) AS cnt
-  INTO TABLE @lt_status
-  FROM zecm_req
-  WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
-  GROUP BY status.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT status, COUNT(*) AS cnt
+    INTO TABLE @lt_status
+    FROM zecm_req
+    WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+      AND ( kategori = 'DRW' OR kategori = 'DBX' )
+    GROUP BY status.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT status, COUNT(*) AS cnt
+    INTO TABLE @lt_status
+    FROM zecm_req
+    WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+      AND kategori = 'DMT'
+    GROUP BY status.
+ELSE.
+  SELECT status, COUNT(*) AS cnt
+    INTO TABLE @lt_status
+    FROM zecm_req
+    WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+    GROUP BY status.
+ENDIF.
 
 LOOP AT lt_status INTO ls_status.
   CASE ls_status-status.
@@ -391,23 +451,47 @@ DATA: BEGIN OF ls_raw,
       END OF ls_raw,
       lt_raw LIKE STANDARD TABLE OF ls_raw.
 
-SELECT created_date, status
-  INTO TABLE @lt_raw
-  FROM zecm_req
-  WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal.
-
-" --- ADD IREQ (Request Masuk) TO RAW DATA ---
 DATA: BEGIN OF ls_raw_ireq,
         req_date TYPE zecm_ireq-req_date,
         status   TYPE zecm_ireq-status,
       END OF ls_raw_ireq,
       lt_raw_ireq LIKE STANDARD TABLE OF ls_raw_ireq.
 
-SELECT req_date, status
-  INTO TABLE @lt_raw_ireq
-  FROM zecm_ireq
-  WHERE req_date >= @lv_df_internal AND req_date <= @lv_dt_internal
-    AND status = 'REQ'.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT created_date, status
+    INTO TABLE @lt_raw
+    FROM zecm_req
+    WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+      AND ( kategori = 'DRW' OR kategori = 'DBX' ).
+  SELECT req_date, status
+    INTO TABLE @lt_raw_ireq
+    FROM zecm_ireq
+    WHERE req_date >= @lv_df_internal AND req_date <= @lv_dt_internal
+      AND status = 'REQ'
+      AND ( kategori = 'DRW' OR kategori = 'DBX' ).
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT created_date, status
+    INTO TABLE @lt_raw
+    FROM zecm_req
+    WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal
+      AND kategori = 'DMT'.
+  SELECT req_date, status
+    INTO TABLE @lt_raw_ireq
+    FROM zecm_ireq
+    WHERE req_date >= @lv_df_internal AND req_date <= @lv_dt_internal
+      AND status = 'REQ'
+      AND kategori = 'DMT'.
+ELSE.
+  SELECT created_date, status
+    INTO TABLE @lt_raw
+    FROM zecm_req
+    WHERE created_date >= @lv_df_internal AND created_date <= @lv_dt_internal.
+  SELECT req_date, status
+    INTO TABLE @lt_raw_ireq
+    FROM zecm_ireq
+    WHERE req_date >= @lv_df_internal AND req_date <= @lv_dt_internal
+      AND status = 'REQ'.
+ENDIF.
 
 LOOP AT lt_raw_ireq INTO ls_raw_ireq.
   ls_raw-created_date = ls_raw_ireq-req_date.
@@ -557,18 +641,45 @@ DATA: BEGIN OF ls_ecr_c,
        lt_ecr_c LIKE STANDARD TABLE OF ls_ecr_c.
 
 " 1. Ambil daftar Drafter yang aktif
-SELECT zecm_user_id, zecm_full_name
-  INTO CORRESPONDING FIELDS OF TABLE @lt_drafter_c
-  FROM zecm_user
-  WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'
-  ORDER BY zecm_full_name ASCENDING.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT zecm_user_id, zecm_full_name
+    INTO CORRESPONDING FIELDS OF TABLE @lt_drafter_c
+    FROM zecm_user
+    WHERE ( zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
 
-" 2. Ambil ECR Aktif yang sedang ditangani (Bukan CRTD, CLSD, REJC)
-SELECT drafter, status
-  INTO CORRESPONDING FIELDS OF TABLE @lt_ecr_c
-  FROM zecm_req
-  WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
-    AND drafter <> ''.
+  SELECT drafter, status
+    INTO CORRESPONDING FIELDS OF TABLE @lt_ecr_c
+    FROM zecm_req
+    WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
+      AND ( kategori = 'DRW' OR kategori = 'DBX' )
+      AND drafter <> ''.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT zecm_user_id, zecm_full_name
+    INTO CORRESPONDING FIELDS OF TABLE @lt_drafter_c
+    FROM zecm_user
+    WHERE ( zecm_role = 'DRAFTER_METAL' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+
+  SELECT drafter, status
+    INTO CORRESPONDING FIELDS OF TABLE @lt_ecr_c
+    FROM zecm_req
+    WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
+      AND kategori = 'DMT'
+      AND drafter <> ''.
+ELSE.
+  SELECT zecm_user_id, zecm_full_name
+    INTO CORRESPONDING FIELDS OF TABLE @lt_drafter_c
+    FROM zecm_user
+    WHERE ( zecm_role = 'DRAFTER' OR zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER_METAL' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+
+  SELECT drafter, status
+    INTO CORRESPONDING FIELDS OF TABLE @lt_ecr_c
+    FROM zecm_req
+    WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
+      AND drafter <> ''.
+ENDIF.
 
 DATA: lv_c_inwk TYPE i, lv_c_bmpr TYPE i, lv_c_bmap TYPE i, lv_c_insp TYPE i.
 DATA: lv_str_inwk TYPE string, lv_str_bmpr TYPE string, lv_str_bmap TYPE string, lv_str_insp TYPE string.
@@ -637,6 +748,11 @@ SELECT a~ecr_no, a~title, a~matnr_fg, b~maktx AS matnr_fg_desc,
 
 " Filter out routing requests from recent history manually
 DELETE lt_recent WHERE change_scope = 'ROUT' OR title CS 'Routing' OR title CS 'alur proses'.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  DELETE lt_recent WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  DELETE lt_recent WHERE kategori <> 'DMT'.
+ENDIF.
 
 CLEAR lv_r_html.
 
@@ -814,6 +930,11 @@ IF GV_MAT_SEARCH IS NOT INITIAL.
 
   " Filter out routing requests from material history manually
   DELETE lt_mat_hist WHERE change_scope = 'ROUT' OR title CS 'Routing' OR title CS 'alur proses'.
+  IF GV_ROLE = 'ADMIN_WOOD'.
+    DELETE lt_mat_hist WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
+  ELSEIF GV_ROLE = 'ADMIN_METAL'.
+    DELETE lt_mat_hist WHERE kategori <> 'DMT'.
+  ENDIF.
 
   " Build HTML cards
   DATA: lv_s_matnr   TYPE string,
@@ -1043,7 +1164,13 @@ CLEAR: GV_IREQ_HTML, GV_COUNT_IREQ.
 GV_COUNT_IREQ = 0.
 
 " V11: Count IREQ waiting for Head R&D (status REQ)
-SELECT COUNT(*) INTO GV_COUNT_REQ FROM zecm_ireq WHERE status = 'REQ'.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT COUNT(*) INTO GV_COUNT_REQ FROM zecm_ireq WHERE status = 'REQ' AND ( kategori = 'DRW' OR kategori = 'DBX' ).
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT COUNT(*) INTO GV_COUNT_REQ FROM zecm_ireq WHERE status = 'REQ' AND kategori = 'DMT'.
+ELSE.
+  SELECT COUNT(*) INTO GV_COUNT_REQ FROM zecm_ireq WHERE status = 'REQ'.
+ENDIF.
 
 DATA: lt_ireq          TYPE TABLE OF zecm_ireq,
       ls_ireq          TYPE zecm_ireq,
@@ -1060,6 +1187,13 @@ lv_subrc_ireq = sy-subrc.
 
 " Filter out routing requests from IREQ panel manually
 DELETE lt_ireq WHERE title CS 'Routing' OR title CS 'alur proses' OR title CS 'routing' OR title CS 'ROUTING'.
+
+" Division filter for Admin Wood and Metal
+IF GV_ROLE = 'ADMIN_WOOD'.
+  DELETE lt_ireq WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  DELETE lt_ireq WHERE kategori <> 'DMT'.
+ENDIF.
 
 " Sort lt_ireq by status first (REQ on top, APPR next), then by date descending
 " Since REQ > APPR alphabetically, descending sort by status works perfectly

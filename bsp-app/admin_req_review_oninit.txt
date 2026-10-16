@@ -58,6 +58,24 @@ IF sy-subrc <> 0.
   navigation->goto_page( lv_redirect ).
   RETURN.
 ENDIF.
+
+IF GV_ROLE = 'ADMIN_WOOD' AND ls_ireq-kategori <> 'DRW' AND ls_ireq-kategori <> 'DBX'.
+  GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya berwenang meninjau request Wood & Box.'. GV_ICON = 'error'.
+  CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID
+    '&r=' GV_ROLE '&n=' GV_FULL_NAME
+    INTO lv_redirect.
+  navigation->goto_page( lv_redirect ).
+  RETURN.
+ENDIF.
+
+IF GV_ROLE = 'ADMIN_METAL' AND ls_ireq-kategori <> 'DMT'.
+  GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya berwenang meninjau request Metal.'. GV_ICON = 'error'.
+  CONCATENATE 'admin_dashboard.htm?u=' GV_USER_ID
+    '&r=' GV_ROLE '&n=' GV_FULL_NAME
+    INTO lv_redirect.
+  navigation->goto_page( lv_redirect ).
+  RETURN.
+ENDIF.
 GV_REQ_TITLE       = ls_ireq-title.
 GV_REQ_MATNR       = ls_ireq-matnr_fg.
 GV_REQ_KATEGORI    = ls_ireq-kategori.
@@ -176,8 +194,19 @@ IF lv_form_title IS NOT INITIAL AND GV_REQ_STATUS = 'REQ'.
 ENDIF.
 
 * --- 4. Load Drafter List ---
-SELECT * FROM zecm_user INTO TABLE @lt_drafter
-  WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT * FROM zecm_user INTO TABLE @lt_drafter
+    WHERE ( zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT * FROM zecm_user INTO TABLE @lt_drafter
+    WHERE ( zecm_role = 'DRAFTER_METAL' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+ELSE.
+  SELECT * FROM zecm_user INTO TABLE @lt_drafter
+    WHERE ( zecm_role = 'DRAFTER' OR zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER_METAL' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+ENDIF.
 
 IF sy-subrc = 0.
   lv_drafter_opts = '<option value="">-- Pilih Drafter --</option>'.

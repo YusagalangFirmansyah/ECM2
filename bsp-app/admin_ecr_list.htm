@@ -188,9 +188,16 @@
           <select id="filterKat" onchange="filterEcrTable()"
             class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
             <option value="">Kategori</option>
+            <% IF GV_ROLE = 'ADMIN_WOOD'. %>
+            <option value="DRW">DRW</option>
+            <option value="DBX">DBX</option>
+            <% ELSEIF GV_ROLE = 'ADMIN_METAL'. %>
+            <option value="DMT">DMT</option>
+            <% ELSE. %>
             <option value="DRW">DRW</option>
             <option value="DBX">DBX</option>
             <option value="DMT">DMT</option>
+            <% ENDIF. %>
           </select>
           <select id="filterStatus" onchange="filterEcrTable()"
             class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">

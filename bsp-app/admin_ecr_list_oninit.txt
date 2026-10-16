@@ -286,6 +286,13 @@
     " Filter out routing requests manually
     DELETE LT_ECRS WHERE change_scope = 'ROUT' OR title CS 'Routing' OR title CS 'alur proses'.
 
+    " Division filter for Admin Wood and Metal
+    IF GV_ROLE = 'ADMIN_WOOD'.
+      DELETE LT_ECRS WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
+    ELSEIF GV_ROLE = 'ADMIN_METAL'.
+      DELETE LT_ECRS WHERE kategori <> 'DMT'.
+    ENDIF.
+
     " SAP Standard: Delete internal table by condition
     DELETE LT_ECRS WHERE ecr_no = '000000000068' OR ecr_no = '0000000068'.
     DELETE LT_ECRS WHERE change_scope = 'ROUT'.
@@ -386,6 +393,11 @@
     " SAP Standard: Delete internal table by condition
     DELETE lt_mat_hist WHERE ecr_no = '000000000068' OR ecr_no = '0000000068'.
     DELETE lt_mat_hist WHERE change_scope = 'ROUT'.
+    IF GV_ROLE = 'ADMIN_WOOD'.
+      DELETE lt_mat_hist WHERE kategori <> 'DRW' AND kategori <> 'DBX'.
+    ELSEIF GV_ROLE = 'ADMIN_METAL'.
+      DELETE lt_mat_hist WHERE kategori <> 'DMT'.
+    ENDIF.
 
     LOOP AT lt_mat_hist INTO ls_mat_hist.
       ls_mat_hist-matnr_fg_no_zero = ls_mat_hist-matnr_fg.

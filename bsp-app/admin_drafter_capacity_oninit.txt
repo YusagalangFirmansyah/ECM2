@@ -30,18 +30,48 @@ DATA: lt_ecr TYPE STANDARD TABLE OF ty_ecr,
       ls_ecr TYPE ty_ecr.
 
 " 1. Ambil daftar Drafter yang aktif
-SELECT zecm_user_id zecm_full_name
-  INTO TABLE lt_drafter
-  FROM zecm_user
-  WHERE zecm_role = 'DRAFTER' AND zecm_active = 'Y'
-  ORDER BY zecm_full_name ASCENDING.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT zecm_user_id, zecm_full_name
+    INTO TABLE @lt_drafter
+    FROM zecm_user
+    WHERE ( zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT zecm_user_id, zecm_full_name
+    INTO TABLE @lt_drafter
+    FROM zecm_user
+    WHERE ( zecm_role = 'DRAFTER_METAL' OR zecm_role = 'DRAFTER' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+ELSE.
+  SELECT zecm_user_id, zecm_full_name
+    INTO TABLE @lt_drafter
+    FROM zecm_user
+    WHERE ( zecm_role = 'DRAFTER' OR zecm_role = 'DRAFTER_WOOD' OR zecm_role = 'DRAFTER_METAL' ) AND zecm_active = 'Y'
+    ORDER BY zecm_full_name ASCENDING.
+ENDIF.
 
 " 2. Ambil ECR Aktif yang sedang ditangani (Bukan CRTD, CLSD, REJC)
-SELECT ecr_no title matnr_fg priority status drafter
-  INTO TABLE lt_ecr
-  FROM zecm_req
-  WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
-    AND drafter <> ''.
+IF GV_ROLE = 'ADMIN_WOOD'.
+  SELECT ecr_no, title, matnr_fg, priority, status, drafter
+    INTO TABLE @lt_ecr
+    FROM zecm_req
+    WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
+      AND ( kategori = 'DRW' OR kategori = 'DBX' )
+      AND drafter <> ''.
+ELSEIF GV_ROLE = 'ADMIN_METAL'.
+  SELECT ecr_no, title, matnr_fg, priority, status, drafter
+    INTO TABLE @lt_ecr
+    FROM zecm_req
+    WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
+      AND kategori = 'DMT'
+      AND drafter <> ''.
+ELSE.
+  SELECT ecr_no, title, matnr_fg, priority, status, drafter
+    INTO TABLE @lt_ecr
+    FROM zecm_req
+    WHERE ( status = 'INWK' OR status = 'BMPR' OR status = 'BMAP' OR status = 'INSP' )
+      AND drafter <> ''.
+ENDIF.
 
 " 3. Bangun HTML untuk Grid Kapasitas
 CLEAR GV_CAPACITY_HTML.
