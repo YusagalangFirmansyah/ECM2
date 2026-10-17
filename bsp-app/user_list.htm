@@ -23,7 +23,10 @@
     /* Action Bar */
     .action-bar {
       display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 18px; gap: 12px;
+      margin-bottom: 18px; gap: 12px; flex-wrap: wrap;
+    }
+    .filter-group {
+      display: flex; align-items: center; gap: 10px; flex: 1; min-width: 300px;
     }
     .search-box {
       position: relative; flex: 1; max-width: 380px;
@@ -40,6 +43,18 @@
       outline: none; transition: border 0.15s;
     }
     .search-box input:focus { border-color: #059669; }
+    .role-filter-box {
+      position: relative; min-width: 210px;
+    }
+    .role-filter-select {
+      width: 100%; padding: 9px 14px;
+      border: 1px solid #e2e8f0; border-radius: 8px;
+      font-size: 0.78rem; font-family: inherit;
+      color: #0f172a; background: #ffffff;
+      outline: none; transition: border 0.15s;
+      cursor: pointer;
+    }
+    .role-filter-select:focus { border-color: #059669; }
     .btn-add {
       padding: 9px 18px; border-radius: 8px;
       background: #059669; color: #ffffff;
@@ -155,9 +170,33 @@
 
 <div class="page-wrap">
   <div class="action-bar">
-    <div class="search-box">
-      <i class="fas fa-search"></i>
-      <input type="text" id="searchInput" placeholder="Cari user ID atau nama...">
+    <div class="filter-group">
+      <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="text" id="searchInput" placeholder="Cari user ID atau nama...">
+      </div>
+      <div class="role-filter-box">
+        <select id="roleFilter" class="role-filter-select" onchange="applyUserFilter()">
+          <option value="">-- Semua Role --</option>
+          <option value="DRAFTER_WOOD">DRAFTER WOOD</option>
+          <option value="DRAFTER_METAL">DRAFTER METAL</option>
+          <option value="DRAFTER">DRAFTER (Semua / Lama)</option>
+          <option value="APPROVER_WOOD">APPROVER WOOD</option>
+          <option value="APPROVER_METAL">APPROVER METAL</option>
+          <option value="APPROVER">APPROVER (Semua / Lama)</option>
+          <option value="ADMIN_WOOD">ADMIN WOOD</option>
+          <option value="ADMIN_METAL">ADMIN METAL</option>
+          <option value="ADMIN">ADMIN (Semua / Lama)</option>
+          <option value="REQUESTER">REQUESTER</option>
+          <option value="SUPERADMIN">SUPERADMIN</option>
+          <option value="VIEWER">VIEWER</option>
+          <option value="MASTER_DATA">MASTER_DATA</option>
+          <option value="PRODUKSI">PRODUKSI</option>
+          <option value="COSTING">COSTING</option>
+          <option value="COST_ENG">COSTING ENG</option>
+          <option value="PAYROLL">PAYROLL</option>
+        </select>
+      </div>
     </div>
     <button onclick="showAddUser()" class="btn-add">
       <i class="fas fa-plus"></i> Tambah User
@@ -230,7 +269,7 @@
     <div id="emptyState" class="empty-state">
       <div class="empty-icon"><i class="fas fa-search"></i></div>
       <h3>User Tidak Ditemukan</h3>
-      <p>Coba kata kunci lain atau tambah user baru.</p>
+      <p>Coba kata kunci lain atau pilih role yang berbeda.</p>
     </div>
   </div>
 
@@ -248,24 +287,54 @@
 
 <script>
   var searchInput = document.getElementById('searchInput');
-  searchInput.addEventListener('keyup', function() {
-    var term = this.value.toLowerCase();
+  var roleFilter  = document.getElementById('roleFilter');
+
+  function applyUserFilter() {
+    var term = '';
+    if (searchInput && searchInput.value) {
+      term = searchInput.value.toLowerCase().trim();
+    }
+    var selectedRole = '';
+    if (roleFilter && roleFilter.value) {
+      selectedRole = roleFilter.value.trim();
+    }
+
     var rows = document.querySelectorAll('.user-row');
     var visibleCount = 0;
+
     rows.forEach(function(row) {
-      var userId = row.getAttribute('data-userid').toLowerCase();
-      var name = row.getAttribute('data-name').toLowerCase();
-      if (userId.includes(term) || name.includes(term)) {
+      var userId = (row.getAttribute('data-userid') || '').toLowerCase();
+      var name = (row.getAttribute('data-name') || '').toLowerCase();
+      var role = (row.getAttribute('data-role') || '').trim();
+
+      var matchSearch = (!term) || (userId.indexOf(term) !== -1) || (name.indexOf(term) !== -1);
+      var matchRole = (!selectedRole) || (role === selectedRole);
+
+      if (matchSearch && matchRole) {
         row.style.display = '';
         visibleCount++;
       } else {
         row.style.display = 'none';
       }
     });
+
     var emptyEl = document.getElementById('emptyState');
-    if (visibleCount > 0) { emptyEl.classList.remove('visible'); }
-    else { emptyEl.classList.add('visible'); }
-  });
+    if (emptyEl) {
+      if (visibleCount > 0) {
+        emptyEl.classList.remove('visible');
+      } else {
+        emptyEl.classList.add('visible');
+      }
+    }
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('keyup', applyUserFilter);
+    searchInput.addEventListener('input', applyUserFilter);
+  }
+  if (roleFilter) {
+    roleFilter.addEventListener('change', applyUserFilter);
+  }
 
   function showAddUser() {
     Swal.fire({
