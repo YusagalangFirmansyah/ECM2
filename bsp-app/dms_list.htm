@@ -1,4 +1,4 @@
-﻿<%@page language="abap"%>
+<%@page language="abap"%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -49,11 +49,11 @@
           <h1 class="text-xl font-bold text-white mb-1">Daftar DMS</h1>
           <p class="text-[0.76rem] text-brand-200 font-medium">Crosscheck dokumen DMS untuk validasi auto-detect</p>
         </div>
-        <% IF gv_role = 'ADMIN' OR gv_role = 'SUPERADMIN'. %>
+        <% IF gv_role CS 'ADMIN' OR gv_role = 'SUPERADMIN'. %>
           <a href="admin_dashboard.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
           <% ELSEIF gv_role = 'REQUESTER'. %>
           <a href="requester_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
-          <% ELSEIF gv_role = 'APPROVER'. %>
+          <% ELSEIF gv_role CS 'APPROVER'. %>
           <a href="approver_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
           <% ELSEIF gv_role = 'VIEWER'. %>
           <a href="viewer_list.htm?u=<%= gv_user_id %>&r=<%= gv_role %>&n=<%= gv_full_name %>"
@@ -86,15 +86,32 @@
       </div>
       <div class="px-5 py-4 flex flex-wrap gap-4 items-end">
         <!-- DOKAR Filter -->
+        <% IF gv_role = 'DRAFTER_METAL' OR gv_role = 'ADMIN_METAL' OR gv_role = 'APPROVER_METAL'. %>
+          <!-- Metal hanya memiliki dokumen tipe DMT, filter tipe dokumen disembunyikan -->
+        <% ELSEIF gv_role = 'DRAFTER_WOOD' OR gv_role = 'ADMIN_WOOD' OR gv_role = 'APPROVER_WOOD'. %>
         <div class="min-w-[140px]">
           <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Tipe Dokumen</label>
-          <select id="filterTipe" onchange="applyFilter()" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-[0.82rem] text-slate-600 bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+          <select id="filterTipe" onchange="applyFilter()"
+            class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-[0.82rem]
+                   text-slate-600 bg-white focus:outline-none focus:border-brand-500">
+            <option value="ALL">Semua Wood</option>
+            <option value="DRW">DRW (Drawing)</option>
+            <option value="DBX">DBX (Box)</option>
+          </select>
+        </div>
+        <% ELSE. %>
+        <div class="min-w-[140px]">
+          <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Tipe Dokumen</label>
+          <select id="filterTipe" onchange="applyFilter()"
+            class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-[0.82rem]
+                   text-slate-600 bg-white focus:outline-none focus:border-brand-500">
             <option value="ALL">Semua Tipe</option>
             <option value="DRW">DRW (Drawing)</option>
             <option value="DBX">DBX (Box)</option>
             <option value="DMT">DMT (Metal)</option>
           </select>
         </div>
+        <% ENDIF. %>
         <!-- Status Filter -->
         <div class="min-w-[140px]">
           <label class="block text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Status DMS</label>
@@ -223,9 +240,12 @@
     })();
 
     function applyFilter() {
-      var fTipe = document.getElementById('filterTipe').value;
-      var fStatus = document.getElementById('filterStatus').value;
-      var fSearch = (document.getElementById('filterSearch').value || '').toLowerCase();
+      var elTipe = document.getElementById('filterTipe');
+      var fTipe = elTipe ? elTipe.value : 'ALL';
+      var elStatus = document.getElementById('filterStatus');
+      var fStatus = elStatus ? elStatus.value : 'ALL';
+      var elSearch = document.getElementById('filterSearch');
+      var fSearch = (elSearch && elSearch.value ? elSearch.value : '').toLowerCase();
 
       filteredRows = [];
       for (var i = 0; i < allRows.length; i++) {
