@@ -340,9 +340,13 @@
                 </span>
                 <div id="filterKat" class="flex items-center gap-1.5">
                     <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200 active" data-value="" onclick="selectKat(this)">Semua</button>
+                    <% IF GV_ROLE <> 'ADMIN_METAL'. %>
                     <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" data-value="DRW" onclick="selectKat(this)">WOOD</button>
                     <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100" data-value="DBX" onclick="selectKat(this)">BOX</button>
+                    <% ENDIF. %>
+                    <% IF GV_ROLE <> 'ADMIN_WOOD'. %>
                     <button type="button" class="kat-pill px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-150 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" data-value="DMT" onclick="selectKat(this)">METAL</button>
+                    <% ENDIF. %>
                 </div>
                 <select id="filterPri" onchange="filterEcrTable()"
                     class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500">
