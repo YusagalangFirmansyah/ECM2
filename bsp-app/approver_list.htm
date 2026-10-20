@@ -919,6 +919,13 @@
         }
     }
 
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.action === 'refresh_review_modal') {
+            closeReviewModal();
+            window.location.reload();
+        }
+    });
+
     async function fetchAndShowAudit(url, titleText) {
         var modal = document.getElementById('auditModal');
         var content = document.getElementById('auditContent');

@@ -67,11 +67,11 @@ IF LV_ACTION = 'approve_aprv'.
     RETURN.
   ENDIF.
 
-  IF GV_ROLE = 'ADMIN_WOOD' AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
+  IF ( GV_ROLE = 'ADMIN_WOOD' OR GV_ROLE = 'APPROVER_WOOD' ) AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
     GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh approve request Wood & Box.'. GV_ICON = 'error'.
     RETURN.
   ENDIF.
-  IF GV_ROLE = 'ADMIN_METAL' AND WA_IREQ-kategori <> 'DMT'.
+  IF ( GV_ROLE = 'ADMIN_METAL' OR GV_ROLE = 'APPROVER_METAL' ) AND WA_IREQ-kategori <> 'DMT'.
     GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh approve request Metal.'. GV_ICON = 'error'.
     RETURN.
   ENDIF.
@@ -157,12 +157,12 @@ IF LV_ACTION = 'approve'.
   ENDIF.
 
   " Division security check on IREQ
-  IF GV_ROLE = 'ADMIN_WOOD' AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
+  IF ( GV_ROLE = 'ADMIN_WOOD' OR GV_ROLE = 'APPROVER_WOOD' ) AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
     GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh memproses request Wood & Box.'.
     GV_ICON    = 'error'.
     RETURN.
   ENDIF.
-  IF GV_ROLE = 'ADMIN_METAL' AND WA_IREQ-kategori <> 'DMT'.
+  IF ( GV_ROLE = 'ADMIN_METAL' OR GV_ROLE = 'APPROVER_METAL' ) AND WA_IREQ-kategori <> 'DMT'.
     GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh memproses request Metal.'.
     GV_ICON    = 'error'.
     RETURN.
@@ -321,8 +321,14 @@ IF LV_ACTION = 'approve'.
 
   " 7. Success redirect
   GV_MESSAGE = 'Request disetujui! ECO ' && LV_ECR_NO && ' berhasil dibuat.'.
+  DATA: lv_is_mod_appr TYPE string.
+  lv_is_mod_appr = request->get_form_field( 'is_modal' ).
+  IF lv_is_mod_appr IS NOT INITIAL.
+    GV_ICON = 'success'.
+    RETURN.
+  ENDIF.
   GV_ICON = 'success'.
-  IF GV_ROLE = 'APPROVER'.
+  IF GV_ROLE CS 'APPROVER'.
     CONCATENATE 'approver_list.htm?u=' GV_USER_ID
       '&r=' GV_ROLE '&n=' GV_FULL_NAME
       INTO LV_REDIRECT.
@@ -339,10 +345,13 @@ ENDIF.
 " ======================================================================
 " ACTION: REJECT — Tolak Request
 " ======================================================================
-IF LV_ACTION = 'reject'.
+IF LV_ACTION = 'reject' OR LV_ACTION = 'reject_ireq'.
 
   " Validate: alasan harus diisi
   LV_ADMIN_NOTE = request->get_form_field( 'admin_note' ).
+  IF LV_ADMIN_NOTE IS INITIAL.
+    LV_ADMIN_NOTE = request->get_form_field( 'reject_reason' ).
+  ENDIF.
   IF LV_ADMIN_NOTE IS INITIAL.
     GV_MESSAGE = 'Alasan penolakan wajib diisi.'. GV_ICON = 'error'.
     RETURN.
@@ -357,12 +366,12 @@ IF LV_ACTION = 'reject'.
     RETURN.
   ENDIF.
 
-  IF GV_ROLE = 'ADMIN_WOOD' AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
+  IF ( GV_ROLE = 'ADMIN_WOOD' OR GV_ROLE = 'APPROVER_WOOD' ) AND WA_IREQ-kategori <> 'DRW' AND WA_IREQ-kategori <> 'DBX'.
     GV_MESSAGE = 'Akses Ditolak: Admin Wood hanya boleh menolak request Wood & Box.'.
     GV_ICON    = 'error'.
     RETURN.
   ENDIF.
-  IF GV_ROLE = 'ADMIN_METAL' AND WA_IREQ-kategori <> 'DMT'.
+  IF ( GV_ROLE = 'ADMIN_METAL' OR GV_ROLE = 'APPROVER_METAL' ) AND WA_IREQ-kategori <> 'DMT'.
     GV_MESSAGE = 'Akses Ditolak: Admin Metal hanya boleh menolak request Metal.'.
     GV_ICON    = 'error'.
     RETURN.
@@ -405,8 +414,14 @@ IF LV_ACTION = 'reject'.
 
   " 5. Success redirect
   GV_MESSAGE = 'Request ditolak.'.
+  DATA: lv_is_mod_rej TYPE string.
+  lv_is_mod_rej = request->get_form_field( 'is_modal' ).
+  IF lv_is_mod_rej IS NOT INITIAL.
+    GV_ICON = 'success'.
+    RETURN.
+  ENDIF.
   GV_ICON = 'success'.
-  IF GV_ROLE = 'APPROVER'.
+  IF GV_ROLE CS 'APPROVER'.
     CONCATENATE 'approver_list.htm?u=' GV_USER_ID
       '&r=' GV_ROLE '&n=' GV_FULL_NAME
       INTO LV_REDIRECT.
@@ -525,8 +540,14 @@ IF LV_ACTION = 'update'.
 
   " 6. Success redirect
   GV_MESSAGE = 'Request berhasil diupdate.'.
+  DATA: lv_is_mod_upd TYPE string.
+  lv_is_mod_upd = request->get_form_field( 'is_modal' ).
+  IF lv_is_mod_upd IS NOT INITIAL.
+    GV_ICON = 'success'.
+    RETURN.
+  ENDIF.
   GV_ICON = 'success'.
-  IF GV_ROLE = 'APPROVER'.
+  IF GV_ROLE CS 'APPROVER'.
     CONCATENATE 'approver_list.htm?u=' GV_USER_ID
       '&r=' GV_ROLE '&n=' GV_FULL_NAME
       INTO LV_REDIRECT.
