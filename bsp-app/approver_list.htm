@@ -927,6 +927,11 @@
         
         title.textContent = titleText;
         loader.classList.remove('hidden');
+        if (content) {
+            content.innerHTML = '<div class="py-8 text-center text-slate-400">' +
+                '<i class="fas fa-spinner fa-spin text-2xl mb-2"></i>' +
+                '<p class="text-xs">Memuat data audit...</p></div>';
+        }
         
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
@@ -978,11 +983,15 @@
     
     function closeAuditModal() {
         var modal = document.getElementById('auditModal');
+        var content = document.getElementById('auditContent');
         modal.classList.add('opacity-0');
         modal.querySelector('div').classList.add('scale-95');
         setTimeout(function() {
             modal.classList.add('hidden');
             modal.style.display = '';
+            if (content) {
+                content.innerHTML = '';
+            }
         }, 300);
         
         if (window.history.replaceState) {
