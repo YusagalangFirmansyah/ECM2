@@ -22,6 +22,7 @@ LV_FILTER    = request->get_form_field( 'filter' ).
 LV_ECR_DETAIL = request->get_form_field( 'ecr_detail' ).
 GV_DATE_FROM = request->get_form_field( 'date_from' ).
 GV_DATE_TO   = request->get_form_field( 'date_to' ).
+CLEAR: GV_ECR_DETAIL_HTML, GV_AUDIT_HTML.
 
 " Default date range: first day of current month to today
 IF GV_DATE_FROM IS INITIAL.
@@ -1421,17 +1422,32 @@ IF GV_SELECTED_IREQ_AUDIT IS NOT INITIAL.
   ENDIF.
 
   " Audit trail IREQ dari ZECM_LOG
-  SELECT zecm_log~log_id, zecm_log~ecr_no, zecm_log~action, zecm_log~old_status,
-         zecm_log~new_status, zecm_log~user_id,
-         e~zecm_full_name AS user_name, zecm_log~action_date, zecm_log~action_time,
-         zecm_log~reason
-         INTO TABLE @LT_LOGS
-         FROM zecm_log
+  SELECT a~log_id, a~ecr_no, a~action, a~old_status, a~new_status,
+         a~user_id, e~zecm_full_name AS user_name, a~action_date,
+         a~action_time, a~reason
+         INTO CORRESPONDING FIELDS OF TABLE @LT_LOGS
+         FROM zecm_log AS a
          LEFT OUTER JOIN zecm_user AS e
-           ON zecm_log~user_id = e~zecm_user_id
-         WHERE ( zecm_log~ecr_no = @lv_aud_ireq_clean AND zecm_log~is_ireq = 'X' )
-            OR ( @ls_aud_ireq-ecr_no <> '' AND zecm_log~ecr_no = @ls_aud_ireq-ecr_no AND zecm_log~is_ireq = '' )
-         ORDER BY zecm_log~action_date DESCENDING, zecm_log~action_time DESCENDING.
+           ON a~user_id = e~zecm_user_id
+         WHERE a~ecr_no = @lv_aud_ireq_clean
+           AND a~is_ireq = 'X'
+         ORDER BY a~action_date DESCENDING, a~action_time DESCENDING.
+
+  IF ls_aud_ireq-ecr_no IS NOT INITIAL.
+    DATA: lt_logs_ecr TYPE tt_log.
+    SELECT a~log_id, a~ecr_no, a~action, a~old_status, a~new_status,
+           a~user_id, e~zecm_full_name AS user_name, a~action_date,
+           a~action_time, a~reason
+           INTO CORRESPONDING FIELDS OF TABLE @lt_logs_ecr
+           FROM zecm_log AS a
+           LEFT OUTER JOIN zecm_user AS e
+             ON a~user_id = e~zecm_user_id
+           WHERE a~ecr_no = @ls_aud_ireq-ecr_no
+             AND a~is_ireq = ''
+           ORDER BY a~action_date DESCENDING, a~action_time DESCENDING.
+    APPEND LINES OF lt_logs_ecr TO LT_LOGS.
+    SORT LT_LOGS BY action_date DESCENDING action_time DESCENDING.
+  ENDIF.
 
   IF LT_LOGS IS INITIAL AND ls_aud_ireq-ireq_id IS NOT INITIAL.
     CLEAR LS_LOG.

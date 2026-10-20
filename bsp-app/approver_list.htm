@@ -940,7 +940,15 @@
         modal.querySelector('div').classList.remove('scale-95');
         
         try {
-            var response = await fetch(url);
+            var sep = url.indexOf('?') >= 0 ? '&' : '?';
+            var noCacheUrl = url + sep + '_t=' + new Date().getTime();
+            var response = await fetch(noCacheUrl, {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
+                }
+            });
             var text = await response.text();
             var parser = new DOMParser();
             var doc = parser.parseFromString(text, 'text/html');
@@ -958,7 +966,7 @@
     }
 
     function showIreqAudit(ireqId) {
-        var url = window.location.pathname + '?u=' + encodeURIComponent(window.GV_USER_ID) +
+        var url = 'approver_list.htm?u=' + encodeURIComponent(window.GV_USER_ID) +
                   '&r=' + encodeURIComponent(window.GV_ROLE) +
                   '&n=' + encodeURIComponent(window.GV_FULL_NAME) +
                   '&filter_ireq=' + encodeURIComponent(window.GV_FILTER_IREQ || '') +
