@@ -120,18 +120,20 @@ IF LV_ECR_DETAIL IS NOT INITIAL.
          WHERE a~ecr_no = @LV_ECR_DETAIL.
 
   IF LS_ECR_DETAIL IS NOT INITIAL.
-    DATA: lt_det_dir_parts  TYPE STANDARD TABLE OF string,
-          lv_det_dokar_dir  TYPE string,
-          lv_det_doknr_dir  TYPE string,
-          lv_target_dokst_d TYPE char2,
-          lv_det_doknr_q    TYPE doknr,
-          lv_det_dokar_q    TYPE dokar,
-          lv_matnr_detail   TYPE matnr,
-          lv_doknr_detail   TYPE doknr,
-          lv_dokar_detail   TYPE dokar,
-          lv_dokvr_detail   TYPE char2,
-          lv_doktl_detail   TYPE char3,
-          lv_dokst_detail   TYPE char2.
+    DATA: lt_det_dir_parts   TYPE STANDARD TABLE OF string,
+          lv_det_dokar_dir   TYPE string,
+          lv_det_doknr_dir   TYPE string,
+          lv_target_dokst_d  TYPE char2,
+          lr_target_dokst_d  TYPE RANGE OF char2,
+          lrs_target_dokst_d LIKE LINE OF lr_target_dokst_d,
+          lv_det_doknr_q     TYPE doknr,
+          lv_det_dokar_q     TYPE dokar,
+          lv_matnr_detail    TYPE matnr,
+          lv_doknr_detail    TYPE doknr,
+          lv_dokar_detail    TYPE dokar,
+          lv_dokvr_detail    TYPE char2,
+          lv_doktl_detail    TYPE char3,
+          lv_dokst_detail    TYPE char2.
 
     LS_ECR_DETAIL-matnr_fg_no_zero = LS_ECR_DETAIL-matnr_fg.
     SHIFT LS_ECR_DETAIL-matnr_fg_no_zero LEFT DELETING LEADING '0'.
@@ -166,13 +168,21 @@ IF LV_ECR_DETAIL IS NOT INITIAL.
     ENDIF.
 
     " Target DMS status for detail
-    CLEAR lv_target_dokst_d.
+    REFRESH lr_target_dokst_d.
+    CLEAR lrs_target_dokst_d.
+    lrs_target_dokst_d-sign   = 'I'.
+    lrs_target_dokst_d-option = 'EQ'.
     IF LS_ECR_DETAIL-status = 'INWK' OR LS_ECR_DETAIL-status = 'BMAP'.
-      lv_target_dokst_d = 'IA'.
+      lrs_target_dokst_d-low = 'IA'.
+      APPEND lrs_target_dokst_d TO lr_target_dokst_d.
+      lrs_target_dokst_d-low = 'AP'.
+      APPEND lrs_target_dokst_d TO lr_target_dokst_d.
     ELSEIF LS_ECR_DETAIL-status = 'INSP'.
-      lv_target_dokst_d = 'AP'.
+      lrs_target_dokst_d-low = 'AP'.
+      APPEND lrs_target_dokst_d TO lr_target_dokst_d.
     ELSEIF LS_ECR_DETAIL-status = 'CLSD'.
-      lv_target_dokst_d = 'FR'.
+      lrs_target_dokst_d-low = 'FR'.
+      APPEND lrs_target_dokst_d TO lr_target_dokst_d.
     ENDIF.
 
     " Prioritas 1: Jika sudah ada dir_number, cek status DRAW dokumen tersebut langsung
@@ -184,12 +194,31 @@ IF LV_ECR_DETAIL IS NOT INITIAL.
         EXPORTING  input  = lv_det_doknr_q
         IMPORTING  output = lv_det_doknr_q.
 
-      SELECT SINGLE dokvr, doktl, dokst
-        FROM draw
-        INTO (@LS_ECR_DETAIL-dms_dokvr, @LS_ECR_DETAIL-dms_doktl, @LS_ECR_DETAIL-dms_dokst)
-        WHERE dokar = @lv_det_dokar_q
-          AND doknr = @lv_det_doknr_q.
-      IF sy-subrc = 0.
+      CLEAR: LS_ECR_DETAIL-dms_dokvr, LS_ECR_DETAIL-dms_doktl, LS_ECR_DETAIL-dms_dokst.
+      IF lr_target_dokst_d IS NOT INITIAL.
+        SELECT dokvr, doktl, dokst
+          FROM draw
+          INTO (@LS_ECR_DETAIL-dms_dokvr, @LS_ECR_DETAIL-dms_doktl, @LS_ECR_DETAIL-dms_dokst)
+          WHERE dokar = @lv_det_dokar_q
+            AND doknr = @lv_det_doknr_q
+            AND dokst IN @lr_target_dokst_d
+          ORDER BY dokvr DESCENDING.
+          EXIT.
+        ENDSELECT.
+      ENDIF.
+
+      IF LS_ECR_DETAIL-dms_dokvr IS INITIAL.
+        SELECT dokvr, doktl, dokst
+          FROM draw
+          INTO (@LS_ECR_DETAIL-dms_dokvr, @LS_ECR_DETAIL-dms_doktl, @LS_ECR_DETAIL-dms_dokst)
+          WHERE dokar = @lv_det_dokar_q
+            AND doknr = @lv_det_doknr_q
+          ORDER BY dokvr DESCENDING.
+          EXIT.
+        ENDSELECT.
+      ENDIF.
+
+      IF LS_ECR_DETAIL-dms_dokvr IS NOT INITIAL.
         SELECT SINGLE dktxt FROM drat INTO @LS_ECR_DETAIL-dms_dktxt
           WHERE dokar = @lv_det_dokar_q
             AND doknr = @lv_det_doknr_q
@@ -206,7 +235,7 @@ IF LV_ECR_DETAIL IS NOT INITIAL.
       lv_matnr_detail = LS_ECR_DETAIL-matnr_fg.
       CLEAR: lv_doknr_detail, lv_dokar_detail, lv_dokvr_detail, lv_doktl_detail, lv_dokst_detail.
 
-      SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+      SELECT a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
         INTO (@lv_doknr_detail, @lv_dokar_detail, @lv_dokvr_detail, @lv_doktl_detail, @lv_dokst_detail)
         FROM drad AS a
         INNER JOIN draw AS b
@@ -217,7 +246,10 @@ IF LV_ECR_DETAIL IS NOT INITIAL.
         WHERE a~objky = @lv_matnr_detail
           AND a~dokob = 'MARA'
           AND a~dokar = @LS_ECR_DETAIL-kategori
-          AND b~dokst = @lv_target_dokst_d.
+          AND b~dokst IN @lr_target_dokst_d
+        ORDER BY a~doknr DESCENDING, a~dokvr DESCENDING.
+        EXIT.
+      ENDSELECT.
 
       " Fallback: coba dengan ALPHA_INPUT (kalau DRAD simpan dengan leading zeros)
       IF sy-subrc <> 0.
@@ -225,7 +257,7 @@ IF LV_ECR_DETAIL IS NOT INITIAL.
           EXPORTING  input  = lv_matnr_detail
           IMPORTING  output = lv_matnr_detail.
 
-        SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+        SELECT a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
           INTO (@lv_doknr_detail, @lv_dokar_detail, @lv_dokvr_detail, @lv_doktl_detail, @lv_dokst_detail)
           FROM drad AS a
           INNER JOIN draw AS b
@@ -236,7 +268,10 @@ IF LV_ECR_DETAIL IS NOT INITIAL.
           WHERE a~objky = @lv_matnr_detail
             AND a~dokob = 'MARA'
             AND a~dokar = @LS_ECR_DETAIL-kategori
-            AND b~dokst = @lv_target_dokst_d.
+            AND b~dokst IN @lr_target_dokst_d
+          ORDER BY a~doknr DESCENDING, a~dokvr DESCENDING.
+          EXIT.
+        ENDSELECT.
       ENDIF.
 
       IF sy-subrc = 0.
@@ -410,18 +445,20 @@ ELSE.
   ENDIF.
 
   " Remove leading zeros + DMS detection — search DRAD by material
-  DATA: lv_dir_parts    TYPE STANDARD TABLE OF string,
-        lv_dir_dokar    TYPE string,
-        lv_dir_doknr    TYPE string,
-        lv_q_dokar      TYPE dokar,
-        lv_q_doknr      TYPE doknr,
-        lv_target_dokst TYPE char2,
-        lv_matnr_conv   TYPE matnr,
-        lv_doknr_find   TYPE doknr,
-        lv_dokar_find   TYPE dokar,
-        lv_dokvr_find   TYPE char2,
-        lv_doktl_find   TYPE char3,
-        lv_dokst_find   TYPE char2.
+  DATA: lv_dir_parts     TYPE STANDARD TABLE OF string,
+        lv_dir_dokar     TYPE string,
+        lv_dir_doknr     TYPE string,
+        lv_q_dokar       TYPE dokar,
+        lv_q_doknr       TYPE doknr,
+        lv_target_dokst  TYPE char2,
+        lr_target_dokst  TYPE RANGE OF char2,
+        lrs_target_dokst LIKE LINE OF lr_target_dokst,
+        lv_matnr_conv    TYPE matnr,
+        lv_doknr_find    TYPE doknr,
+        lv_dokar_find    TYPE dokar,
+        lv_dokvr_find    TYPE char2,
+        lv_doktl_find    TYPE char3,
+        lv_dokst_find    TYPE char2.
 
   LOOP AT LT_ECRS INTO LS_ECR.
     LS_ECR-matnr_fg_no_zero = LS_ECR-matnr_fg.
@@ -442,6 +479,24 @@ ELSE.
       ENDIF.
     ENDIF.
 
+    " Target DMS status
+    REFRESH lr_target_dokst.
+    CLEAR lrs_target_dokst.
+    lrs_target_dokst-sign   = 'I'.
+    lrs_target_dokst-option = 'EQ'.
+    IF LS_ECR-status = 'INWK' OR LS_ECR-status = 'BMAP'.
+      lrs_target_dokst-low = 'IA'.
+      APPEND lrs_target_dokst TO lr_target_dokst.
+      lrs_target_dokst-low = 'AP'.
+      APPEND lrs_target_dokst TO lr_target_dokst.
+    ELSEIF LS_ECR-status = 'INSP'.
+      lrs_target_dokst-low = 'AP'.
+      APPEND lrs_target_dokst TO lr_target_dokst.
+    ELSEIF LS_ECR-status = 'CLSD'.
+      lrs_target_dokst-low = 'FR'.
+      APPEND lrs_target_dokst TO lr_target_dokst.
+    ENDIF.
+
     " Prioritas 1: Jika ECR sudah memiliki dir_number, cek status dokumen di DRAW
     IF LS_ECR-dir_number IS NOT INITIAL AND lv_dir_doknr IS NOT INITIAL.
       lv_q_dokar = lv_dir_dokar.
@@ -450,13 +505,31 @@ ELSE.
         EXPORTING  input  = lv_q_doknr
         IMPORTING  output = lv_q_doknr.
 
-      SELECT SINGLE dokvr, doktl, dokst
-        FROM draw
-        INTO (@LS_ECR-dms_dokvr, @LS_ECR-dms_doktl, @LS_ECR-dms_dokst)
-        WHERE dokar = @lv_q_dokar
-          AND doknr = @lv_q_doknr.
+      CLEAR: LS_ECR-dms_dokvr, LS_ECR-dms_doktl, LS_ECR-dms_dokst.
+      IF lr_target_dokst IS NOT INITIAL.
+        SELECT dokvr, doktl, dokst
+          FROM draw
+          INTO (@LS_ECR-dms_dokvr, @LS_ECR-dms_doktl, @LS_ECR-dms_dokst)
+          WHERE dokar = @lv_q_dokar
+            AND doknr = @lv_q_doknr
+            AND dokst IN @lr_target_dokst
+          ORDER BY dokvr DESCENDING.
+          EXIT.
+        ENDSELECT.
+      ENDIF.
 
-      IF sy-subrc = 0.
+      IF LS_ECR-dms_dokvr IS INITIAL.
+        SELECT dokvr, doktl, dokst
+          FROM draw
+          INTO (@LS_ECR-dms_dokvr, @LS_ECR-dms_doktl, @LS_ECR-dms_dokst)
+          WHERE dokar = @lv_q_dokar
+            AND doknr = @lv_q_doknr
+          ORDER BY dokvr DESCENDING.
+          EXIT.
+        ENDSELECT.
+      ENDIF.
+
+      IF LS_ECR-dms_dokvr IS NOT INITIAL.
         LS_ECR-dms_doknr = lv_dir_doknr.
         LS_ECR-dms_dokar = lv_q_dokar.
         LS_ECR-dms_found = abap_true.
@@ -466,16 +539,6 @@ ELSE.
             AND dokvr = @LS_ECR-dms_dokvr
             AND doktl = @LS_ECR-dms_doktl.
       ENDIF.
-    ENDIF.
-
-    " Target DMS status
-    CLEAR lv_target_dokst.
-    IF LS_ECR-status = 'INWK' OR LS_ECR-status = 'BMAP'.
-      lv_target_dokst = 'IA'.
-    ELSEIF LS_ECR-status = 'INSP'.
-      lv_target_dokst = 'AP'.
-    ELSEIF LS_ECR-status = 'CLSD'.
-      lv_target_dokst = 'FR'.
     ENDIF.
 
     " Prioritas 2: DMS lookup via DRAD jika belum ada dir_number terdaftar
@@ -489,7 +552,7 @@ ELSE.
         CLEAR: lv_doknr_find, lv_dokar_find, lv_dokvr_find, lv_doktl_find, lv_dokst_find.
 
         " Try without ALPHA first (DRAD might store without leading zeros)
-        SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+        SELECT a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
           INTO (@lv_doknr_find, @lv_dokar_find, @lv_dokvr_find, @lv_doktl_find, @lv_dokst_find)
           FROM drad AS a
           INNER JOIN draw AS b
@@ -500,7 +563,10 @@ ELSE.
           WHERE a~objky = @lv_matnr_conv
             AND a~dokob = 'MARA'
             AND a~dokar = @LS_ECR-kategori
-            AND b~dokst = @lv_target_dokst.
+            AND b~dokst IN @lr_target_dokst
+          ORDER BY a~doknr DESCENDING, a~dokvr DESCENDING.
+          EXIT.
+        ENDSELECT.
 
         " Fallback: coba dengan ALPHA_INPUT (kalau DRAD simpan dengan leading zeros)
         IF sy-subrc <> 0.
@@ -508,7 +574,7 @@ ELSE.
             EXPORTING  input  = lv_matnr_conv
             IMPORTING  output = lv_matnr_conv.
 
-          SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+          SELECT a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
             INTO (@lv_doknr_find, @lv_dokar_find, @lv_dokvr_find, @lv_doktl_find, @lv_dokst_find)
             FROM drad AS a
             INNER JOIN draw AS b
@@ -519,7 +585,10 @@ ELSE.
             WHERE a~objky = @lv_matnr_conv
               AND a~dokob = 'MARA'
               AND a~dokar = @LS_ECR-kategori
-              AND b~dokst = @lv_target_dokst.
+              AND b~dokst IN @lr_target_dokst
+            ORDER BY a~doknr DESCENDING, a~dokvr DESCENDING.
+            EXIT.
+          ENDSELECT.
         ENDIF.
 
         IF sy-subrc = 0.

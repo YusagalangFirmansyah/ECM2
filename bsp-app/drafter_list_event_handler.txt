@@ -208,6 +208,8 @@ IF lv_action = 'upload_bom'.
       INSERT zecm_log FROM ls_log.
     ENDIF.
 
+    COMMIT WORK AND WAIT.
+
     GV_MESSAGE = 'File BOM berhasil di-upload. Menunggu review Master Data.'.
     GV_ICON    = 'success'.
   ELSE.
@@ -465,6 +467,8 @@ IF lv_action = 'create_ecr'.
     ENDIF.
   ENDLOOP.
 
+  COMMIT WORK AND WAIT.
+
   DATA lv_msg TYPE string.
   lv_msg = lv_count.
   CONCATENATE lv_msg 'ECR berhasil dibuat' INTO GV_MESSAGE SEPARATED BY ' '.
@@ -529,7 +533,7 @@ IF lv_action = 'submit_ecr'.
   IF lv_doknr IS INITIAL OR lv_dokvr IS INITIAL.
     CLEAR: lv_doknr, lv_dokar, lv_dokvr, lv_doktl, lv_dokst.
     " Try without ALPHA first (DRAD might store without leading zeros)
-    SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+    SELECT a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
       INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
       FROM drad AS a
       INNER JOIN draw AS b
@@ -540,7 +544,10 @@ IF lv_action = 'submit_ecr'.
       WHERE a~objky = @lv_matnr_conv
         AND a~dokob = 'MARA'
         AND a~dokar IN ('DRW', 'DBX', 'DMT')
-        AND b~dokst = 'IA'.
+        AND ( b~dokst = 'IA' OR b~dokst = 'AP' )
+      ORDER BY a~doknr DESCENDING, a~dokvr DESCENDING.
+      EXIT.
+    ENDSELECT.
 
     " Fallback: try with ALPHA_INPUT (if DRAD stores with leading zeros)
     IF sy-subrc <> 0.
@@ -549,7 +556,7 @@ IF lv_action = 'submit_ecr'.
         EXPORTING  input  = lv_matnr_conv
         IMPORTING  output = lv_matnr_alpha_sub.
 
-      SELECT SINGLE a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
+      SELECT a~doknr, a~dokar, a~dokvr, a~doktl, b~dokst
         INTO (@lv_doknr, @lv_dokar, @lv_dokvr, @lv_doktl, @lv_dokst)
         FROM drad AS a
         INNER JOIN draw AS b
@@ -560,7 +567,10 @@ IF lv_action = 'submit_ecr'.
         WHERE a~objky = @lv_matnr_alpha_sub
           AND a~dokob = 'MARA'
           AND a~dokar IN ('DRW', 'DBX', 'DMT')
-          AND b~dokst = 'IA'.
+          AND ( b~dokst = 'IA' OR b~dokst = 'AP' )
+        ORDER BY a~doknr DESCENDING, a~dokvr DESCENDING.
+        EXIT.
+      ENDSELECT.
     ENDIF.
   ENDIF.
 
@@ -636,6 +646,8 @@ IF lv_action = 'submit_ecr'.
 
   INSERT zecm_log FROM @ls_log.
 
+  COMMIT WORK AND WAIT.
+
   GV_MESSAGE = 'ECR berhasil disubmit. Menunggu review approver.'.
   GV_ICON    = 'success'.
   CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
@@ -678,6 +690,8 @@ ELSEIF lv_action = 'skip_bom'.
       IF sy-subrc = 0.
         MODIFY zecm_log FROM ls_log.
       ENDIF.
+
+      COMMIT WORK AND WAIT.
 
       CONCATENATE 'BOM untuk ECR' lv_ecr_no 'dilewati. ECR siap disubmit.' INTO GV_MESSAGE SEPARATED BY space.
       GV_ICON = 'success'.
@@ -743,6 +757,8 @@ ELSEIF lv_action = 'cancel_upload_bom'.
 
   INSERT zecm_log FROM @ls_log.
 
+  COMMIT WORK AND WAIT.
+
   GV_MESSAGE = 'Upload BOM dibatalkan. Status dikembalikan ke In Work.'.
   GV_ICON    = 'success'.
   CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
@@ -796,6 +812,8 @@ ELSEIF lv_action = 'reject_ecr'.
     ls_rej_log-action_time = sy-uzeit.
     ls_rej_log-reason      = lv_reject_reason.
     INSERT zecm_log FROM ls_rej_log.
+
+    COMMIT WORK AND WAIT.
 
     CONCATENATE 'ECR' lv_ecr_no 'ditolak (' lv_old_status '-> REJC)'
       INTO GV_MESSAGE SEPARATED BY ' '.
@@ -861,6 +879,8 @@ ELSEIF lv_action = 'cancel_ecr'.
 
   INSERT zecm_log FROM @ls_log.
 
+  COMMIT WORK AND WAIT.
+
   GV_MESSAGE = 'ECR berhasil dibatalkan. Status dikembalikan ke Draft.'.
   GV_ICON    = 'success'.
   CONCATENATE 'drafter_list.htm?u=' GV_USER_ID '&r=' GV_ROLE '&n=' GV_FULL_NAME '&msg=' GV_MESSAGE '&icon=' GV_ICON INTO lv_url.
@@ -923,6 +943,83 @@ IF lv_action = 'upload_dms_ajax'.
       IF sy-subrc = 0.
         TRANSFER lv_ajax_dms_filebin TO lv_ajax_al11_path.
         CLOSE DATASET lv_ajax_al11_path.
+
+        " Cek apakah DIR untuk material/ECR ini masih status AA.
+        " Jika ya, ubah ke IA agar SAP DMS mengizinkan check-in file fisik
+        DATA: lv_chk_matnr TYPE matnr,
+              lv_chk_doknr TYPE draw-doknr,
+              lv_chk_dokvr TYPE draw-dokvr,
+              lv_chk_dokst TYPE draw-dokst,
+              ls_chg_doc   TYPE bapi_doc_draw2,
+              ls_chg_docx  TYPE bapi_doc_drawx2,
+              ls_chg_ret   TYPE bapiret2.
+
+        lv_chk_matnr = lv_ajax_dms_matnr.
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING  input  = lv_chk_matnr
+          IMPORTING  output = lv_chk_matnr.
+
+        SELECT d~doknr, d~dokvr, d~dokst
+          INTO (@lv_chk_doknr, @lv_chk_dokvr, @lv_chk_dokst)
+          FROM drad AS r
+          INNER JOIN draw AS d
+            ON  d~dokar = r~dokar
+            AND d~doknr = r~doknr
+            AND d~dokvr = r~dokvr
+            AND d~doktl = r~doktl
+          WHERE r~dokob = 'MARA'
+            AND ( r~objky = @lv_ajax_dms_matnr OR r~objky = @lv_chk_matnr )
+            AND r~dokar = @lv_ajax_dms_dokar
+          ORDER BY d~dokvr DESCENDING.
+          EXIT.
+        ENDSELECT.
+
+        IF lv_chk_dokst IS INITIAL.
+          DATA: lv_chk_dir TYPE zecm_req-dir_number,
+                lt_chk_tok TYPE TABLE OF string,
+                lv_chk_kar TYPE draw-dokar,
+                lv_chk_knr TYPE draw-doknr.
+          SELECT SINGLE dir_number FROM zecm_req
+            INTO @lv_chk_dir
+            WHERE ecr_no = @lv_ajax_dms_ecr_no.
+          IF lv_chk_dir IS NOT INITIAL.
+            SPLIT lv_chk_dir AT '/' INTO TABLE lt_chk_tok.
+            READ TABLE lt_chk_tok INDEX 1 INTO lv_chk_kar.
+            READ TABLE lt_chk_tok INDEX 2 INTO lv_chk_knr.
+            CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+              EXPORTING  input  = lv_chk_knr
+              IMPORTING  output = lv_chk_knr.
+            SELECT dokvr, dokst
+              INTO (@lv_chk_dokvr, @lv_chk_dokst)
+              FROM draw
+              WHERE dokar = @lv_chk_kar
+                AND doknr = @lv_chk_knr
+              ORDER BY dokvr DESCENDING.
+              EXIT.
+            ENDSELECT.
+            lv_chk_doknr = lv_chk_knr.
+          ENDIF.
+        ENDIF.
+
+        IF lv_chk_dokst = 'AA'.
+          CLEAR: ls_chg_doc, ls_chg_docx, ls_chg_ret.
+          ls_chg_doc-statusextern  = 'IA'.
+          ls_chg_docx-statusextern = 'X'.
+          CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+            EXPORTING
+              documenttype    = lv_ajax_dms_dokar
+              documentnumber  = lv_chk_doknr
+              documentpart    = '000'
+              documentversion = lv_chk_dokvr
+              documentdata    = ls_chg_doc
+              documentdatax   = ls_chg_docx
+            IMPORTING
+              return          = ls_chg_ret.
+          IF ls_chg_ret-type <> 'E' AND ls_chg_ret-type <> 'A'.
+            CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+              EXPORTING wait = 'X'.
+          ENDIF.
+        ENDIF.
 
         " Jalankan ZECM_DMS_UPLOAD untuk file ini
         SUBMIT zecm_dms_upload
@@ -991,10 +1088,26 @@ IF lv_action = 'upload_dms_ajax'.
             navigation->response_complete( ).
             RETURN.
           ELSEIF lv_ajax_success = abap_true.
+            " Update zecm_req secara langsung agar nomor DMS tersimpan permanen
+            DATA: lv_ajax_clean_doknr TYPE string,
+                  lv_ajax_saved_dir   TYPE string.
+
+            lv_ajax_clean_doknr = lv_ajax_ret_doknr.
+            SHIFT lv_ajax_clean_doknr LEFT DELETING LEADING '0'.
+            CONCATENATE lv_ajax_dms_dokar '/' lv_ajax_clean_doknr INTO lv_ajax_saved_dir.
+
+            UPDATE zecm_req SET
+              dir_number   = @lv_ajax_saved_dir,
+              changed_date = @sy-datum,
+              changed_time = @sy-uzeit
+            WHERE ecr_no = @lv_ajax_dms_ecr_no.
+
+            COMMIT WORK AND WAIT.
+
             _m_response->set_content_type( 'application/json' ).
             DATA: lv_json_succ TYPE string.
-              CONCATENATE '{"status":"success","message":"Berhasil","doknr":"' lv_ajax_ret_doknr '"}' INTO lv_json_succ.
-              _m_response->set_cdata( lv_json_succ ).
+            CONCATENATE '{"status":"success","message":"Berhasil","doknr":"' lv_ajax_ret_doknr '"}' INTO lv_json_succ.
+            _m_response->set_cdata( lv_json_succ ).
             navigation->response_complete( ).
             RETURN.
           ELSE.

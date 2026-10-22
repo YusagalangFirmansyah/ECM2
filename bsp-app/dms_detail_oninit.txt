@@ -12,7 +12,7 @@ IF MV_DOKNR IS INITIAL.
   RETURN.
 ENDIF.
 
-" Convert DOKNR with leading zeros
+" Format DOKNR dengan 25 digit leading zeros
 CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
   EXPORTING  input  = MV_DOKNR
   IMPORTING  output = MV_DOKNR.
@@ -23,12 +23,54 @@ IF MV_DOKAR IS INITIAL.
     INTO (@MV_DOKAR, @MV_DOKVR, @MV_DOKTL)
     FROM draw
     WHERE doknr = @MV_DOKNR
-    ORDER BY dokvr DESCENDING.
+    ORDER BY dokvr DESCENDING, doktl DESCENDING.
     EXIT.
   ENDSELECT.
 ENDIF.
 
-" Load document header + files via CVAPI
+" Pastikan record DRAW eksis. Jika DOKVR / DOKTL spesifik tidak ada di DRAW,
+" ambil versi terbaru yang valid dari DRAW
+DATA: lv_draw_exists TYPE abap_bool.
+IF MV_DOKVR IS NOT INITIAL AND MV_DOKTL IS NOT INITIAL.
+  SELECT SINGLE @abap_true FROM draw INTO @lv_draw_exists
+    WHERE dokar = @MV_DOKAR
+      AND doknr = @MV_DOKNR
+      AND dokvr = @MV_DOKVR
+      AND doktl = @MV_DOKTL.
+ENDIF.
+
+IF lv_draw_exists <> abap_true.
+  " Prioritaskan versi aktif (IA / AP / FR) terlebih dahulu sebelum draft AA
+  SELECT dokvr, doktl
+    INTO (@MV_DOKVR, @MV_DOKTL)
+    FROM draw
+    WHERE dokar = @MV_DOKAR
+      AND doknr = @MV_DOKNR
+      AND dokst IN ('IA', 'AP', 'FR')
+    ORDER BY dokvr DESCENDING, doktl DESCENDING.
+    EXIT.
+  ENDSELECT.
+
+  IF MV_DOKVR IS INITIAL.
+    SELECT dokvr, doktl
+      INTO (@MV_DOKVR, @MV_DOKTL)
+      FROM draw
+      WHERE dokar = @MV_DOKAR
+        AND doknr = @MV_DOKNR
+      ORDER BY dokvr DESCENDING, doktl DESCENDING.
+      EXIT.
+    ENDSELECT.
+  ENDIF.
+ENDIF.
+
+IF MV_DOKTL IS INITIAL.
+  MV_DOKTL = '000'.
+ENDIF.
+IF MV_DOKVR IS INITIAL.
+  MV_DOKVR = '00'.
+ENDIF.
+
+" 1. Load document header + files via CVAPI_DOC_GETDETAIL
 DATA: ls_draw    TYPE draw,
       lt_files   TYPE STANDARD TABLE OF cvapi_doc_file.
 
@@ -39,8 +81,7 @@ CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
     pf_doknr        = MV_DOKNR
     pf_dokvr        = MV_DOKVR
     pf_doktl        = MV_DOKTL
-    pf_active_files = space
-    pf_read_kpro    = 'X'
+    pf_active_files = 'X'
   IMPORTING
     psx_draw        = ls_draw
   TABLES
@@ -48,11 +89,32 @@ CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
   EXCEPTIONS
     OTHERS          = 4.
 
+" Fallback 1: Coba CVAPI tanpa pf_active_files jika kosong
+IF lt_files IS INITIAL.
+  CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
+    EXPORTING
+      pf_batchmode    = 'X'
+      pf_dokar        = MV_DOKAR
+      pf_doknr        = MV_DOKNR
+      pf_dokvr        = MV_DOKVR
+      pf_doktl        = MV_DOKTL
+      pf_active_files = space
+    IMPORTING
+      psx_draw        = ls_draw
+    TABLES
+      pt_files        = lt_files
+    EXCEPTIONS
+      OTHERS          = 4.
+ENDIF.
+
 mt_files = lt_files.
 
-" Load header info via BAPI
-DATA: ls_header TYPE bapi_doc_draw2,
-      lt_desc   TYPE STANDARD TABLE OF bapi_doc_drat.
+" 2. Load header info via BAPI_DOCUMENT_GETDETAIL2
+DATA: ls_header   TYPE bapi_doc_draw2,
+      ls_ret_bapi TYPE bapiret2,
+      lt_bapi_fls TYPE STANDARD TABLE OF bapi_doc_files2,
+      ls_bapi_fl  TYPE bapi_doc_files2,
+      ls_conv_fl  TYPE cvapi_doc_file.
 
 CALL FUNCTION 'BAPI_DOCUMENT_GETDETAIL2'
   EXPORTING
@@ -60,14 +122,80 @@ CALL FUNCTION 'BAPI_DOCUMENT_GETDETAIL2'
     documentnumber       = MV_DOKNR
     documentpart         = MV_DOKTL
     documentversion      = MV_DOKVR
-    getdocfiles          = ' '
-    getdocdescriptions   = 'X'
+    getdocfiles          = 'X'
+    getactivefiles       = 'X'
   IMPORTING
     documentdata         = ls_header
+    return               = ls_ret_bapi
   TABLES
-    documentdescriptions = lt_desc.
+    documentfiles        = lt_bapi_fls.
 
 ms_header = ls_header.
+
+" Fallback Header: Jika BAPI return kosong, isi dari DRAW
+IF ms_header-documentnumber IS INITIAL.
+  ms_header-documenttype    = MV_DOKAR.
+  ms_header-documentnumber  = MV_DOKNR.
+  ms_header-documentversion = MV_DOKVR.
+  ms_header-documentpart    = MV_DOKTL.
+  ms_header-statusintern    = ls_draw-dokst.
+  IF ls_draw-dwnam IS NOT INITIAL.
+    ms_header-username      = ls_draw-dwnam.
+  ELSE.
+    ms_header-username      = sy-uname.
+  ENDIF.
+  IF ls_draw-adatum IS NOT INITIAL.
+    ms_header-createdate    = ls_draw-adatum.
+  ELSE.
+    ms_header-createdate    = sy-datum.
+  ENDIF.
+ENDIF.
+
+IF ms_header-description IS INITIAL.
+  SELECT SINGLE dktxt FROM drat INTO @ms_header-description
+    WHERE dokar = @MV_DOKAR
+      AND doknr = @MV_DOKNR
+      AND dokvr = @MV_DOKVR
+      AND doktl = @MV_DOKTL.
+ENDIF.
+
+" Fallback 2: Jika CVAPI kosong tetapi BAPI mendeteksi file
+IF mt_files IS INITIAL AND lt_bapi_fls IS NOT INITIAL.
+  LOOP AT lt_bapi_fls INTO ls_bapi_fl.
+    CLEAR ls_conv_fl.
+    ls_conv_fl-filename    = ls_bapi_fl-docfile.
+    ls_conv_fl-description = ls_bapi_fl-description.
+    ls_conv_fl-storage_cat = ls_bapi_fl-storagecategory.
+    ls_conv_fl-dappl       = ls_bapi_fl-wsapplication.
+    APPEND ls_conv_fl TO mt_files.
+  ENDLOOP.
+ENDIF.
+
+" Fallback 3: Baca langsung dari tabel transparan DMS_DOC_FILES
+IF mt_files IS INITIAL.
+  DATA: lt_db_files TYPE STANDARD TABLE OF dms_doc_files,
+        ls_db_file  TYPE dms_doc_files.
+  SELECT * FROM dms_doc_files INTO TABLE lt_db_files
+    WHERE dokar = MV_DOKAR
+      AND doknr = MV_DOKNR
+      AND dokvr = MV_DOKVR
+      AND doktl = MV_DOKTL
+    ORDER BY file_idx.
+  LOOP AT lt_db_files INTO ls_db_file.
+    CLEAR ls_conv_fl.
+    ls_conv_fl-filename = ls_db_file-filename.
+    ls_conv_fl-dappl    = ls_db_file-dappl.
+    APPEND ls_conv_fl TO mt_files.
+  ENDLOOP.
+ENDIF.
+
+" Fallback 4: File klasik disimpan di header DRAW (FILEP)
+IF mt_files IS INITIAL AND ls_draw-filep IS NOT INITIAL.
+  CLEAR ls_conv_fl.
+  ls_conv_fl-filename = ls_draw-filep.
+  ls_conv_fl-dappl    = ls_draw-dappl.
+  APPEND ls_conv_fl TO mt_files.
+ENDIF.
 
 " Load Status Log dari DRAP
 DATA: lt_status_log TYPE STANDARD TABLE OF drap.

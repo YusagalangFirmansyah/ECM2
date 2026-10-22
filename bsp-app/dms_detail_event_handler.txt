@@ -1,92 +1,237 @@
 * dms_detail_event_handler - OnInputProcessing
-DATA: lv_action TYPE string,
+DATA: lv_action       TYPE string,
       lv_file_idx_str TYPE string,
-      lv_file_idx TYPE i,
-      ls_doc TYPE bapi_doc_draw2,
-      ls_docx TYPE bapi_doc_drawx2,
-      lt_bapi_files TYPE STANDARD TABLE OF bapi_doc_files2,
-      ls_bapi_file TYPE bapi_doc_files2,
-      ls_return TYPE bapiret2.
+      lv_file_idx     TYPE i,
+      ls_doc          TYPE bapi_doc_draw2,
+      ls_docx         TYPE bapi_doc_drawx2,
+      lt_bapi_files   TYPE STANDARD TABLE OF bapi_doc_files2,
+      ls_bapi_file    TYPE bapi_doc_files2,
+      ls_return       TYPE bapiret2,
+      lt_cv_files     TYPE STANDARD TABLE OF cvapi_doc_file,
+      ls_cv_file      TYPE cvapi_doc_file,
+      ls_cv_draw      TYPE draw,
+      ls_msg          TYPE messages,
+      lv_del_fname    TYPE string,
+      lv_del_appnr    TYPE string,
+      lv_target_idx   TYPE i,
+      lv_err_txt      TYPE string,
+      lt_cv_del_files TYPE STANDARD TABLE OF cvapi_doc_file,
+      ls_cv_del_file  TYPE cvapi_doc_file,
+      lv_target_appnr TYPE cvapi_doc_file-appnr,
+      lv_target_fname TYPE string,
+      lv_still_exists TYPE abap_bool.
 
 CLEAR: MV_ERROR, MV_MSG.
 lv_action = request->get_form_field( 'OnInputProcessing' ).
-IF lv_action = 'delete_file'.
+
+IF lv_action = 'set_in_work'.
+  MV_DOKAR = request->get_form_field( 'DOKAR' ).
+  MV_DOKNR = request->get_form_field( 'DOKNR' ).
+  MV_DOKVR = request->get_form_field( 'DOKVR' ).
+  MV_DOKTL = request->get_form_field( 'DOKTL' ).
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING input  = MV_DOKNR
+    IMPORTING output = MV_DOKNR.
+
+  CLEAR: ls_doc, ls_docx, ls_return.
+  ls_doc-documenttype    = MV_DOKAR.
+  ls_doc-documentnumber  = MV_DOKNR.
+  ls_doc-documentpart    = MV_DOKTL.
+  ls_doc-documentversion = MV_DOKVR.
+  ls_doc-statusextern    = 'IA'.
+  ls_docx-statusextern   = 'X'.
+
+  CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
+    EXPORTING
+      documenttype    = MV_DOKAR
+      documentnumber  = MV_DOKNR
+      documentpart    = MV_DOKTL
+      documentversion = MV_DOKVR
+      documentdata    = ls_doc
+      documentdatax   = ls_docx
+    IMPORTING
+      return          = ls_return.
+
+  IF ls_return-type <> 'E' AND ls_return-type <> 'A'.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+    MV_MSG = 'Status dokumen berhasil diaktifkan ke In Work (IA). Siap upload/lampirkan file.'.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    MV_MSG = |Gagal mengubah status: { ls_return-message }|.
+  ENDIF.
+
+ELSEIF lv_action = 'delete_file'.
   " Must load parameters here because OnInputProcessing runs before OnInitialization
   MV_DOKAR = request->get_form_field( 'DOKAR' ).
   MV_DOKNR = request->get_form_field( 'DOKNR' ).
   MV_DOKVR = request->get_form_field( 'DOKVR' ).
   MV_DOKTL = request->get_form_field( 'DOKTL' ).
   
+  IF MV_DOKTL IS INITIAL.
+    MV_DOKTL = '000'.
+  ENDIF.
+  IF MV_DOKVR IS INITIAL.
+    MV_DOKVR = '00'.
+  ENDIF.
+
   " Apply Alpha Conversion for DOKNR if needed
   CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
     EXPORTING input  = MV_DOKNR
     IMPORTING output = MV_DOKNR.
 
-  " 1. Retrieve the file index from request
+  " 1. Retrieve file parameters from request
   lv_file_idx_str = request->get_form_field( 'file_idx' ).
-  lv_file_idx = lv_file_idx_str.
+  lv_file_idx     = lv_file_idx_str.
+  lv_del_fname    = request->get_form_field( 'file_name' ).
+  lv_del_appnr    = request->get_form_field( 'file_appnr' ).
 
-  " 2. Get current document files exactly as BAPI structure
-  CALL FUNCTION 'BAPI_DOCUMENT_GETDETAIL2'
+  " 2. Get current document details and files via CVAPI (Native KPro API)
+  CLEAR: lt_cv_files, ls_cv_draw.
+  CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
     EXPORTING
-      documenttype    = MV_DOKAR
-      documentnumber  = MV_DOKNR
-      documentpart    = MV_DOKTL
-      documentversion = MV_DOKVR
-      getdocfiles     = 'X'
+      pf_batchmode    = 'X'
+      pf_dokar        = MV_DOKAR
+      pf_doknr        = MV_DOKNR
+      pf_dokvr        = MV_DOKVR
+      pf_doktl        = MV_DOKTL
+      pf_read_kpro    = 'X'
+      pf_active_files = 'X'
     IMPORTING
-      documentdata    = ls_doc
-      return          = ls_return
+      psx_draw        = ls_cv_draw
     TABLES
-      documentfiles   = lt_bapi_files.
+      pt_files        = lt_cv_files
+    EXCEPTIONS
+      OTHERS          = 4.
 
-  IF ls_return-type <> 'E' AND ls_return-type <> 'A'.
-    " Validasi status dokumen (hanya boleh hapus file di status draft/revisi)
-    IF ls_doc-statusintern <> 'IA' AND ls_doc-statusintern <> 'AA' AND ls_doc-statusintern <> 'ZG'.
-      MV_MSG = 'Gagal: Dokumen sedang di-inspect atau terkunci, file tidak bisa dihapus.'.
-      RETURN.
-    ENDIF.
+  IF lt_cv_files IS INITIAL.
+    CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
+      EXPORTING
+        pf_batchmode    = 'X'
+        pf_dokar        = MV_DOKAR
+        pf_doknr        = MV_DOKNR
+        pf_dokvr        = MV_DOKVR
+        pf_doktl        = MV_DOKTL
+        pf_read_kpro    = 'X'
+        pf_active_files = space
+      IMPORTING
+        psx_draw        = ls_cv_draw
+      TABLES
+        pt_files        = lt_cv_files
+      EXCEPTIONS
+        OTHERS          = 4.
+  ENDIF.
 
-    " 3. Get the file to delete (index should match since it's the same DIR)
-    READ TABLE lt_bapi_files INTO ls_bapi_file INDEX lv_file_idx.
-    IF sy-subrc = 0.
-      " 4. Prepare BAPI structures
-      CLEAR: ls_doc, ls_docx.
-      
-      ls_doc-documenttype    = MV_DOKAR.
-      ls_doc-documentnumber  = MV_DOKNR.
-      ls_doc-documentpart    = MV_DOKTL.
-      ls_doc-documentversion = MV_DOKVR.
-      
-      " Keep only the file we want to delete in the table
-      CLEAR lt_bapi_files.
-      ls_bapi_file-deletevalue = 'X'.
-      APPEND ls_bapi_file TO lt_bapi_files.
-      
-      CALL FUNCTION 'BAPI_DOCUMENT_CHANGE2'
-        EXPORTING
-          documenttype    = MV_DOKAR
-          documentnumber  = MV_DOKNR
-          documentpart    = MV_DOKTL
-          documentversion = MV_DOKVR
-          documentdata    = ls_doc
-          documentdatax   = ls_docx
-        IMPORTING
-          return          = ls_return
-        TABLES
-          documentfiles   = lt_bapi_files.
-          
-      IF ls_return-type <> 'E' AND ls_return-type <> 'A'.
-        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
-        MV_MSG = 'File berhasil dihapus dari SAP DMS.'.
-      ELSE.
-        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-        MV_MSG = |Gagal menghapus file: { ls_return-message }|.
+  " Validasi status dokumen (hanya boleh hapus file di status draft/revisi)
+  IF ls_cv_draw-dokst IS NOT INITIAL
+     AND ( ls_cv_draw-dokst <> 'IA' AND ls_cv_draw-dokst <> 'AA' AND ls_cv_draw-dokst <> 'ZG' ).
+    MV_MSG = 'Gagal: Dokumen sedang di-inspect atau terkunci, file tidak bisa dihapus.'.
+    RETURN.
+  ENDIF.
+
+  " 3. Cari file yang akan dihapus berdasarkan appnr, nama file, atau index
+  CLEAR: lv_target_idx, lv_target_appnr, lv_target_fname.
+
+  IF lv_del_appnr IS NOT INITIAL.
+    LOOP AT lt_cv_files INTO ls_cv_file.
+      IF ls_cv_file-appnr = lv_del_appnr.
+        lv_target_idx   = sy-tabix.
+        lv_target_appnr = ls_cv_file-appnr.
+        lv_target_fname = ls_cv_file-filename.
+        EXIT.
       ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  IF lv_target_idx IS INITIAL AND lv_del_fname IS NOT INITIAL.
+    LOOP AT lt_cv_files INTO ls_cv_file.
+      IF ls_cv_file-filename CS lv_del_fname OR lv_del_fname CS ls_cv_file-filename
+         OR ls_cv_file-description CS lv_del_fname.
+        lv_target_idx   = sy-tabix.
+        lv_target_appnr = ls_cv_file-appnr.
+        lv_target_fname = ls_cv_file-filename.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  IF lv_target_idx IS INITIAL AND lv_file_idx > 0.
+    READ TABLE lt_cv_files INTO ls_cv_file INDEX lv_file_idx.
+    IF sy-subrc = 0.
+      lv_target_idx   = lv_file_idx.
+      lv_target_appnr = ls_cv_file-appnr.
+      lv_target_fname = ls_cv_file-filename.
+    ENDIF.
+  ENDIF.
+
+  IF lv_target_idx IS NOT INITIAL.
+    " 4. Siapkan delta table HANYA berisi file target dengan UPDATEFLAG = 'D'
+    " Mengirim delta mencegah CVAPI_DOC_CHANGE mengevaluasi file lain yang memicu 26 252
+    CLEAR: lt_cv_del_files, ls_cv_del_file.
+    READ TABLE lt_cv_files INTO ls_cv_del_file INDEX lv_target_idx.
+    ls_cv_del_file-updateflag = 'D'.
+    APPEND ls_cv_del_file TO lt_cv_del_files.
+
+    CLEAR: ls_msg, lv_err_txt.
+    CALL FUNCTION 'CVAPI_DOC_CHANGE'
+      EXPORTING
+        ps_draw      = ls_cv_draw
+        pf_http_dest = 'SAPHTTPA'
+        pf_ftp_dest  = 'SAPFTPA'
+      IMPORTING
+        psx_message  = ls_msg
+      TABLES
+        pt_files_x   = lt_cv_del_files.
+
+    " 5. Verifikasi aktual apakah file target sudah terhapus di SAP
+    CLEAR lt_cv_files.
+    CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
+      EXPORTING
+        pf_batchmode    = 'X'
+        pf_dokar        = MV_DOKAR
+        pf_doknr        = MV_DOKNR
+        pf_dokvr        = MV_DOKVR
+        pf_doktl        = MV_DOKTL
+        pf_read_kpro    = 'X'
+        pf_active_files = 'X'
+      TABLES
+        pt_files        = lt_cv_files
+      EXCEPTIONS
+        OTHERS          = 4.
+
+    lv_still_exists = abap_false.
+    LOOP AT lt_cv_files INTO ls_cv_file.
+      IF lv_target_appnr IS NOT INITIAL AND ls_cv_file-appnr = lv_target_appnr.
+        lv_still_exists = abap_true.
+        EXIT.
+      ELSEIF lv_target_fname IS NOT INITIAL AND ls_cv_file-filename = lv_target_fname.
+        lv_still_exists = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_still_exists = abap_false.
+      " File terbukti sudah terhapus bersih dari SAP DMS!
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+      COMMIT WORK AND WAIT.
+      MV_MSG = 'File berhasil dihapus dari SAP DMS.'.
+      mt_files = lt_cv_files.
+    ELSEIF ls_msg-msg_type <> 'E' AND ls_msg-msg_type <> 'A'.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+      COMMIT WORK AND WAIT.
+      MV_MSG = 'File berhasil dihapus dari SAP DMS.'.
+      mt_files = lt_cv_files.
     ELSE.
-      MV_MSG = 'Gagal: File tidak ditemukan di index tersebut.'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      MESSAGE ID ls_msg-msg_id TYPE 'S' NUMBER ls_msg-msg_no
+              WITH ls_msg-msg_v1 ls_msg-msg_v2 ls_msg-msg_v3 ls_msg-msg_v4
+              INTO lv_err_txt.
+      IF lv_err_txt IS INITIAL.
+        lv_err_txt = |{ ls_msg-msg_id } { ls_msg-msg_no }|.
+      ENDIF.
+      MV_MSG = |Gagal menghapus file: { lv_err_txt }|.
     ENDIF.
   ELSE.
-    MV_MSG = |Gagal membaca detail dokumen: { ls_return-message }|.
+    MV_MSG = 'Gagal: File tidak ditemukan di dokumen ini.'.
   ENDIF.
 ENDIF.

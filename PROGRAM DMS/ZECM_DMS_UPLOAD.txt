@@ -717,7 +717,7 @@ START-OF-SELECTION.
           lv_next_ver = lv_ver_char.
           lv_is_exist = space.
 
-        WHEN gc_st_zg.
+        WHEN gc_st_zg OR gc_st_aa.
           IF p_test IS INITIAL.
             PERFORM transition_to_ia
               USING    lv_docnum lv_next_ver lv_dokar

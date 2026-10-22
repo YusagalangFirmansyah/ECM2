@@ -93,9 +93,23 @@
   <div class="px-8 py-7 max-w-[1200px] mx-auto">
 
     <!-- Back Link -->
-    <a href="javascript:history.back()"
+    <%
+      DATA: lv_kembali_url TYPE string.
+      IF GV_ROLE CS 'APPROVER'.
+        lv_kembali_url = |approver_list.htm?u={ GV_USER_ID }&r={ GV_ROLE }&n={ GV_FULL_NAME }|.
+      ELSEIF GV_ROLE = 'ADMIN'.
+        lv_kembali_url = |admin_dashboard.htm?u={ GV_USER_ID }&r={ GV_ROLE }&n={ GV_FULL_NAME }|.
+      ELSEIF GV_ROLE = 'VIEWER'.
+        lv_kembali_url = |viewer_list.htm?u={ GV_USER_ID }&r={ GV_ROLE }&n={ GV_FULL_NAME }|.
+      ELSE.
+        lv_kembali_url = |drafter_list.htm?u={ GV_USER_ID }&r={ GV_ROLE }&n={ GV_FULL_NAME }|.
+      ENDIF.
+    %>
+    <a href="<%= lv_kembali_url %>"
        class="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-brand-600 transition-colors mb-5">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+      </svg>
       Kembali
     </a>
 
@@ -103,11 +117,11 @@
       <% IF MV_MSG IS NOT INITIAL. %>
         <% IF MV_MSG CS 'Gagal'. %>
           <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm font-medium">
-            <i class="fas fa-exclamation-triangle mr-1"></i> <%= MV_MSG %>
+            <i class="fas fa-exclamation-triangle mr-1"></i> <span id="msg_alert_text"><%= MV_MSG %></span>
           </div>
         <% ELSE. %>
           <div class="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl mb-5 text-sm font-medium">
-            <i class="fas fa-check-circle mr-1"></i> <%= MV_MSG %>
+            <i class="fas fa-check-circle mr-1"></i> <span id="msg_alert_text"><%= MV_MSG %></span>
           </div>
         <% ENDIF. %>
       <% ENDIF. %>
@@ -140,6 +154,44 @@
         IMPORTING  output = lv_doknr_disp.
     %>
 
+    <!-- Alert Status AA: Work Request -->
+    <% IF ( ms_header-statusintern = 'AA' OR ms_header-statusextern = 'AA' )
+          AND ( GV_ROLE CS 'DRAFTER' OR GV_ROLE = 'ADMIN' OR GV_ROLE IS INITIAL ). %>
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5
+                flex items-center justify-between gap-4 flex-wrap">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-amber-100 flex items-center
+                    justify-center text-amber-700 shrink-0">
+          <i class="fas fa-exclamation-circle text-lg"></i>
+        </div>
+        <div>
+          <div class="text-xs font-bold text-amber-800 uppercase tracking-wide">
+            Status Dokumen: Work Request (AA)
+          </div>
+          <div class="text-xs text-amber-700 mt-0.5">
+            Dokumen berstatus draft. Aktifkan ke <b>In Work (IA)</b> agar file original dapat di-checkin ke SAP.
+          </div>
+        </div>
+      </div>
+      <%
+        DATA: lv_act_url TYPE string.
+        lv_act_url = |dms_detail.htm?u={ GV_USER_ID }&r={ GV_ROLE }| &&
+                     |&n={ GV_FULL_NAME }&DOKAR={ MV_DOKAR }| &&
+                     |&DOKNR={ MV_DOKNR }&DOKVR={ MV_DOKVR }| &&
+                     |&DOKTL={ MV_DOKTL }|.
+      %>
+      <form method="post" action="<%= lv_act_url %>" class="shrink-0">
+        <input type="hidden" name="OnInputProcessing" value="set_in_work">
+        <button type="submit"
+                class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white
+                       text-xs font-bold rounded-lg transition-colors
+                       shadow-sm inline-flex items-center gap-1.5">
+          <i class="fas fa-play"></i> Aktifkan Status In Work (IA)
+        </button>
+      </form>
+    </div>
+    <% ENDIF. %>
+
     <!-- ① Document Header Card -->
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
       <div class="px-6 py-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
@@ -158,7 +210,34 @@
         </div>
         <div class="px-6 py-4">
           <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Versi</div>
+          <%
+            DATA: lt_ui_vers TYPE STANDARD TABLE OF draw,
+                  ls_ui_ver  TYPE draw,
+                  lv_ui_vurl TYPE string.
+            SELECT dokvr, dokst FROM draw
+              INTO CORRESPONDING FIELDS OF TABLE @lt_ui_vers
+              WHERE dokar = @MV_DOKAR
+                AND doknr = @MV_DOKNR
+              ORDER BY dokvr DESCENDING.
+          %>
+          <% IF lt_ui_vers IS NOT INITIAL AND lines( lt_ui_vers ) > 1. %>
+          <div class="flex items-center gap-2">
+            <select onchange="window.location.href=this.value"
+                    class="text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-brand-500 focus:outline-none cursor-pointer">
+              <% LOOP AT lt_ui_vers INTO ls_ui_ver.
+                   lv_ui_vurl = |dms_detail.htm?u={ GV_USER_ID }&r={ GV_ROLE }| &&
+                                |&n={ GV_FULL_NAME }&DOKAR={ MV_DOKAR }&DOKNR={ MV_DOKNR }| &&
+                                |&DOKVR={ ls_ui_ver-dokvr }&DOKTL={ MV_DOKTL }|.
+              %>
+                <option value="<%= lv_ui_vurl %>" <% IF ls_ui_ver-dokvr = ms_header-documentversion. %>selected<% ENDIF. %>>
+                  Ver <%= ls_ui_ver-dokvr %> (<%= ls_ui_ver-dokst %>)
+                </option>
+              <% ENDLOOP. %>
+            </select>
+          </div>
+          <% ELSE. %>
           <div class="text-sm font-semibold text-slate-700 font-mono"><%= ms_header-documentversion %></div>
+          <% ENDIF. %>
         </div>
         <div class="px-6 py-4">
           <div class="text-[0.68rem] font-bold text-slate-400 uppercase tracking-wide mb-1">Part</div>
@@ -250,6 +329,7 @@
     <%
       DATA: ls_file      TYPE cvapi_doc_file,
             lv_file_idx  TYPE i,
+            lv_idx_str   TYPE string,
             lv_file_url  TYPE string,
             lv_file_name TYPE string,
             lt_fname     TYPE TABLE OF string,
@@ -263,12 +343,20 @@
       </h3>
       <div class="flex flex-col gap-3">
     <% LOOP AT mt_files INTO ls_file. %>
-    <%   lv_file_idx = sy-tabix. %>
+    <%   lv_file_idx = sy-tabix.
+         lv_idx_str = |{ lv_file_idx }|.
+         CONDENSE lv_idx_str NO-GAPS.
+    %>
     <%
          CLEAR: lt_fname, lv_file_name.
          SPLIT ls_file-filename AT '/' INTO TABLE lt_fname.
          DESCRIBE TABLE lt_fname LINES lv_fname_cnt.
          READ TABLE lt_fname INDEX lv_fname_cnt INTO lv_file_name.
+         IF lv_file_name CS '\'.
+           SPLIT lv_file_name AT '\' INTO TABLE lt_fname.
+           DESCRIBE TABLE lt_fname LINES lv_fname_cnt.
+           READ TABLE lt_fname INDEX lv_fname_cnt INTO lv_file_name.
+         ENDIF.
          IF lv_file_name IS INITIAL.
            lv_file_name = ls_file-description.
          ENDIF.
@@ -283,14 +371,14 @@
                        |&ORIGTP={ lv_file_idx }| &&
                        |&t={ sy-uzeit }|.
     %>
-        <div class="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
+        <div class="file-row flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
           <div class="flex items-center gap-4">
             <div class="w-12 h-12 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 shrink-0">
               <i class="fas fa-file-alt text-xl"></i>
             </div>
             <div>
               <div class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-wide mb-0.5">File <%= lv_file_idx %></div>
-              <div class="text-sm font-semibold text-slate-700 break-all"><%= lv_file_name %></div>
+              <div class="file-name text-sm font-semibold text-slate-700 break-all"><%= lv_file_name %></div>
             </div>
           </div>
           <div class="shrink-0 ml-4 flex items-center gap-2">
@@ -299,17 +387,31 @@
             </a>
             <%
               lv_can_delete = abap_false.
-              IF ( GV_ROLE = 'DRAFTER' OR GV_ROLE = 'ADMIN' OR GV_ROLE = 'APPROVER' ).
-                IF ms_header-statusintern = 'IA' OR ms_header-statusintern = 'AA' OR ms_header-statusintern = 'ZG'.
+              IF ( GV_ROLE CS 'DRAFTER' OR GV_ROLE = 'ADMIN' OR GV_ROLE = 'APPROVER' OR GV_ROLE IS INITIAL ).
+                IF ms_header-statusintern = 'IA' OR ms_header-statusintern = 'AA'
+                   OR ms_header-statusintern = 'ZG'
+                   OR ms_header-statusextern = 'IA' OR ms_header-statusextern = 'AA'
+                   OR ms_header-statusextern = 'ZG'.
                   lv_can_delete = abap_true.
                 ENDIF.
               ENDIF.
             %>
             <% IF lv_can_delete = abap_true. %>
-            <form id="deleteForm_<%= lv_file_idx %>" method="post" action="dms_detail.htm?u=<%= GV_USER_ID %>&r=<%= GV_ROLE %>&n=<%= GV_FULL_NAME %>&DOKAR=<%= MV_DOKAR %>&DOKNR=<%= MV_DOKNR %>&DOKVR=<%= MV_DOKVR %>&DOKTL=<%= MV_DOKTL %>" class="inline">
+            <form method="post" action="dms_detail.htm" class="inline">
               <input type="hidden" name="OnInputProcessing" value="delete_file">
-              <input type="hidden" name="file_idx" value="<%= lv_file_idx %>">
-              <button type="button" onclick="confirmDelete('<%= lv_file_idx %>', '<%= lv_file_name %>')" class="px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 text-sm font-medium rounded-lg transition-colors shadow-sm inline-flex items-center gap-2" title="Hapus Lampiran">
+              <input type="hidden" name="DOKAR" value="<%= MV_DOKAR %>">
+              <input type="hidden" name="DOKNR" value="<%= MV_DOKNR %>">
+              <input type="hidden" name="DOKVR" value="<%= MV_DOKVR %>">
+              <input type="hidden" name="DOKTL" value="<%= MV_DOKTL %>">
+              <input type="hidden" name="u" value="<%= GV_USER_ID %>">
+              <input type="hidden" name="r" value="<%= GV_ROLE %>">
+              <input type="hidden" name="n" value="<%= GV_FULL_NAME %>">
+              <input type="hidden" name="file_idx" value="<%= lv_idx_str %>">
+              <input type="hidden" name="file_appnr" value="<%= ls_file-appnr %>">
+              <input type="hidden" name="file_name" value="<%= lv_file_name %>">
+              <button type="button" onclick="confirmDelete(this)"
+                      class="px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 text-sm font-medium rounded-lg transition-colors shadow-sm inline-flex items-center gap-2"
+                      title="Hapus Lampiran">
                 <i class="fas fa-trash-alt"></i> Delete
               </button>
             </form>
@@ -317,6 +419,16 @@
           </div>
         </div>
     <% ENDLOOP. %>
+      </div>
+    </div>
+    <% ELSE. %>
+    <div class="bg-white rounded-xl border border-dashed border-slate-300 shadow-sm mb-5 p-6 text-center">
+      <div class="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+        <i class="fas fa-paperclip text-xl"></i>
+      </div>
+      <div class="text-sm font-semibold text-slate-600">Belum Ada File Original (Lampiran)</div>
+      <div class="text-xs text-slate-400 mt-1">
+        Dokumen ini belum memiliki file fisik yang di-checkin ke SAP DMS.
       </div>
     </div>
     <% ENDIF. %>
@@ -418,22 +530,55 @@
   </div>
 
   <script>
-    function confirmDelete(idx, filename) {
+    function confirmDelete(btn) {
+      var form = btn ? btn.closest('form') : null;
+      var row = btn ? btn.closest('.file-row') : null;
+      var nameEl = row ? row.querySelector('.file-name') : null;
+      var filename = nameEl ? nameEl.innerText.trim() : 'file ini';
+      var safeName = filename.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      var modalHtml = 'Anda yakin ingin menghapus <b>' + safeName +
+        '</b> dari SAP DMS?<br><br><span class="text-sm text-red-500">' +
+        'Tindakan ini tidak dapat dibatalkan!</span>';
       Swal.fire({
         title: 'Hapus File?',
-        html: "Anda yakin ingin menghapus <b>" + filename + "</b> dari SAP DMS?<br><br><span class='text-sm text-red-500'>Tindakan ini tidak dapat dibatalkan!</span>",
+        html: modalHtml,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#94a3b8',
         confirmButtonText: '<i class="fas fa-trash-alt mr-1"></i> Ya, Hapus!',
         cancelButtonText: 'Batal'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          document.getElementById('deleteForm_' + idx).submit();
+      }).then(function(result) {
+        if (result && (result.isConfirmed || result.value)) {
+          if (form) {
+            form.submit();
+          }
         }
       });
     }
+
+    <% IF MV_MSG IS NOT INITIAL. %>
+      var msgEl = document.getElementById('msg_alert_text');
+      var msgTxt = msgEl ? msgEl.innerText.trim() : 'Operasi selesai';
+      <% IF MV_MSG CS 'Gagal'. %>
+        Swal.fire({
+          icon: 'error',
+          title: 'Hapus File Gagal',
+          text: msgTxt
+        });
+      <% ELSE. %>
+        Swal.fire({
+          icon: 'success',
+          title: 'Berhasil',
+          text: msgTxt,
+          timer: 2500,
+          showConfirmButton: false
+        });
+      <% ENDIF. %>
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+      }
+    <% ENDIF. %>
   </script>
 </body>
 </html>

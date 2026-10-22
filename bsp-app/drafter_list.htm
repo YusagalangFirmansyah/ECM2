@@ -1075,7 +1075,7 @@ encodeURIComponent(dokvr.trim()) + '&DOKTL=' + encodeURIComponent(doktl.trim());
               File Dokumen (CAD/Excel/PDF/Archive) <span class="text-red-500">*</span>
             </label>
             <input type="file" id="dms_file_input" name="dms_file"
-              accept=".dwg,.dxf,.pdf,.xls,.xlsx,.rar,.zip"
+              accept=".dwg,.dxf,.pdf,.xls,.xlsx,.rar,.zip,image/vnd.dwg,image/vnd.dxf,application/octet-stream"
               class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 bg-slate-50"
               multiple required>
             <p class="text-xs text-slate-500 mt-1">
@@ -1316,8 +1316,15 @@ class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outli
     document.addEventListener('DOMContentLoaded', function() {
       var dmsInput = document.getElementById('dms_file_input');
       if (dmsInput) {
+        var dmsMimes = '.dwg,.dxf,.pdf,.xls,.xlsx,.rar,.zip,' +
+          'image/vnd.dwg,image/vnd.dxf,application/acad,application/x-acad,' +
+          'application/autocad_dwg,application/dwg,application/x-dwg,' +
+          'application/octet-stream';
+        dmsInput.setAttribute('accept', dmsMimes);
+
         dmsInput.addEventListener('change', function(e) {
           var files = e.target.files;
+          var allowedExts = ['dwg', 'dxf', 'pdf', 'xls', 'xlsx', 'rar', 'zip'];
           for (var i = 0; i < files.length; i++) {
             var f = files[i];
             if (f.size === 0) {
@@ -1328,6 +1335,28 @@ class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outli
               });
               continue;
             }
+
+            var fileNameParts = f.name.split('.');
+            var fileExt = '';
+            if (fileNameParts.length > 1) {
+              fileExt = fileNameParts[fileNameParts.length - 1].toLowerCase();
+            }
+            var isExtAllowed = false;
+            for (var k = 0; k < allowedExts.length; k++) {
+              if (allowedExts[k] === fileExt) {
+                isExtAllowed = true;
+                break;
+              }
+            }
+            if (!isExtAllowed) {
+              Swal.fire({
+                icon: 'warning',
+                title: 'Format Tidak Didukung',
+                text: 'File ' + f.name + ' bukan format yang diizinkan (.dwg, .dxf, .pdf, .xls, .xlsx, .rar, .zip).'
+              });
+              continue;
+            }
+
             var exists = dmsSelectedFiles.some(function(item) {
               return item.name === f.name && item.size === f.size;
             });
@@ -1513,8 +1542,15 @@ class="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outli
         if (isSuccess) {
           queueCompletedCount++;
           if (tdDms && doknr) {
-tdDms.innerHTML = '<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-50"><span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span><span class="text-xs font-semibold text-green-700">' + doknr +
-'</span></div>';
+            var cleanDoknr = doknr.replace(/^0+/, '') || doknr;
+            var dokar = currentItem.kategori || 'DRW';
+            var vClick = 'onclick="event.stopPropagation(); viewDms(\'' +
+              dokar + '\', \'' + cleanDoknr + '\', \'00\', \'000\')">';
+            tdDms.innerHTML = '<div class="flex items-center gap-1.5 cursor-pointer ' +
+              'hover:bg-green-100 px-2 py-1 rounded-md bg-green-50 transition-colors" ' +
+              vClick +
+              '<span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>' +
+              '<span class="text-xs font-semibold text-green-700">' + cleanDoknr + '</span></div>';
           }
           if (tdAct) {
               var matnr = currentItem.matnr || "";

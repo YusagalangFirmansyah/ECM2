@@ -41,6 +41,20 @@
 </main> <!-- Close from header -->
 <% ENDIF. %>
 
+<% IF lv_is_modal IS NOT INITIAL AND GV_ICON = 'success' AND GV_MESSAGE IS NOT INITIAL. %>
+<script>
+    (function() {
+        var msg = '<%= GV_MESSAGE %>';
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                action: 'ecm_review_success',
+                message: msg
+            }, '*');
+        }
+    })();
+</script>
+<% ENDIF. %>
+
 <!-- Alert Message -->
 <% IF GV_MESSAGE IS NOT INITIAL. %>
 <div class="max-w-7xl mx-auto px-4 mt-4">
@@ -180,7 +194,7 @@
             </div>
             
             <!-- V14: Implementation Tracking (Read-Only saat IREQ sudah diproses ECO) -->
-            <% IF GV_REQ_IMPL_PO IS NOT INITIAL AND ( GV_REQ_STATUS = 'ECO' OR NOT ( GV_ROLE CS 'ADMIN' ) ). %>
+            <% IF GV_REQ_IMPL_PO IS NOT INITIAL AND ( GV_REQ_STATUS = 'ECO' OR GV_ROLE <> 'ADMIN' ). %>
             <div class="mt-6 mb-4 p-5 bg-blue-50 border border-blue-200 rounded-xl shadow-sm">
                 <div class="flex items-center gap-2 mb-3 pb-2 border-b border-blue-100">
                     <i class="fas fa-calendar-check text-blue-500 text-lg"></i>
@@ -236,7 +250,7 @@
             <% ENDIF. %>
 
         <!-- Assign Drafter Dropdown & Rencana Implementasi -->
-        <% IF GV_ROLE CS 'ADMIN'. %>
+        <% IF GV_ROLE = 'ADMIN'. %>
         <div class="mb-4 p-4 bg-brand-50 rounded-lg border border-brand-100 space-y-4">
             <div>
                 <label class="block text-xs font-bold text-slate-600 mb-1">
@@ -310,7 +324,7 @@
         <% ENDIF. %>
 
         <!-- Button Logic Based on Role -->
-        <% IF GV_ROLE CS 'APPROVER'. %>
+        <% IF GV_ROLE = 'APPROVER' OR GV_ROLE CS 'APPROVER'. %>
             <% IF GV_REQ_STATUS = 'REQ'. %>
                 <!-- Approver Button -->
                 <button type="button" onclick="approveRequest()"
@@ -318,7 +332,7 @@
                     <i class="fas fa-check-circle"></i> Approve Request
                 </button>
             <% ENDIF. %>
-        <% ELSEIF GV_ROLE CS 'ADMIN'. %>
+        <% ELSEIF GV_ROLE = 'ADMIN' OR GV_ROLE CS 'ADMIN'. %>
             <!-- Admin Buttons -->
             <% IF GV_REQ_STATUS = 'REQ'. %>
                 <button type="button" disabled
@@ -339,6 +353,7 @@
 <script>
     // Setup initial state or helper vars if needed, avoiding ABAP inside JS functions
     var currentUserRole = '<%= GV_ROLE %>';
+    var isApproverRole = (currentUserRole.indexOf('APPROVER') !== -1);
 
     function updateRequest() {
         Swal.fire({
@@ -351,6 +366,16 @@
             confirmButtonColor: '#059669'
         }).then(function(result) {
             if (result.isConfirmed) {
+                if (isApproverRole && window.parent && window.parent !== window &&
+                    window.parent.document.getElementById('actionFormIreq')) {
+                    window.parent.closeReviewModal();
+                    var pForm = window.parent.document.getElementById('actionFormIreq');
+                    window.parent.document.getElementById('actionTypeIreq').value = 'reject_ireq';
+                    window.parent.document.getElementById('actionIreqId').value = '<%= GV_IREQ_ID %>';
+                    window.parent.document.getElementById('actionRejectReasonIreq').value = result.value;
+                    pForm.submit();
+                    return;
+                }
                 var form = document.getElementById('reviewForm');
                 var actionInput = document.createElement('input');
                 actionInput.type = 'hidden';
@@ -369,7 +394,7 @@
             inputPlaceholder: 'Masukkan alasan penolakan...',
             inputValidator: function(value) {
                 if (!value) {
-                    return 'Alasan penolakan wajib diisi!'
+                    return 'Alasan penolakan wajib diisi!';
                 }
             },
             showCancelButton: true,
@@ -382,7 +407,7 @@
                 var actionInput = document.createElement('input');
                 actionInput.type = 'hidden';
                 actionInput.name = 'OnInputProcessing';
-                if (currentUserRole.indexOf('APPROVER') !== -1) {
+                if (isApproverRole) {
                     actionInput.value = 'reject_ireq';
                 } else {
                     actionInput.value = 'reject';
@@ -405,7 +430,7 @@
         var titleText = '';
         var confirmText = '';
 
-        if (currentUserRole.indexOf('APPROVER') !== -1) {
+        if (isApproverRole) {
             Swal.fire({
                 title: 'Setujui Request?',
                 text: 'Request ini akan disetujui dan diteruskan ke Admin untuk penugasan Drafter & estimasi rilis.',
@@ -417,14 +442,21 @@
                 cancelButtonText: 'Batal'
             }).then(function(result) {
                 if (result.isConfirmed) {
+                    if (window.parent && window.parent !== window &&
+                        window.parent.document.getElementById('actionFormIreq')) {
+                        window.parent.closeReviewModal();
+                        var pForm = window.parent.document.getElementById('actionFormIreq');
+                        window.parent.document.getElementById('actionTypeIreq').value = 'approve_ireq';
+                        window.parent.document.getElementById('actionIreqId').value = '<%= GV_IREQ_ID %>';
+                        pForm.submit();
+                        return;
+                    }
                     var form = document.getElementById('reviewForm');
-                    Swal.fire({
-                        title: 'Menyimpan Persetujuan...',
-                        allowOutsideClick: false,
-                        didOpen: function() { Swal.showLoading(); }
-                    });
-                    form.insertAdjacentHTML('beforeend',
-                        '<input type="hidden" name="OnInputProcessing" value="approve_aprv">');
+                    var actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'OnInputProcessing';
+                    actionInput.value = 'approve_aprv';
+                    form.appendChild(actionInput);
                     form.submit();
                 }
             });
@@ -451,7 +483,8 @@
             }
 
             titleText = 'Buat ECO & Tugaskan Drafter?';
-            confirmText = 'Request akan disetujui, ECO baru akan dibuat dengan rencana implementasi yang diinput, dan drafter akan ditugaskan.';
+            confirmText = 'Request akan disetujui, ECO baru akan dibuat ' +
+                'dengan rencana implementasi yang diinput, dan drafter akan ditugaskan.';
             actionValue = 'approve';
         }
 
@@ -498,45 +531,6 @@
         setTimeout(function() { document.body.removeChild(form); }, 100);
     }
 </script>
-
-<% IF GV_MESSAGE IS NOT INITIAL. %>
-<script>
-    window.addEventListener('DOMContentLoaded', function() {
-        var isSuccess = '<%= GV_ICON %>' === 'success';
-        Swal.fire({
-            icon: '<%= GV_ICON %>',
-            title: isSuccess ? 'Berhasil!' : 'Perhatian',
-            text: '<%= GV_MESSAGE %>',
-            timer: isSuccess ? 1800 : null,
-            showConfirmButton: !isSuccess,
-            confirmButtonColor: '#059669',
-            timerProgressBar: isSuccess
-        }).then(function() {
-            if (isSuccess) {
-                if (window.parent && window.parent !== window) {
-                    try {
-                        if (typeof window.parent.closeReviewModal === 'function') {
-                            window.parent.closeReviewModal();
-                        }
-                        window.parent.location.reload();
-                    } catch (e) {
-                        window.parent.postMessage({ action: 'refresh_review_modal' }, '*');
-                    }
-                } else {
-                    var u = encodeURIComponent('<%= GV_USER_ID %>');
-                    var r = encodeURIComponent('<%= GV_ROLE %>');
-                    var n = encodeURIComponent('<%= GV_FULL_NAME %>');
-                    if (currentUserRole.indexOf('APPROVER') !== -1) {
-                        window.location.href = 'approver_list.htm?u=' + u + '&r=' + r + '&n=' + n;
-                    } else {
-                        window.location.href = 'admin_dashboard.htm?u=' + u + '&r=' + r + '&n=' + n;
-                    }
-                }
-            }
-        });
-    });
-</script>
-<% ENDIF. %>
 
 </body>
 </html>

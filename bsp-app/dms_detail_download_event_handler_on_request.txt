@@ -1,4 +1,4 @@
-﻿* dms_detail_download — OnRequest (file streaming)
+* dms_detail_download — OnRequest (file streaming)
 DATA: lv_doknr   TYPE doknr,
       lv_dokar   TYPE dokar,
       lv_dokvr   TYPE dokvr,
@@ -25,6 +25,9 @@ lv_idx_str = request->get_form_field( 'ORIGTP' ).
 IF lv_idx_str IS INITIAL. lv_idx_str = '1'. ENDIF.
 lv_origtp = lv_idx_str.
 
+IF lv_doktl IS INITIAL. lv_doktl = '000'. ENDIF.
+IF lv_dokvr IS INITIAL. lv_dokvr = '00'. ENDIF.
+
 CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
   EXPORTING  input  = lv_doknr
   IMPORTING  output = lv_doknr.
@@ -36,14 +39,30 @@ CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
     pf_doknr        = lv_doknr
     pf_dokvr        = lv_dokvr
     pf_doktl        = lv_doktl
-    pf_active_files = space
-    pf_read_kpro    = 'X'
+    pf_active_files = 'X'
   IMPORTING
     psx_draw        = ls_draw
   TABLES
     pt_files        = lt_files
   EXCEPTIONS
     OTHERS          = 4.
+
+IF lt_files IS INITIAL.
+  CALL FUNCTION 'CVAPI_DOC_GETDETAIL'
+    EXPORTING
+      pf_batchmode    = 'X'
+      pf_dokar        = lv_dokar
+      pf_doknr        = lv_doknr
+      pf_dokvr        = lv_dokvr
+      pf_doktl        = lv_doktl
+      pf_active_files = space
+    IMPORTING
+      psx_draw        = ls_draw
+    TABLES
+      pt_files        = lt_files
+    EXCEPTIONS
+      OTHERS          = 4.
+ENDIF.
 
 READ TABLE lt_files INTO ls_file INDEX lv_origtp.
 IF sy-subrc <> 0.
@@ -54,6 +73,11 @@ ENDIF.
 SPLIT ls_file-filename AT '/' INTO TABLE lt_parts.
 DESCRIBE TABLE lt_parts LINES lv_lines.
 READ TABLE lt_parts INDEX lv_lines INTO lv_compid.
+IF lv_compid CS '\'.
+  SPLIT lv_compid AT '\' INTO TABLE lt_parts.
+  DESCRIBE TABLE lt_parts LINES lv_lines.
+  READ TABLE lt_parts INDEX lv_lines INTO lv_compid.
+ENDIF.
 CONDENSE lv_compid.
 
 IF lv_compid IS INITIAL OR ls_file-ph_objid IS INITIAL.
@@ -61,8 +85,15 @@ IF lv_compid IS INITIAL OR ls_file-ph_objid IS INITIAL.
   RETURN.
 ENDIF.
 
+DATA: lv_cont_rep TYPE string.
+IF ls_file-storage_cat IS NOT INITIAL.
+  lv_cont_rep = ls_file-storage_cat.
+ELSE.
+  lv_cont_rep = 'ZDMS'.
+ENDIF.
+
 lv_url = |http://kmiserver.kayumebel.com:1090/sapcs| &&
-         |?get&contRep=CS| &&
+         |?get&contRep={ lv_cont_rep }| &&
          |&docId={ ls_file-ph_objid }| &&
          |&compId={ lv_compid }| &&
          |&pVersion=0046|.
@@ -87,6 +118,30 @@ lo_http->response->get_status(
 lv_xstr = lo_http->response->get_data( ).
 lo_http->close( ).
 
+" Fallback ke repository 'CS' jika repository pertama bukan CS dan gagal
+IF ( lv_status <> 200 OR xstrlen( lv_xstr ) = 0 ) AND lv_cont_rep <> 'CS'.
+  lv_url = |http://kmiserver.kayumebel.com:1090/sapcs| &&
+           |?get&contRep=CS| &&
+           |&docId={ ls_file-ph_objid }| &&
+           |&compId={ lv_compid }| &&
+           |&pVersion=0046|.
+
+  CALL METHOD cl_http_client=>create_by_url
+    EXPORTING  url    = lv_url
+    IMPORTING  client = lo_http
+    EXCEPTIONS OTHERS = 4.
+
+  IF sy-subrc = 0.
+    lo_http->request->set_method( 'GET' ).
+    lo_http->send( EXCEPTIONS OTHERS = 2 ).
+    lo_http->receive( EXCEPTIONS OTHERS = 2 ).
+    lo_http->response->get_status(
+      IMPORTING code = lv_status reason = lv_reason ).
+    lv_xstr = lo_http->response->get_data( ).
+    lo_http->close( ).
+  ENDIF.
+ENDIF.
+
 IF lv_status <> 200 OR xstrlen( lv_xstr ) = 0.
   _M_RESPONSE->set_status( code = lv_status reason = lv_reason ).
   RETURN.
@@ -101,10 +156,10 @@ TRANSLATE lv_compid_up TO UPPER CASE.
 
 IF lv_compid_up CS '.PDF'.
   lv_content_type = 'application/pdf'.
-  lv_disposition  = 'inline'. " Tetap inline agar bisa di-preview di tab baru
+  lv_disposition  = 'inline'.
 ELSEIF lv_compid_up CS '.XLSX'.
   lv_content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'.
-  lv_disposition  = 'attachment'. " Paksa download
+  lv_disposition  = 'attachment'.
 ELSEIF lv_compid_up CS '.XLS'.
   lv_content_type = 'application/vnd.ms-excel'.
   lv_disposition  = 'attachment'.
